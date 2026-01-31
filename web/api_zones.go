@@ -23,15 +23,16 @@ func normalizeFQDN(name string) string {
 }
 
 type zoneRequest struct {
-	Name       string `json:"name"`
-	SOAMname   string `json:"soa_mname"`
-	SOARname   string `json:"soa_rname"`
-	SOASerial  int64  `json:"soa_serial"`
-	SOARefresh int64  `json:"soa_refresh"`
-	SOARetry   int64  `json:"soa_retry"`
-	SOAExpire  int64  `json:"soa_expire"`
-	SOAMinimum int64  `json:"soa_minimum"`
-	Enabled    *bool  `json:"enabled"`
+	Name          string `json:"name"`
+	SOAMname      string `json:"soa_mname"`
+	SOARname      string `json:"soa_rname"`
+	SOASerial     int64  `json:"soa_serial"`
+	SOARefresh    int64  `json:"soa_refresh"`
+	SOARetry      int64  `json:"soa_retry"`
+	SOAExpire     int64  `json:"soa_expire"`
+	SOAMinimum    int64  `json:"soa_minimum"`
+	Enabled       *bool  `json:"enabled"`
+	AllowFallback *bool  `json:"allow_fallback"`
 }
 
 func (api *API) listZones(c *gin.Context) {
@@ -81,16 +82,22 @@ func (api *API) createZone(c *gin.Context) {
 		enabled = *req.Enabled
 	}
 
+	allowFallback := false
+	if req.AllowFallback != nil {
+		allowFallback = *req.AllowFallback
+	}
+
 	zone := &model.Zone{
-		Name:       name,
-		SOAMname:   req.SOAMname,
-		SOARname:   req.SOARname,
-		SOASerial:  req.SOASerial,
-		SOARefresh: req.SOARefresh,
-		SOARetry:   req.SOARetry,
-		SOAExpire:  req.SOAExpire,
-		SOAMinimum: req.SOAMinimum,
-		Enabled:    enabled,
+		Name:          name,
+		SOAMname:      req.SOAMname,
+		SOARname:      req.SOARname,
+		SOASerial:     req.SOASerial,
+		SOARefresh:    req.SOARefresh,
+		SOARetry:      req.SOARetry,
+		SOAExpire:     req.SOAExpire,
+		SOAMinimum:    req.SOAMinimum,
+		Enabled:       enabled,
+		AllowFallback: allowFallback,
 	}
 
 	id, err := api.zoneStorage.CreateZone(zone)
@@ -132,17 +139,23 @@ func (api *API) updateZone(c *gin.Context) {
 		enabled = *req.Enabled
 	}
 
+	allowFallback := false
+	if req.AllowFallback != nil {
+		allowFallback = *req.AllowFallback
+	}
+
 	zone := &model.Zone{
-		ID:         id,
-		Name:       name,
-		SOAMname:   req.SOAMname,
-		SOARname:   req.SOARname,
-		SOASerial:  req.SOASerial,
-		SOARefresh: req.SOARefresh,
-		SOARetry:   req.SOARetry,
-		SOAExpire:  req.SOAExpire,
-		SOAMinimum: req.SOAMinimum,
-		Enabled:    enabled,
+		ID:            id,
+		Name:          name,
+		SOAMname:      req.SOAMname,
+		SOARname:      req.SOARname,
+		SOASerial:     req.SOASerial,
+		SOARefresh:    req.SOARefresh,
+		SOARetry:      req.SOARetry,
+		SOAExpire:     req.SOAExpire,
+		SOAMinimum:    req.SOAMinimum,
+		Enabled:       enabled,
+		AllowFallback: allowFallback,
 	}
 
 	if err := api.zoneStorage.UpdateZone(zone); err != nil {
