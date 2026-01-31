@@ -1,6 +1,7 @@
 package web
 
 import (
+	"dns-go/adblock"
 	"dns-go/dns"
 	"dns-go/gslb"
 	"dns-go/storage"
@@ -15,6 +16,9 @@ type API struct {
 	queryStats      *dns.QueryStats
 	policyStorage   *gslb.PolicyStorage
 	poolStorage     *gslb.PoolStorage
+	adblockStorage  *storage.AdblockStorage
+	adblockSyncer   *adblock.Syncer
+	adblockFilter   *adblock.Filter
 }
 
 func NewAPI(
@@ -26,6 +30,9 @@ func NewAPI(
 	queryStats *dns.QueryStats,
 	policyStorage *gslb.PolicyStorage,
 	poolStorage *gslb.PoolStorage,
+	adblockStorage *storage.AdblockStorage,
+	adblockSyncer *adblock.Syncer,
+	adblockFilter *adblock.Filter,
 ) *API {
 	return &API{
 		zoneStorage:     zoneStorage,
@@ -36,5 +43,8 @@ func NewAPI(
 		queryStats:      queryStats,
 		policyStorage:   policyStorage,
 		poolStorage:     poolStorage,
+		adblockStorage:  adblockStorage,
+		adblockSyncer:   adblockSyncer,
+		adblockFilter:   adblockFilter,
 	}
 }

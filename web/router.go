@@ -49,6 +49,14 @@ func NewRouter(api *API) *gin.Engine {
 		apiGroup.POST("/gslb/pools/:id/members", api.createMember)
 		apiGroup.PUT("/gslb/members/:id", api.updateMember)
 		apiGroup.DELETE("/gslb/members/:id", api.deleteMember)
+
+		apiGroup.GET("/adblock/sources", api.listAdblockSources)
+		apiGroup.POST("/adblock/sources", api.createAdblockSource)
+		apiGroup.PUT("/adblock/sources/:id", api.updateAdblockSource)
+		apiGroup.DELETE("/adblock/sources/:id", api.deleteAdblockSource)
+		apiGroup.POST("/adblock/sources/:id/sync", api.syncAdblockSource)
+		apiGroup.GET("/adblock/stats", api.getAdblockStats)
+		apiGroup.GET("/adblock/status", api.getAdblockStatus)
 	}
 
 	return router

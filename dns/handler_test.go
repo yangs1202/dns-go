@@ -32,7 +32,7 @@ func setupTestHandler(t *testing.T) (*Handler, *storage.Database, func()) {
 
 	// Handler 생성
 	stats := NewQueryStats()
-	handler, err := NewHandler(zoneStorage, recordStorage, resolver, db, stats, nil)
+	handler, err := NewHandler(zoneStorage, recordStorage, resolver, db, stats, nil, nil, nil, "0.0.0.0")
 	if err != nil {
 		t.Fatalf("핸들러 생성 실패: %v", err)
 	}

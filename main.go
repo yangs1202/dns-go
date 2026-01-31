@@ -1,6 +1,7 @@
 package main
 
 import (
+	"dns-go/adblock"
 	"dns-go/config"
 	"dns-go/dns"
 	"dns-go/gslb"
@@ -69,11 +70,20 @@ func main() {
 
 	log.Println("GSLB 엔진 초기화 완료")
 
+	// Adblock 초기화
+	adblockStorage := storage.NewAdblockStorage(db)
+	adblockFilter := adblock.NewFilter(adblockStorage, cfg.Adblock.Enabled)
+	adblockLoader := adblock.NewLoader()
+	adblockSyncer := adblock.NewSyncer(adblockStorage, adblockLoader, adblockFilter, cfg.Adblock.SyncInterval)
+	adblockSyncer.Start()
+	defer adblockSyncer.Stop()
+	log.Println("Adblock 초기화 완료")
+
 	// 쿼리 통계
 	queryStats := dns.NewQueryStats()
 
 	// DNS 핸들러 초기화
-	handler, err := dns.NewHandler(zoneStorage, recordStorage, resolver, db, queryStats, gslbEngine)
+	handler, err := dns.NewHandler(zoneStorage, recordStorage, resolver, db, queryStats, gslbEngine, adblockFilter, adblockStorage, cfg.Adblock.BlockResponse)
 	if err != nil {
 		log.Fatalf("DNS 핸들러 초기화 실패: %v", err)
 	}
@@ -90,7 +100,7 @@ func main() {
 	log.Printf("DNS 서버 시작 성공: %s", server.GetAddr())
 
 	// Web API 서버 초기화 및 시작
-	api := web.NewAPI(zoneStorage, recordStorage, upstreamStorage, db, handler, queryStats, policyStorage, poolStorage)
+	api := web.NewAPI(zoneStorage, recordStorage, upstreamStorage, db, handler, queryStats, policyStorage, poolStorage, adblockStorage, adblockSyncer, adblockFilter)
 	webServer := web.NewServer(cfg.Web.Listen, cfg.Web.Port, api)
 
 	go func() {

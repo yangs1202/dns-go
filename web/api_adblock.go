@@ -1,0 +1,199 @@
+package web
+
+import (
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"dns-go/model"
+
+	"github.com/gin-gonic/gin"
+)
+
+type adblockSourceRequest struct {
+	Name    string `json:"name"`
+	URL     string `json:"url"`
+	Enabled *bool  `json:"enabled"`
+}
+
+func (api *API) listAdblockSources(c *gin.Context) {
+	if api.adblockStorage == nil {
+		respondInternalError(c, "Adblock 스토리지가 초기화되지 않았습니다")
+		return
+	}
+	sources, err := api.adblockStorage.ListAdblockSources()
+	if err != nil {
+		respondInternalError(c, err.Error())
+		return
+	}
+	respondSuccess(c, http.StatusOK, sources)
+}
+
+func (api *API) createAdblockSource(c *gin.Context) {
+	if api.adblockStorage == nil {
+		respondInternalError(c, "Adblock 스토리지가 초기화되지 않았습니다")
+		return
+	}
+	var req adblockSourceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondBadRequest(c, "요청 바디가 올바르지 않습니다")
+		return
+	}
+	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.URL) == "" {
+		respondBadRequest(c, "name과 url은 필수입니다")
+		return
+	}
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+
+	source := &model.AdblockSource{
+		Name:    req.Name,
+		URL:     req.URL,
+		Enabled: enabled,
+	}
+
+	id, err := api.adblockStorage.CreateAdblockSource(source)
+	if err != nil {
+		respondInternalError(c, err.Error())
+		return
+	}
+	created, err := api.adblockStorage.GetAdblockSource(id)
+	if err != nil {
+		respondInternalError(c, err.Error())
+		return
+	}
+	respondSuccess(c, http.StatusCreated, created)
+}
+
+func (api *API) updateAdblockSource(c *gin.Context) {
+	if api.adblockStorage == nil {
+		respondInternalError(c, "Adblock 스토리지가 초기화되지 않았습니다")
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		respondBadRequest(c, "잘못된 source ID")
+		return
+	}
+	var req adblockSourceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondBadRequest(c, "요청 바디가 올바르지 않습니다")
+		return
+	}
+	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.URL) == "" {
+		respondBadRequest(c, "name과 url은 필수입니다")
+		return
+	}
+	existing, err := api.adblockStorage.GetAdblockSource(id)
+	if err != nil {
+		respondInternalError(c, err.Error())
+		return
+	}
+	if existing == nil {
+		respondNotFound(c, "source를 찾을 수 없습니다")
+		return
+	}
+	enabled := existing.Enabled
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+
+	existing.Name = req.Name
+	existing.URL = req.URL
+	existing.Enabled = enabled
+
+	if err := api.adblockStorage.UpdateAdblockSource(existing); err != nil {
+		respondInternalError(c, err.Error())
+		return
+	}
+	updated, err := api.adblockStorage.GetAdblockSource(id)
+	if err != nil {
+		respondInternalError(c, err.Error())
+		return
+	}
+	respondSuccess(c, http.StatusOK, updated)
+}
+
+func (api *API) deleteAdblockSource(c *gin.Context) {
+	if api.adblockStorage == nil {
+		respondInternalError(c, "Adblock 스토리지가 초기화되지 않았습니다")
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		respondBadRequest(c, "잘못된 source ID")
+		return
+	}
+	if err := api.adblockStorage.DeleteAdblockSource(id); err != nil {
+		respondInternalError(c, err.Error())
+		return
+	}
+	respondSuccess(c, http.StatusOK, gin.H{"message": "source 삭제 완료"})
+}
+
+func (api *API) syncAdblockSource(c *gin.Context) {
+	if api.adblockSyncer == nil {
+		respondInternalError(c, "Adblock syncer가 초기화되지 않았습니다")
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		respondBadRequest(c, "잘못된 source ID")
+		return
+	}
+	if err := api.adblockSyncer.SyncSource(id); err != nil {
+		respondInternalError(c, err.Error())
+		return
+	}
+	respondSuccess(c, http.StatusOK, gin.H{"message": "동기화 완료"})
+}
+
+func (api *API) getAdblockStats(c *gin.Context) {
+	if api.adblockStorage == nil {
+		respondInternalError(c, "Adblock 스토리지가 초기화되지 않았습니다")
+		return
+	}
+	limit := 10
+	if v := c.Query("limit"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil {
+			limit = parsed
+		}
+	}
+	stats, err := api.adblockStorage.GetBlockedStats(limit)
+	if err != nil {
+		respondInternalError(c, err.Error())
+		return
+	}
+	respondSuccess(c, http.StatusOK, stats)
+}
+
+func (api *API) getAdblockStatus(c *gin.Context) {
+	if api.adblockStorage == nil {
+		respondInternalError(c, "Adblock 스토리지가 초기화되지 않았습니다")
+		return
+	}
+	count, err := api.adblockStorage.GetBlockedDomainCount()
+	if err != nil {
+		respondInternalError(c, err.Error())
+		return
+	}
+	sources, err := api.adblockStorage.ListAdblockSources()
+	if err != nil {
+		respondInternalError(c, err.Error())
+		return
+	}
+	latestSync := time.Time{}
+	for _, src := range sources {
+		if src.LastSync.After(latestSync) {
+			latestSync = src.LastSync
+		}
+	}
+	respondSuccess(c, http.StatusOK, gin.H{
+		"sources":      len(sources),
+		"domain_count": count,
+		"last_sync":    latestSync,
+	})
+}

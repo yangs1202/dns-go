@@ -1,6 +1,7 @@
 package dns
 
 import (
+	"dns-go/adblock"
 	"dns-go/gslb"
 	"dns-go/model"
 	"dns-go/storage"
@@ -14,13 +15,16 @@ import (
 
 // Handler는 DNS 쿼리를 처리하는 핸들러입니다
 type Handler struct {
-	cache         *DNSCache              // L1 DNS 응답 캐시
-	zoneStorage   *storage.ZoneStorage   // Zone 저장소 (L2 캐시)
-	recordStorage *storage.RecordStorage // Record 저장소 (L2 캐시)
-	resolver      *Resolver              // 업스트림 리졸버
-	cacheSettings *storage.Database      // 캐시 설정 조회용
-	stats         *QueryStats
-	gslbEngine    *gslb.Engine
+	cache           *DNSCache              // L1 DNS 응답 캐시
+	zoneStorage     *storage.ZoneStorage   // Zone 저장소 (L2 캐시)
+	recordStorage   *storage.RecordStorage // Record 저장소 (L2 캐시)
+	resolver        *Resolver              // 업스트림 리졸버
+	cacheSettings   *storage.Database      // 캐시 설정 조회용
+	stats           *QueryStats
+	gslbEngine      *gslb.Engine
+	adblockFilter   *adblock.Filter
+	adblockStorage  *storage.AdblockStorage
+	adblockResponse string
 }
 
 // NewHandler는 새로운 DNS 핸들러를 생성합니다
@@ -31,6 +35,9 @@ func NewHandler(
 	db *storage.Database,
 	stats *QueryStats,
 	gslbEngine *gslb.Engine,
+	adblockFilter *adblock.Filter,
+	adblockStorage *storage.AdblockStorage,
+	adblockResponse string,
 ) (*Handler, error) {
 	// DB에서 캐시 설정 로드
 	var enabled, maxSize, defaultTTL, negativeTTL int64
@@ -46,13 +53,16 @@ func NewHandler(
 	cache := NewDNSCache(maxSize, defaultTTL, negativeTTL, prefetchTrigger)
 
 	handler := &Handler{
-		cache:         cache,
-		zoneStorage:   zoneStorage,
-		recordStorage: recordStorage,
-		resolver:      resolver,
-		cacheSettings: db,
-		stats:         stats,
-		gslbEngine:    gslbEngine,
+		cache:           cache,
+		zoneStorage:     zoneStorage,
+		recordStorage:   recordStorage,
+		resolver:        resolver,
+		cacheSettings:   db,
+		stats:           stats,
+		gslbEngine:      gslbEngine,
+		adblockFilter:   adblockFilter,
+		adblockStorage:  adblockStorage,
+		adblockResponse: adblockResponse,
 	}
 
 	// Prefetch 콜백 함수 설정
@@ -110,13 +120,49 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 		h.stats.IncL1Miss()
 	}
 
-	// 2. TODO: 광고차단 필터 체크
-	// if h.adblockFilter.IsBlocked(domain) {
-	//     resp.Rcode = dns.RcodeNameError
-	//     h.cache.Set(domain, qtype, nil, 0, true)
-	//     w.WriteMsg(resp)
-	//     return
-	// }
+	// 2. 광고차단 필터 체크
+	if h.adblockFilter != nil {
+		blocked, err := h.adblockFilter.IsBlocked(domain)
+		if err != nil {
+			log.Printf("[DNS] Adblock check error: %v", err)
+		} else if blocked {
+			clientIP := ExtractClientIP(req)
+			if clientIP == nil {
+				if addr := w.RemoteAddr(); addr != nil {
+					if host, _, err := net.SplitHostPort(addr.String()); err == nil {
+						clientIP = net.ParseIP(host)
+					}
+				}
+			}
+			if h.adblockStorage != nil && clientIP != nil {
+				_ = h.adblockStorage.RecordBlockedQuery(domain, clientIP.String())
+			}
+			if strings.ToUpper(h.adblockResponse) == "NXDOMAIN" {
+				resp.Rcode = dns.RcodeNameError
+				h.cache.Set(domain, qtype, nil, 0, true)
+				w.WriteMsg(resp)
+				return
+			}
+			if qtype == "A" {
+				resp.Answer = []dns.RR{&dns.A{Hdr: dns.RR_Header{Name: domain, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60}, A: net.ParseIP("0.0.0.0")}}
+				resp.Rcode = dns.RcodeSuccess
+				h.cache.Set(domain, qtype, resp.Answer, 60, false)
+				w.WriteMsg(resp)
+				return
+			}
+			if qtype == "AAAA" {
+				resp.Answer = []dns.RR{&dns.AAAA{Hdr: dns.RR_Header{Name: domain, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 60}, AAAA: net.ParseIP("::")}}
+				resp.Rcode = dns.RcodeSuccess
+				h.cache.Set(domain, qtype, resp.Answer, 60, false)
+				w.WriteMsg(resp)
+				return
+			}
+			resp.Rcode = dns.RcodeNameError
+			h.cache.Set(domain, qtype, nil, 0, true)
+			w.WriteMsg(resp)
+			return
+		}
+	}
 
 	// 3. TODO: GSLB 정책 확인
 	if h.gslbEngine != nil {

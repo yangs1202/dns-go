@@ -71,4 +71,27 @@ func InitDB() {
 	}
 
 	log.Println("데이터베이스 초기화 완료!")
+
+	// 기본 광고차단 소스 추가
+	defaultSources := []struct {
+		name string
+		url  string
+	}{
+		{
+			name: "AdGuard DNS Filter",
+			url:  "https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt",
+		},
+	}
+
+	for _, s := range defaultSources {
+		_, err := db.Writer.Exec(
+			"INSERT OR IGNORE INTO adblock_sources (name, url, enabled) VALUES (?, ?, 1)",
+			s.name, s.url,
+		)
+		if err != nil {
+			log.Printf("광고차단 소스 추가 실패: %v", err)
+		} else {
+			log.Printf("광고차단 소스 추가: %s", s.name)
+		}
+	}
 }
