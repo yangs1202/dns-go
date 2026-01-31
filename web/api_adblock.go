@@ -17,6 +17,40 @@ type adblockSourceRequest struct {
 	Enabled *bool  `json:"enabled"`
 }
 
+type adblockSourceResponse struct {
+	ID           int64      `json:"id"`
+	Name         string     `json:"name"`
+	URL          string     `json:"url"`
+	Enabled      bool       `json:"enabled"`
+	LastSync     *time.Time `json:"last_sync"`     // null 가능
+	LastModified *string    `json:"last_modified"` // null 가능
+	RuleCount    int64      `json:"rule_count"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+}
+
+func toAdblockSourceResponse(s *model.AdblockSource) adblockSourceResponse {
+	resp := adblockSourceResponse{
+		ID:        s.ID,
+		Name:      s.Name,
+		URL:       s.URL,
+		Enabled:   s.Enabled,
+		RuleCount: s.RuleCount,
+		CreatedAt: s.CreatedAt,
+		UpdatedAt: s.UpdatedAt,
+	}
+
+	if s.LastSync.Valid {
+		resp.LastSync = &s.LastSync.Time
+	}
+
+	if s.LastModified.Valid {
+		resp.LastModified = &s.LastModified.String
+	}
+
+	return resp
+}
+
 func (api *API) listAdblockSources(c *gin.Context) {
 	if api.adblockStorage == nil {
 		respondInternalError(c, "Adblock 스토리지가 초기화되지 않았습니다")
@@ -27,7 +61,12 @@ func (api *API) listAdblockSources(c *gin.Context) {
 		respondInternalError(c, err.Error())
 		return
 	}
-	respondSuccess(c, http.StatusOK, sources)
+
+	responses := make([]adblockSourceResponse, len(sources))
+	for i := range sources {
+		responses[i] = toAdblockSourceResponse(sources[i])
+	}
+	respondSuccess(c, http.StatusOK, responses)
 }
 
 func (api *API) createAdblockSource(c *gin.Context) {
@@ -65,7 +104,7 @@ func (api *API) createAdblockSource(c *gin.Context) {
 		respondInternalError(c, err.Error())
 		return
 	}
-	respondSuccess(c, http.StatusCreated, created)
+	respondSuccess(c, http.StatusCreated, toAdblockSourceResponse(created))
 }
 
 func (api *API) updateAdblockSource(c *gin.Context) {
@@ -114,7 +153,7 @@ func (api *API) updateAdblockSource(c *gin.Context) {
 		respondInternalError(c, err.Error())
 		return
 	}
-	respondSuccess(c, http.StatusOK, updated)
+	respondSuccess(c, http.StatusOK, toAdblockSourceResponse(updated))
 }
 
 func (api *API) deleteAdblockSource(c *gin.Context) {
