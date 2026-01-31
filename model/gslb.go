@@ -37,8 +37,8 @@ type GSLBMember struct {
 type HealthCheck struct {
 	ID                 int64  `json:"id"`
 	MemberID           int64  `json:"member_id"`
-	CheckType          string `json:"check_type"`           // "http", "https", "tcp"
-	Target             string `json:"target"`               // Member IP와 무관하게 독립적으로 지정: "https://example.com/health", "http://10.0.0.1:8080/status", "10.0.0.1:443"
+	CheckType          string `json:"check_type"`           // "http" (URL의 scheme으로 자동 판단), "tcp"
+	Target             string `json:"target"`               // "http://10.0.0.1/health", "https://example.com/health", "10.0.0.1:443"
 	IntervalSec        int64  `json:"interval_sec"`         // 체크 간격 (초)
 	TimeoutSec         int64  `json:"timeout_sec"`          // 타임아웃 (초)
 	HealthyThreshold   int64  `json:"healthy_threshold"`    // 정상 판정 임계값

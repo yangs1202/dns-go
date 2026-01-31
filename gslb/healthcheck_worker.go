@@ -101,7 +101,8 @@ func (w *HealthCheckWorker) runCheck(check *model.HealthCheck, member *model.GSL
 
 func (w *HealthCheckWorker) probe(check *model.HealthCheck, member *model.GSLBMember) error {
 	switch check.CheckType {
-	case "http", "https":
+	case "http":
+		// Target URL의 scheme을 자동 감지 (http:// 또는 https://)
 		client := &http.Client{
 			Timeout: time.Duration(check.TimeoutSec) * time.Second,
 			Transport: &http.Transport{
@@ -125,6 +126,7 @@ func (w *HealthCheckWorker) probe(check *model.HealthCheck, member *model.GSLBMe
 		_ = conn.Close()
 		return nil
 	default:
+		// 기본값: TCP 체크
 		conn, err := net.DialTimeout("tcp", check.Target, time.Duration(check.TimeoutSec)*time.Second)
 		if err != nil {
 			return err
