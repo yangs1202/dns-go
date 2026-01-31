@@ -1,6 +1,7 @@
 package web
 
 import (
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -317,6 +318,12 @@ func (api *API) createMember(c *gin.Context) {
 		return
 	}
 
+	// IP 주소 검증 (포트 포함 불가)
+	if net.ParseIP(req.Address) == nil {
+		respondBadRequest(c, "address는 유효한 IP 주소여야 합니다 (포트 제외)")
+		return
+	}
+
 	enabled := true
 	if req.Enabled != nil {
 		enabled = *req.Enabled
@@ -359,6 +366,12 @@ func (api *API) updateMember(c *gin.Context) {
 	}
 	if strings.TrimSpace(req.Address) == "" {
 		respondBadRequest(c, "address는 필수입니다")
+		return
+	}
+
+	// IP 주소 검증 (포트 포함 불가)
+	if net.ParseIP(req.Address) == nil {
+		respondBadRequest(c, "address는 유효한 IP 주소여야 합니다 (포트 제외)")
 		return
 	}
 

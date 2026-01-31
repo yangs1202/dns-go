@@ -73,9 +73,11 @@ func (e *Engine) Resolve(domain, qtype string, clientIP net.IP) ([]net.IP, uint3
 		return nil, 0, nil
 	}
 
+	// Member.Address는 순수 IP만 포함 (포트 제외)
+	// 예: "10.97.11.18" 또는 "2001:db8::1"
 	ip := net.ParseIP(selected.Address)
 	if ip == nil {
-		return nil, 0, errors.New("멤버 IP 파싱 실패")
+		return nil, 0, errors.New("멤버 IP 파싱 실패: " + selected.Address)
 	}
 	return []net.IP{ip}, uint32(policy.TTL), nil
 }

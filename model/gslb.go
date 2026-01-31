@@ -28,7 +28,7 @@ type GSLBPool struct {
 type GSLBMember struct {
 	ID      int64  `json:"id"`
 	PoolID  int64  `json:"pool_id"`
-	Address string `json:"address"` // "1.2.3.4" 또는 "2001:db8::1"
+	Address string `json:"address"` // IP 주소만: "1.2.3.4" 또는 "2001:db8::1" (포트 제외)
 	Weight  int64  `json:"weight"`  // 가중치 (0-100)
 	Enabled bool   `json:"enabled"`
 }
@@ -38,9 +38,9 @@ type HealthCheck struct {
 	ID                 int64  `json:"id"`
 	MemberID           int64  `json:"member_id"`
 	CheckType          string `json:"check_type"`           // "http", "https", "tcp"
-	Target             string `json:"target"`               // "http://1.2.3.4:80/health" 또는 "1.2.3.4:80"
-	IntervalSec        int64  `json:"interval_sec"`         // 체크 간격
-	TimeoutSec         int64  `json:"timeout_sec"`          // 타임아웃
+	Target             string `json:"target"`               // Member IP와 무관하게 독립적으로 지정: "https://example.com/health", "http://10.0.0.1:8080/status", "10.0.0.1:443"
+	IntervalSec        int64  `json:"interval_sec"`         // 체크 간격 (초)
+	TimeoutSec         int64  `json:"timeout_sec"`          // 타임아웃 (초)
 	HealthyThreshold   int64  `json:"healthy_threshold"`    // 정상 판정 임계값
 	UnhealthyThreshold int64  `json:"unhealthy_threshold"`  // 비정상 판정 임계값
 	Enabled            bool   `json:"enabled"`
