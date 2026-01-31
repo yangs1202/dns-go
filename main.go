@@ -90,12 +90,24 @@ func main() {
 	queryStats := dns.NewQueryStats()
 
 	// DNS 핸들러 초기화
-	handler, err := dns.NewHandler(zoneStorage, recordStorage, resolver, db, queryStats, gslbEngine, adblockFilter, adblockStorage, cfg.Adblock.BlockResponse)
+	handler, err := dns.NewHandler(
+		zoneStorage,
+		recordStorage,
+		resolver,
+		db,
+		queryStats,
+		gslbEngine,
+		adblockFilter,
+		adblockStorage,
+		cfg.Adblock.BlockResponse,
+		cfg.DNS.NSID,    // NSID
+		cfg.DNS.Version, // CHAOS version
+	)
 	if err != nil {
 		log.Fatalf("DNS 핸들러 초기화 실패: %v", err)
 	}
 
-	log.Println("DNS 핸들러 초기화 완료")
+	log.Printf("DNS 핸들러 초기화 완료 (NSID: %s)", cfg.DNS.NSID)
 
 	// DNS 서버 초기화 및 시작
 	server := dns.NewServer(&cfg.DNS, handler)

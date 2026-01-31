@@ -32,7 +32,7 @@ func setupTestHandler(t *testing.T) (*Handler, *storage.Database, func()) {
 
 	// Handler 생성
 	stats := NewQueryStats()
-	handler, err := NewHandler(zoneStorage, recordStorage, resolver, db, stats, nil, nil, nil, "0.0.0.0")
+	handler, err := NewHandler(zoneStorage, recordStorage, resolver, db, stats, nil, nil, nil, "0.0.0.0", "test-server", "DNS-Go Test v1.0")
 	if err != nil {
 		t.Fatalf("핸들러 생성 실패: %v", err)
 	}
@@ -901,6 +901,168 @@ func TestServeDNS_RecursionDesired(t *testing.T) {
 			// RD=0인 경우에만 Rcode 체크 (RD=1은 실제 upstream 필요)
 			if !tt.rd && w.msg.Rcode != tt.expectRcode {
 				t.Errorf("Rcode 예상: %d, 실제: %d (%s)", tt.expectRcode, w.msg.Rcode, tt.description)
+			}
+		})
+	}
+}
+
+// TestServeDNS_NSID는 EDNS0 NSID 지원을 테스트합니다 (RFC 5001)
+func TestServeDNS_NSID(t *testing.T) {
+	handler, db, cleanup := setupTestHandler(t)
+	defer cleanup()
+
+	// Zone과 Record 추가
+	zoneID, _ := db.Writer.Exec(
+		"INSERT INTO zones (name, soa_mname, soa_rname, soa_serial) VALUES (?, ?, ?, ?)",
+		"example.com.", "ns1.example.com.", "admin.example.com.", 2026013101,
+	)
+	zid, _ := zoneID.LastInsertId()
+
+	db.Writer.Exec(
+		"INSERT INTO records (zone_id, name, type, content, ttl) VALUES (?, ?, ?, ?, ?)",
+		zid, "www.example.com.", "A", "192.0.2.1", 300,
+	)
+
+	tests := []struct {
+		name        string
+		requestNSID bool
+		expectNSID  bool
+	}{
+		{
+			name:        "NSID 요청 (+nsid)",
+			requestNSID: true,
+			expectNSID:  true,
+		},
+		{
+			name:        "NSID 미요청",
+			requestNSID: false,
+			expectNSID:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := new(dns.Msg)
+			req.SetQuestion("www.example.com.", dns.TypeA)
+
+			// EDNS0 설정
+			req.SetEdns0(4096, false)
+
+			// NSID 옵션 추가
+			if tt.requestNSID {
+				opt := req.IsEdns0()
+				opt.Option = append(opt.Option, &dns.EDNS0_NSID{Code: dns.EDNS0NSID})
+			}
+
+			w := newMockWriter("192.0.2.100")
+			handler.ServeDNS(w, req)
+
+			// NSID 응답 확인
+			opt := w.msg.IsEdns0()
+			if opt == nil {
+				t.Fatal("EDNS0 OPT 레코드가 없음")
+			}
+
+			nsidFound := false
+			for _, option := range opt.Option {
+				if nsid, ok := option.(*dns.EDNS0_NSID); ok {
+					nsidFound = true
+					if nsid.Nsid != "test-server" {
+						t.Errorf("NSID 값 예상: test-server, 실제: %s", nsid.Nsid)
+					}
+				}
+			}
+
+			if tt.expectNSID && !nsidFound {
+				t.Error("NSID 요청했지만 응답에 없음")
+			}
+			if !tt.expectNSID && nsidFound {
+				t.Error("NSID 요청 안 했는데 응답에 포함됨")
+			}
+		})
+	}
+}
+
+// TestServeDNS_CHAOS는 CHAOS 클래스 쿼리를 테스트합니다
+func TestServeDNS_CHAOS(t *testing.T) {
+	handler, _, cleanup := setupTestHandler(t)
+	defer cleanup()
+
+	tests := []struct {
+		name           string
+		domain         string
+		expectAnswer   bool
+		expectText     string
+		description    string
+	}{
+		{
+			name:         "version.bind TXT",
+			domain:       "version.bind.",
+			expectAnswer: true,
+			expectText:   "DNS-Go Test v1.0",
+			description:  "CHAOS version.bind 쿼리",
+		},
+		{
+			name:         "version.server TXT",
+			domain:       "version.server.",
+			expectAnswer: true,
+			expectText:   "DNS-Go Test v1.0",
+			description:  "CHAOS version.server 쿼리",
+		},
+		{
+			name:         "hostname.bind TXT",
+			domain:       "hostname.bind.",
+			expectAnswer: true,
+			expectText:   "test-server",
+			description:  "CHAOS hostname.bind 쿼리",
+		},
+		{
+			name:         "id.server TXT",
+			domain:       "id.server.",
+			expectAnswer: true,
+			expectText:   "test-server",
+			description:  "CHAOS id.server 쿼리",
+		},
+		{
+			name:         "unsupported CHAOS",
+			domain:       "unknown.bind.",
+			expectAnswer: false,
+			description:  "지원하지 않는 CHAOS 쿼리 - REFUSED",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := new(dns.Msg)
+			req.SetQuestion(tt.domain, dns.TypeTXT)
+			req.Question[0].Qclass = dns.ClassCHAOS
+
+			w := newMockWriter("192.0.2.100")
+			handler.ServeDNS(w, req)
+
+			if tt.expectAnswer {
+				if len(w.msg.Answer) == 0 {
+					t.Errorf("응답 예상했지만 Answer가 비어있음 (%s)", tt.description)
+					return
+				}
+
+				txt, ok := w.msg.Answer[0].(*dns.TXT)
+				if !ok {
+					t.Errorf("TXT 레코드가 아님")
+					return
+				}
+
+				if len(txt.Txt) == 0 || txt.Txt[0] != tt.expectText {
+					t.Errorf("TXT 예상: %s, 실제: %v", tt.expectText, txt.Txt)
+				}
+
+				if txt.Hdr.Class != dns.ClassCHAOS {
+					t.Errorf("Class 예상: CHAOS, 실제: %s", dns.ClassToString[txt.Hdr.Class])
+				}
+			} else {
+				if w.msg.Rcode != dns.RcodeRefused {
+					t.Errorf("Rcode 예상: REFUSED, 실제: %s", dns.RcodeToString[w.msg.Rcode])
+				}
 			}
 		})
 	}

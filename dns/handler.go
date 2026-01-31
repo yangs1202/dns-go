@@ -25,6 +25,8 @@ type Handler struct {
 	adblockFilter   *adblock.Filter
 	adblockStorage  *storage.AdblockStorage
 	adblockResponse string
+	nsid            string // RFC 5001 NSID (Name Server Identifier)
+	version         string // CHAOS TXT version.bind 응답
 }
 
 // NewHandler는 새로운 DNS 핸들러를 생성합니다
@@ -38,6 +40,8 @@ func NewHandler(
 	adblockFilter *adblock.Filter,
 	adblockStorage *storage.AdblockStorage,
 	adblockResponse string,
+	nsid string,
+	version string,
 ) (*Handler, error) {
 	// DB에서 캐시 설정 로드
 	var enabled, maxSize, defaultTTL, negativeTTL int64
@@ -63,12 +67,85 @@ func NewHandler(
 		adblockFilter:   adblockFilter,
 		adblockStorage:  adblockStorage,
 		adblockResponse: adblockResponse,
+		nsid:            nsid,
+		version:         version,
 	}
 
 	// Prefetch 콜백 함수 설정
 	cache.SetPrefetchFunc(handler.handlePrefetch)
 
 	return handler, nil
+}
+
+// handleCHAOS는 CHAOS 클래스 쿼리를 처리합니다
+func (h *Handler) handleCHAOS(w dns.ResponseWriter, req *dns.Msg, resp *dns.Msg) {
+	question := req.Question[0]
+	domain := strings.ToLower(question.Name)
+
+	// version.bind TXT 쿼리
+	if (domain == "version.bind." || domain == "version.server.") && question.Qtype == dns.TypeTXT {
+		log.Printf("[DNS] CHAOS version.bind query")
+		resp.Authoritative = true
+		resp.Answer = []dns.RR{
+			&dns.TXT{
+				Hdr: dns.RR_Header{
+					Name:   question.Name,
+					Rrtype: dns.TypeTXT,
+					Class:  dns.ClassCHAOS,
+					Ttl:    0, // CHAOS 응답은 TTL=0
+				},
+				Txt: []string{h.version},
+			},
+		}
+		resp.Rcode = dns.RcodeSuccess
+		w.WriteMsg(resp)
+		return
+	}
+
+	// hostname.bind TXT 쿼리
+	if (domain == "hostname.bind." || domain == "hostname.server.") && question.Qtype == dns.TypeTXT {
+		log.Printf("[DNS] CHAOS hostname.bind query")
+		resp.Authoritative = true
+		resp.Answer = []dns.RR{
+			&dns.TXT{
+				Hdr: dns.RR_Header{
+					Name:   question.Name,
+					Rrtype: dns.TypeTXT,
+					Class:  dns.ClassCHAOS,
+					Ttl:    0,
+				},
+				Txt: []string{h.nsid},
+			},
+		}
+		resp.Rcode = dns.RcodeSuccess
+		w.WriteMsg(resp)
+		return
+	}
+
+	// id.server TXT 쿼리
+	if domain == "id.server." && question.Qtype == dns.TypeTXT {
+		log.Printf("[DNS] CHAOS id.server query")
+		resp.Authoritative = true
+		resp.Answer = []dns.RR{
+			&dns.TXT{
+				Hdr: dns.RR_Header{
+					Name:   question.Name,
+					Rrtype: dns.TypeTXT,
+					Class:  dns.ClassCHAOS,
+					Ttl:    0,
+				},
+				Txt: []string{h.nsid},
+			},
+		}
+		resp.Rcode = dns.RcodeSuccess
+		w.WriteMsg(resp)
+		return
+	}
+
+	// 지원하지 않는 CHAOS 쿼리 - REFUSED
+	log.Printf("[DNS] Unsupported CHAOS query: %s", domain)
+	resp.Rcode = dns.RcodeRefused
+	w.WriteMsg(resp)
 }
 
 // setEDNS0는 EDNS0 OPT 레코드를 응답에 추가합니다
@@ -79,6 +156,26 @@ func (h *Handler) setEDNS0(resp *dns.Msg, req *dns.Msg) {
 		// 이유: IPv6 MTU(1280) - IP/UDP 헤더(48) = 1232
 		// RFC 8899 권장, IP fragmentation 완전 방지
 		resp.SetEdns0(1232, false)
+
+		// RFC 5001: NSID (Name Server Identifier) 지원
+		// 클라이언트가 NSID 요청하면 응답에 포함
+		nsidRequested := false
+		for _, option := range opt.Option {
+			if _, ok := option.(*dns.EDNS0_NSID); ok {
+				nsidRequested = true
+				break
+			}
+		}
+
+		if nsidRequested && h.nsid != "" {
+			if respOpt := resp.IsEdns0(); respOpt != nil {
+				nsidOpt := &dns.EDNS0_NSID{
+					Code: dns.EDNS0NSID,
+					Nsid: h.nsid,
+				}
+				respOpt.Option = append(respOpt.Option, nsidOpt)
+			}
+		}
 	}
 }
 
@@ -111,7 +208,13 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	domain := question.Name
 	qtype := dns.TypeToString[question.Qtype]
 
-	log.Printf("[DNS] Query: %s %s", domain, qtype)
+	log.Printf("[DNS] Query: %s %s (class: %s)", domain, qtype, dns.ClassToString[question.Qclass])
+
+	// CHAOS 클래스 처리 (version.bind, hostname.bind 등)
+	if question.Qclass == dns.ClassCHAOS {
+		h.handleCHAOS(w, req, resp)
+		return
+	}
 
 	// ANY 쿼리 차단 (RFC 8482 - DDoS 증폭 공격 방지)
 	if question.Qtype == dns.TypeANY {

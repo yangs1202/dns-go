@@ -26,6 +26,8 @@ type DNSConfig struct {
 	TCP       bool   `yaml:"tcp"`
 	UDP       bool   `yaml:"udp"`
 	UDPSize   int    `yaml:"udp_size"`   // EDNS0 UDP 버퍼 크기 (기본: 1232)
+	NSID      string `yaml:"nsid"`       // EDNS0 NSID (Name Server Identifier)
+	Version   string `yaml:"version"`    // CHAOS TXT version.bind 응답
 }
 
 // UpstreamConfig는 업스트림 리졸버 설정입니다
@@ -79,6 +81,17 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.DNS.UDPSize == 0 {
 		cfg.DNS.UDPSize = 1232 // RFC 6891 권장 (DNSSEC 지원)
+	}
+	if cfg.DNS.NSID == "" {
+		// 기본값: hostname 사용
+		if hostname, err := os.Hostname(); err == nil {
+			cfg.DNS.NSID = hostname
+		} else {
+			cfg.DNS.NSID = "dns-go"
+		}
+	}
+	if cfg.DNS.Version == "" {
+		cfg.DNS.Version = "DNS-Go v0.2.0" // 기본 버전
 	}
 	if cfg.Web.Port == 0 {
 		cfg.Web.Port = 8080

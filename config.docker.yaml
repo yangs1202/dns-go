@@ -4,6 +4,8 @@ dns:
   tcp: true
   udp: true
   udp_size: 1232  # EDNS0 UDP 버퍼 크기 (1232=권장, 1410=Cloudflare, 4096=최대)
+  nsid: ""        # EDNS0 NSID (비어있으면 hostname 사용)
+  version: ""     # CHAOS version.bind 응답 (비어있으면 "DNS-Go v0.2.0")
 
 upstream:
   timeout: 5s
