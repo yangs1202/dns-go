@@ -15,6 +15,7 @@
   - UDP/TCP 동시 지원
   - miekg/dns 라이브러리 활용
   - EDNS Client Subnet 지원
+  - **Zone Fallback**: Zone 있지만 Record 없을 때 Upstream으로 자동 Fallback
 
 - **업스트림 리졸버**
   - DB 기반 서버 관리
@@ -29,6 +30,37 @@
 
 - **지원 레코드 타입**
   - A, AAAA, CNAME, MX, TXT, NS, SOA
+
+### Zone Fallback 동작
+
+DNS 서버는 Zone별로 Upstream Fallback을 제어할 수 있습니다:
+
+#### Fallback 허용 (allow_fallback=true, 기본값)
+1. **Zone + Record 있음**: Authoritative 응답 (AA=1)
+2. **Zone 있지만 Record 없음**: Upstream Fallback (AA=0)
+3. **Zone 없음**: Upstream Fallback (AA=0)
+
+**사용 사례:** 내부 도메인의 일부 레코드만 오버라이드하고 나머지는 공개 DNS 조회
+
+#### Fallback 비허용 (allow_fallback=false)
+1. **Zone + Record 있음**: Authoritative 응답 (AA=1)
+2. **Zone 있지만 Record 없음**: NXDOMAIN 반환
+3. **Zone 없음**: Upstream Fallback (AA=0)
+
+**사용 사례:** 특정 도메인을 완전히 제어하여 등록되지 않은 서브도메인 접근 차단
+
+**예시:**
+```bash
+# Fallback 허용 (allow_fallback=true)
+curl -X POST http://localhost:8080/api/zones -d '{"name":"example.com.","allow_fallback":true}'
+dig @localhost api.example.com  # → 10.0.0.100 (로컬, AA=1)
+dig @localhost www.example.com  # → Upstream 응답 (AA=0)
+
+# Fallback 비허용 (allow_fallback=false)
+curl -X POST http://localhost:8080/api/zones -d '{"name":"internal.local.","allow_fallback":false}'
+dig @localhost api.internal.local  # → 10.0.0.100 (로컬, AA=1)
+dig @localhost www.internal.local  # → NXDOMAIN (등록되지 않음)
+```
 
 ## 빌드 및 실행
 

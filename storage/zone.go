@@ -75,7 +75,7 @@ func NewZoneStorage(db *Database) *ZoneStorage {
 // GetZone은 ID로 Zone을 조회합니다
 func (s *ZoneStorage) GetZone(id int64) (*model.Zone, error) {
 	query := `SELECT id, name, soa_mname, soa_rname, soa_serial, soa_refresh, soa_retry, soa_expire, soa_minimum,
-	                 enabled, created_at, updated_at
+	                 enabled, allow_fallback, created_at, updated_at
 	          FROM zones WHERE id = ?`
 
 	var zone model.Zone
@@ -90,6 +90,7 @@ func (s *ZoneStorage) GetZone(id int64) (*model.Zone, error) {
 		&zone.SOAExpire,
 		&zone.SOAMinimum,
 		&zone.Enabled,
+		&zone.AllowFallback,
 		&zone.CreatedAt,
 		&zone.UpdatedAt,
 	)
@@ -114,7 +115,7 @@ func (s *ZoneStorage) GetZoneByName(name string) (*model.Zone, error) {
 
 	// DB 조회
 	query := `SELECT id, name, soa_mname, soa_rname, soa_serial, soa_refresh, soa_retry, soa_expire, soa_minimum,
-	                 enabled, created_at, updated_at
+	                 enabled, allow_fallback, created_at, updated_at
 	          FROM zones WHERE name = ? AND enabled = 1`
 
 	var zone model.Zone
@@ -129,6 +130,7 @@ func (s *ZoneStorage) GetZoneByName(name string) (*model.Zone, error) {
 		&zone.SOAExpire,
 		&zone.SOAMinimum,
 		&zone.Enabled,
+		&zone.AllowFallback,
 		&zone.CreatedAt,
 		&zone.UpdatedAt,
 	)
@@ -147,7 +149,7 @@ func (s *ZoneStorage) GetZoneByName(name string) (*model.Zone, error) {
 // ListZones는 모든 Zone을 조회합니다
 func (s *ZoneStorage) ListZones() ([]*model.Zone, error) {
 	query := `SELECT id, name, soa_mname, soa_rname, soa_serial, soa_refresh, soa_retry, soa_expire, soa_minimum,
-	                 enabled, created_at, updated_at
+	                 enabled, allow_fallback, created_at, updated_at
 	          FROM zones ORDER BY name`
 
 	rows, err := s.db.Reader.Query(query)
@@ -170,6 +172,7 @@ func (s *ZoneStorage) ListZones() ([]*model.Zone, error) {
 			&zone.SOAExpire,
 			&zone.SOAMinimum,
 			&zone.Enabled,
+			&zone.AllowFallback,
 			&zone.CreatedAt,
 			&zone.UpdatedAt,
 		)
@@ -208,8 +211,8 @@ func (s *ZoneStorage) CreateZone(zone *model.Zone) (int64, error) {
 		zone.SOAMinimum = 300
 	}
 
-	query := `INSERT INTO zones (name, soa_mname, soa_rname, soa_serial, soa_refresh, soa_retry, soa_expire, soa_minimum, enabled)
-	          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO zones (name, soa_mname, soa_rname, soa_serial, soa_refresh, soa_retry, soa_expire, soa_minimum, enabled, allow_fallback)
+	          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	result, err := s.db.Writer.Exec(query,
 		zone.Name,
@@ -221,6 +224,7 @@ func (s *ZoneStorage) CreateZone(zone *model.Zone) (int64, error) {
 		zone.SOAExpire,
 		zone.SOAMinimum,
 		zone.Enabled,
+		zone.AllowFallback,
 	)
 
 	if err != nil {
@@ -242,7 +246,7 @@ func (s *ZoneStorage) CreateZone(zone *model.Zone) (int64, error) {
 func (s *ZoneStorage) UpdateZone(zone *model.Zone) error {
 	query := `UPDATE zones
 	          SET name = ?, soa_mname = ?, soa_rname = ?, soa_serial = ?, soa_refresh = ?, soa_retry = ?,
-	              soa_expire = ?, soa_minimum = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP
+	              soa_expire = ?, soa_minimum = ?, enabled = ?, allow_fallback = ?, updated_at = CURRENT_TIMESTAMP
 	          WHERE id = ?`
 
 	result, err := s.db.Writer.Exec(query,
@@ -255,6 +259,7 @@ func (s *ZoneStorage) UpdateZone(zone *model.Zone) error {
 		zone.SOAExpire,
 		zone.SOAMinimum,
 		zone.Enabled,
+		zone.AllowFallback,
 		zone.ID,
 	)
 

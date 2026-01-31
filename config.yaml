@@ -1,6 +1,6 @@
 dns:
   listen: "0.0.0.0"
-  port: 53
+  port: 5300
   tcp: true
   udp: true
   udp_size: 1232  # EDNS0 UDP 버퍼 크기 (1232=권장, 1410=Cloudflare, 4096=최대)

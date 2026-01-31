@@ -389,8 +389,17 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 			return
 		}
 
-		// 레코드가 없으면 NXDOMAIN (Zone은 존재하지만 레코드가 없음)
-		log.Printf("[DNS] No records found for %s %s in zone %s", domain, qtype, zone.Name)
+		// Zone은 있지만 Record가 없는 경우
+		if !zone.AllowFallback {
+			// Fallback 비활성화 → NXDOMAIN 반환
+			log.Printf("[DNS] Zone %s exists but no record for %s %s, returning NXDOMAIN (fallback disabled)", zone.Name, domain, qtype)
+			resp.Rcode = dns.RcodeNameError
+			w.WriteMsg(resp)
+			return
+		}
+
+		// Fallback 허용 → Upstream으로 포워딩
+		log.Printf("[DNS] Zone %s exists but no record for %s %s, falling back to upstream", zone.Name, domain, qtype)
 	}
 
 	// 5. Zone 또는 Record가 없으면 업스트림 포워딩

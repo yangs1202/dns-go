@@ -17,6 +17,7 @@ func (db *Database) Migrate() error {
 			soa_expire INTEGER DEFAULT 86400,
 			soa_minimum INTEGER DEFAULT 300,
 			enabled INTEGER DEFAULT 1,
+			allow_fallback INTEGER DEFAULT 1,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
@@ -143,10 +144,20 @@ func (db *Database) Migrate() error {
 		 VALUES (1, 1, 10000, 300, 60, 86400, 300, 0.9)`,
 	}
 
+	// 기존 테이블에 컬럼 추가 (ALTER TABLE은 실패해도 계속 진행)
+	migrations := []string{
+		`ALTER TABLE zones ADD COLUMN allow_fallback INTEGER DEFAULT 1`,
+	}
+
 	for _, schema := range schemas {
 		if _, err := db.Writer.Exec(schema); err != nil {
 			return fmt.Errorf("스키마 실행 실패: %w\n%s", err, schema)
 		}
+	}
+
+	// 마이그레이션 실행 (실패해도 무시)
+	for _, migration := range migrations {
+		db.Writer.Exec(migration)
 	}
 
 	return nil

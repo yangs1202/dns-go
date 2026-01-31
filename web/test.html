@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DNS-Go API 테스트</title>
+    <title>DNS-Go API 테스트 대시보드</title>
     <style>
         * {
             margin: 0;
@@ -17,7 +17,7 @@
             padding: 20px;
         }
         .container {
-            max-width: 1400px;
+            max-width: 1600px;
             margin: 0 auto;
         }
         h1 {
@@ -27,11 +27,40 @@
             font-size: 2.5em;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
         }
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .tab {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        .tab:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        .tab.active {
+            background: white;
+            color: #667eea;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
         .grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
             gap: 20px;
-            margin-bottom: 30px;
         }
         .card {
             background: white;
@@ -54,6 +83,7 @@
             margin-bottom: 5px;
             color: #333;
             font-weight: 600;
+            font-size: 14px;
         }
         input, select, textarea {
             width: 100%;
@@ -69,20 +99,21 @@
         }
         textarea {
             resize: vertical;
-            min-height: 100px;
+            min-height: 80px;
             font-family: 'Courier New', monospace;
         }
         button {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
-            padding: 12px 30px;
+            padding: 12px 24px;
             border-radius: 6px;
             cursor: pointer;
             font-size: 16px;
             font-weight: 600;
-            width: 100%;
             transition: transform 0.2s, box-shadow 0.2s;
+            margin-right: 10px;
+            margin-top: 5px;
         }
         button:hover {
             transform: translateY(-2px);
@@ -90,6 +121,12 @@
         }
         button:active {
             transform: translateY(0);
+        }
+        button.danger {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        button.success {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
         }
         .response {
             background: #f8f9fa;
@@ -116,28 +153,6 @@
             border-color: #dc3545;
             background: #f8d7da;
         }
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-top: 15px;
-        }
-        .stat-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 20px;
-            border-radius: 8px;
-            text-align: center;
-        }
-        .stat-value {
-            font-size: 2em;
-            font-weight: bold;
-            margin-top: 10px;
-        }
-        .stat-label {
-            font-size: 0.9em;
-            opacity: 0.9;
-        }
         .method-badge {
             display: inline-block;
             padding: 4px 8px;
@@ -150,123 +165,489 @@
         .method-post { background: #007bff; color: white; }
         .method-put { background: #ffc107; color: black; }
         .method-delete { background: #dc3545; color: white; }
+        .hint {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+            font-style: italic;
+        }
+        .full-width {
+            grid-column: 1 / -1;
+        }
+        .stats-display {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .stat-item {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+        }
+        .stat-label {
+            font-size: 0.85em;
+            opacity: 0.9;
+            margin-top: 5px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🚀 DNS-Go API 테스트 대시보드</h1>
 
-        <div class="grid">
-            <!-- 통계 조회 -->
-            <div class="card">
-                <h2><span class="method-badge method-get">GET</span>서버 통계</h2>
-                <button onclick="getStats()">통계 조회</button>
-                <div id="stats-response" class="response" style="display:none;"></div>
-            </div>
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('stats')">📊 통계</button>
+            <button class="tab" onclick="switchTab('zones')">🌐 Zones</button>
+            <button class="tab" onclick="switchTab('records')">📝 Records</button>
+            <button class="tab" onclick="switchTab('upstream')">⬆️ Upstream</button>
+            <button class="tab" onclick="switchTab('cache')">💾 Cache</button>
+            <button class="tab" onclick="switchTab('gslb')">🌍 GSLB</button>
+            <button class="tab" onclick="switchTab('adblock')">🛡️ AdBlock</button>
+            <button class="tab" onclick="switchTab('fallback')">🔄 Zone Fallback</button>
+        </div>
 
-            <!-- Zone 목록 -->
-            <div class="card">
-                <h2><span class="method-badge method-get">GET</span>Zone 목록</h2>
-                <button onclick="getZones()">Zone 목록 조회</button>
-                <div id="zones-response" class="response" style="display:none;"></div>
+        <!-- 통계 탭 -->
+        <div id="stats-tab" class="tab-content active">
+            <div class="grid">
+                <div class="card full-width">
+                    <h2><span class="method-badge method-get">GET</span>서버 통계</h2>
+                    <button onclick="getStats()">통계 조회</button>
+                    <div id="stats-display"></div>
+                </div>
             </div>
+        </div>
 
-            <!-- Zone 생성 -->
-            <div class="card">
-                <h2><span class="method-badge method-post">POST</span>Zone 생성</h2>
-                <div class="form-group">
-                    <label>Zone 이름 (FQDN)</label>
-                    <input type="text" id="zone-name" placeholder="example.com." value="test.local.">
+        <!-- Zones 탭 -->
+        <div id="zones-tab" class="tab-content">
+            <div class="grid">
+                <div class="card">
+                    <h2><span class="method-badge method-get">GET</span>Zone 목록</h2>
+                    <button onclick="listZones()">Zone 목록 조회</button>
+                    <div id="zones-list-response" class="response" style="display:none;"></div>
                 </div>
-                <div class="form-group">
-                    <label>SOA MNAME</label>
-                    <input type="text" id="zone-mname" placeholder="ns1.example.com." value="ns1.test.local.">
+
+                <div class="card">
+                    <h2><span class="method-badge method-post">POST</span>Zone 생성</h2>
+                    <div class="form-group">
+                        <label>Zone 이름</label>
+                        <input type="text" id="create-zone-name" placeholder="example.com.">
+                        <div class="hint">FQDN 형식으로 입력 (끝에 . 필수)</div>
+                    </div>
+                    <div class="form-group">
+                        <label>SOA MNAME</label>
+                        <input type="text" id="create-zone-mname" placeholder="ns1.example.com.">
+                    </div>
+                    <div class="form-group">
+                        <label>SOA RNAME</label>
+                        <input type="text" id="create-zone-rname" placeholder="admin.example.com.">
+                    </div>
+                    <div class="form-group">
+                        <label>Upstream Fallback</label>
+                        <select id="create-zone-fallback">
+                            <option value="true">허용 (Record 없으면 Upstream 조회)</option>
+                            <option value="false">비허용 (Record 없으면 NXDOMAIN)</option>
+                        </select>
+                        <div class="hint">Zone에 레코드가 없을 때 동작 방식</div>
+                    </div>
+                    <button onclick="createZone()">Zone 생성</button>
+                    <div id="create-zone-response" class="response" style="display:none;"></div>
                 </div>
-                <div class="form-group">
-                    <label>SOA RNAME</label>
-                    <input type="text" id="zone-rname" placeholder="admin.example.com." value="admin.test.local.">
+
+                <div class="card">
+                    <h2><span class="method-badge method-get">GET</span>Zone 조회</h2>
+                    <div class="form-group">
+                        <label>Zone ID</label>
+                        <input type="number" id="get-zone-id" placeholder="1">
+                    </div>
+                    <button onclick="getZone()">Zone 조회</button>
+                    <div id="get-zone-response" class="response" style="display:none;"></div>
                 </div>
-                <button onclick="createZone()">Zone 생성</button>
-                <div id="create-zone-response" class="response" style="display:none;"></div>
+
+                <div class="card">
+                    <h2><span class="method-badge method-put">PUT</span>Zone 수정</h2>
+                    <div class="form-group">
+                        <label>Zone ID</label>
+                        <input type="number" id="update-zone-id" placeholder="1">
+                    </div>
+                    <div class="form-group">
+                        <label>활성화</label>
+                        <select id="update-zone-enabled">
+                            <option value="true">활성</option>
+                            <option value="false">비활성</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Upstream Fallback</label>
+                        <select id="update-zone-fallback">
+                            <option value="true">허용</option>
+                            <option value="false">비허용</option>
+                        </select>
+                    </div>
+                    <button onclick="updateZone()">Zone 수정</button>
+                    <div id="update-zone-response" class="response" style="display:none;"></div>
+                </div>
+
+                <div class="card">
+                    <h2><span class="method-badge method-delete">DELETE</span>Zone 삭제</h2>
+                    <div class="form-group">
+                        <label>Zone ID</label>
+                        <input type="number" id="delete-zone-id" placeholder="1">
+                    </div>
+                    <button class="danger" onclick="deleteZone()">Zone 삭제</button>
+                    <div id="delete-zone-response" class="response" style="display:none;"></div>
+                </div>
             </div>
+        </div>
 
-            <!-- Record 생성 -->
-            <div class="card">
-                <h2><span class="method-badge method-post">POST</span>Record 생성</h2>
-                <div class="form-group">
-                    <label>Zone ID</label>
-                    <input type="number" id="record-zone-id" placeholder="1" value="1">
+        <!-- Records 탭 -->
+        <div id="records-tab" class="tab-content">
+            <div class="grid">
+                <div class="card">
+                    <h2><span class="method-badge method-get">GET</span>Record 목록</h2>
+                    <div class="form-group">
+                        <label>Zone ID</label>
+                        <input type="number" id="list-records-zone-id" placeholder="1">
+                    </div>
+                    <button onclick="listRecords()">Record 목록 조회</button>
+                    <div id="records-list-response" class="response" style="display:none;"></div>
                 </div>
-                <div class="form-group">
-                    <label>레코드 이름</label>
-                    <input type="text" id="record-name" placeholder="www.example.com." value="www.test.local.">
+
+                <div class="card">
+                    <h2><span class="method-badge method-post">POST</span>Record 생성</h2>
+                    <div class="form-group">
+                        <label>Zone ID</label>
+                        <input type="number" id="create-record-zone-id" placeholder="1">
+                    </div>
+                    <div class="form-group">
+                        <label>레코드 이름</label>
+                        <input type="text" id="create-record-name" placeholder="www.example.com.">
+                    </div>
+                    <div class="form-group">
+                        <label>타입</label>
+                        <select id="create-record-type">
+                            <option value="A">A</option>
+                            <option value="AAAA">AAAA</option>
+                            <option value="CNAME">CNAME</option>
+                            <option value="MX">MX</option>
+                            <option value="TXT">TXT</option>
+                            <option value="NS">NS</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Content</label>
+                        <input type="text" id="create-record-content" placeholder="192.0.2.1">
+                    </div>
+                    <div class="form-group">
+                        <label>TTL</label>
+                        <input type="number" id="create-record-ttl" value="300">
+                    </div>
+                    <div class="form-group">
+                        <label>Priority (MX만)</label>
+                        <input type="number" id="create-record-priority" value="0">
+                    </div>
+                    <button onclick="createRecord()">Record 생성</button>
+                    <div id="create-record-response" class="response" style="display:none;"></div>
                 </div>
-                <div class="form-group">
-                    <label>타입</label>
-                    <select id="record-type">
-                        <option value="A">A</option>
-                        <option value="AAAA">AAAA</option>
-                        <option value="CNAME">CNAME</option>
-                        <option value="MX">MX</option>
-                        <option value="TXT">TXT</option>
-                    </select>
+
+                <div class="card">
+                    <h2><span class="method-badge method-put">PUT</span>Record 수정</h2>
+                    <div class="form-group">
+                        <label>Record ID</label>
+                        <input type="number" id="update-record-id" placeholder="1">
+                    </div>
+                    <div class="form-group">
+                        <label>Content</label>
+                        <input type="text" id="update-record-content" placeholder="192.0.2.2">
+                    </div>
+                    <div class="form-group">
+                        <label>TTL</label>
+                        <input type="number" id="update-record-ttl" value="600">
+                    </div>
+                    <button onclick="updateRecord()">Record 수정</button>
+                    <div id="update-record-response" class="response" style="display:none;"></div>
                 </div>
-                <div class="form-group">
-                    <label>Content</label>
-                    <input type="text" id="record-content" placeholder="192.0.2.1" value="192.168.1.100">
+
+                <div class="card">
+                    <h2><span class="method-badge method-delete">DELETE</span>Record 삭제</h2>
+                    <div class="form-group">
+                        <label>Record ID</label>
+                        <input type="number" id="delete-record-id" placeholder="1">
+                    </div>
+                    <button class="danger" onclick="deleteRecord()">Record 삭제</button>
+                    <div id="delete-record-response" class="response" style="display:none;"></div>
                 </div>
-                <div class="form-group">
-                    <label>TTL</label>
-                    <input type="number" id="record-ttl" placeholder="300" value="300">
+            </div>
+        </div>
+
+        <!-- Upstream 탭 -->
+        <div id="upstream-tab" class="tab-content">
+            <div class="grid">
+                <div class="card">
+                    <h2><span class="method-badge method-get">GET</span>Upstream 목록</h2>
+                    <button onclick="listUpstreams()">Upstream 목록 조회</button>
+                    <div id="upstreams-list-response" class="response" style="display:none;"></div>
                 </div>
-                <button onclick="createRecord()">Record 생성</button>
-                <div id="create-record-response" class="response" style="display:none;"></div>
-            </div>
 
-            <!-- Upstream 서버 -->
-            <div class="card">
-                <h2><span class="method-badge method-get">GET</span>Upstream 서버</h2>
-                <button onclick="getUpstreams()">Upstream 목록</button>
-                <div id="upstreams-response" class="response" style="display:none;"></div>
-            </div>
-
-            <!-- 캐시 통계 -->
-            <div class="card">
-                <h2><span class="method-badge method-get">GET</span>캐시 통계</h2>
-                <button onclick="getCacheStats()">캐시 통계 조회</button>
-                <div id="cache-stats-response" class="response" style="display:none;"></div>
-            </div>
-
-            <!-- 캐시 초기화 -->
-            <div class="card">
-                <h2><span class="method-badge method-post">POST</span>캐시 초기화</h2>
-                <div class="form-group">
-                    <label>도메인 (선택사항)</label>
-                    <input type="text" id="cache-domain" placeholder="example.com. (비우면 전체 초기화)">
+                <div class="card">
+                    <h2><span class="method-badge method-post">POST</span>Upstream 생성</h2>
+                    <div class="form-group">
+                        <label>서버 주소</label>
+                        <input type="text" id="create-upstream-address" placeholder="8.8.8.8:53">
+                    </div>
+                    <div class="form-group">
+                        <label>프로토콜</label>
+                        <select id="create-upstream-protocol">
+                            <option value="udp">UDP</option>
+                            <option value="tcp">TCP</option>
+                            <option value="tcp-tls">TCP-TLS</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>우선순위</label>
+                        <input type="number" id="create-upstream-priority" value="10">
+                    </div>
+                    <button onclick="createUpstream()">Upstream 생성</button>
+                    <div id="create-upstream-response" class="response" style="display:none;"></div>
                 </div>
-                <button onclick="clearCache()">캐시 초기화</button>
-                <div id="clear-cache-response" class="response" style="display:none;"></div>
-            </div>
 
-            <!-- GSLB 정책 -->
-            <div class="card">
-                <h2><span class="method-badge method-get">GET</span>GSLB 정책</h2>
-                <button onclick="getGSLBPolicies()">GSLB 정책 조회</button>
-                <div id="gslb-response" class="response" style="display:none;"></div>
-            </div>
+                <div class="card">
+                    <h2><span class="method-badge method-put">PUT</span>Upstream 수정</h2>
+                    <div class="form-group">
+                        <label>Upstream ID</label>
+                        <input type="number" id="update-upstream-id" placeholder="1">
+                    </div>
+                    <div class="form-group">
+                        <label>활성화</label>
+                        <select id="update-upstream-enabled">
+                            <option value="true">활성</option>
+                            <option value="false">비활성</option>
+                        </select>
+                    </div>
+                    <button onclick="updateUpstream()">Upstream 수정</button>
+                    <div id="update-upstream-response" class="response" style="display:none;"></div>
+                </div>
 
-            <!-- Adblock 상태 -->
-            <div class="card">
-                <h2><span class="method-badge method-get">GET</span>광고차단 상태</h2>
-                <button onclick="getAdblockStatus()">Adblock 상태</button>
-                <div id="adblock-response" class="response" style="display:none;"></div>
-            </div>
+                <div class="card">
+                    <h2><span class="method-badge method-post">POST</span>Upstream 테스트</h2>
+                    <div class="form-group">
+                        <label>Upstream ID</label>
+                        <input type="number" id="test-upstream-id" placeholder="1">
+                    </div>
+                    <button class="success" onclick="testUpstream()">연결 테스트</button>
+                    <div id="test-upstream-response" class="response" style="display:none;"></div>
+                </div>
 
-            <!-- Health Check -->
-            <div class="card">
-                <h2><span class="method-badge method-get">GET</span>헬스체크 상태</h2>
-                <button onclick="getHealth()">헬스 상태 조회</button>
-                <div id="health-response" class="response" style="display:none;"></div>
+                <div class="card">
+                    <h2><span class="method-badge method-delete">DELETE</span>Upstream 삭제</h2>
+                    <div class="form-group">
+                        <label>Upstream ID</label>
+                        <input type="number" id="delete-upstream-id" placeholder="1">
+                    </div>
+                    <button class="danger" onclick="deleteUpstream()">Upstream 삭제</button>
+                    <div id="delete-upstream-response" class="response" style="display:none;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cache 탭 -->
+        <div id="cache-tab" class="tab-content">
+            <div class="grid">
+                <div class="card">
+                    <h2><span class="method-badge method-get">GET</span>캐시 통계</h2>
+                    <button onclick="getCacheStats()">캐시 통계 조회</button>
+                    <div id="cache-stats-response" class="response" style="display:none;"></div>
+                </div>
+
+                <div class="card">
+                    <h2><span class="method-badge method-get">GET</span>캐시 설정</h2>
+                    <button onclick="getCacheSettings()">캐시 설정 조회</button>
+                    <div id="cache-settings-response" class="response" style="display:none;"></div>
+                </div>
+
+                <div class="card">
+                    <h2><span class="method-badge method-put">PUT</span>캐시 설정 수정</h2>
+                    <div class="form-group">
+                        <label>L1 Max Size</label>
+                        <input type="number" id="update-cache-l1-max" value="10000">
+                    </div>
+                    <div class="form-group">
+                        <label>L1 TTL (초)</label>
+                        <input type="number" id="update-cache-l1-ttl" value="300">
+                    </div>
+                    <button onclick="updateCacheSettings()">설정 수정</button>
+                    <div id="update-cache-response" class="response" style="display:none;"></div>
+                </div>
+
+                <div class="card">
+                    <h2><span class="method-badge method-post">POST</span>캐시 초기화 (전체)</h2>
+                    <button class="danger" onclick="clearCacheAll()">전체 캐시 초기화</button>
+                    <div id="clear-cache-all-response" class="response" style="display:none;"></div>
+                </div>
+
+                <div class="card">
+                    <h2><span class="method-badge method-post">POST</span>캐시 초기화 (도메인)</h2>
+                    <div class="form-group">
+                        <label>도메인</label>
+                        <input type="text" id="clear-cache-domain" placeholder="example.com.">
+                    </div>
+                    <button class="danger" onclick="clearCacheDomain()">도메인 캐시 초기화</button>
+                    <div id="clear-cache-domain-response" class="response" style="display:none;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- GSLB 탭 -->
+        <div id="gslb-tab" class="tab-content">
+            <div class="grid">
+                <div class="card">
+                    <h2><span class="method-badge method-get">GET</span>Health Status</h2>
+                    <button onclick="getGSLBHealth()">Health 상태 조회</button>
+                    <div id="gslb-health-response" class="response" style="display:none;"></div>
+                </div>
+
+                <div class="card">
+                    <h2><span class="method-badge method-get">GET</span>GSLB 정책 목록</h2>
+                    <button onclick="listGSLBPolicies()">GSLB 정책 조회</button>
+                    <div id="gslb-policies-response" class="response" style="display:none;"></div>
+                </div>
+
+                <div class="card">
+                    <h2><span class="method-badge method-post">POST</span>GSLB 정책 생성</h2>
+                    <div class="form-group">
+                        <label>도메인</label>
+                        <input type="text" id="create-gslb-domain" placeholder="api.example.com.">
+                    </div>
+                    <div class="form-group">
+                        <label>알고리즘</label>
+                        <select id="create-gslb-algorithm">
+                            <option value="round_robin">Round Robin</option>
+                            <option value="weighted">Weighted</option>
+                            <option value="geolocation">Geolocation</option>
+                        </select>
+                    </div>
+                    <button onclick="createGSLBPolicy()">정책 생성</button>
+                    <div id="create-gslb-response" class="response" style="display:none;"></div>
+                </div>
+
+                <div class="card">
+                    <h2><span class="method-badge method-get">GET</span>Health Checks</h2>
+                    <button onclick="listHealthChecks()">Health Check 목록</button>
+                    <div id="healthchecks-response" class="response" style="display:none;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- AdBlock 탭 -->
+        <div id="adblock-tab" class="tab-content">
+            <div class="grid">
+                <div class="card">
+                    <h2><span class="method-badge method-get">GET</span>AdBlock 상태</h2>
+                    <button onclick="getAdblockStatus()">AdBlock 상태 조회</button>
+                    <div id="adblock-status-response" class="response" style="display:none;"></div>
+                </div>
+
+                <div class="card">
+                    <h2><span class="method-badge method-get">GET</span>AdBlock 통계</h2>
+                    <button onclick="getAdblockStats()">AdBlock 통계 조회</button>
+                    <div id="adblock-stats-response" class="response" style="display:none;"></div>
+                </div>
+
+                <div class="card">
+                    <h2><span class="method-badge method-get">GET</span>AdBlock 소스 목록</h2>
+                    <button onclick="listAdblockSources()">소스 목록 조회</button>
+                    <div id="adblock-sources-response" class="response" style="display:none;"></div>
+                </div>
+
+                <div class="card">
+                    <h2><span class="method-badge method-post">POST</span>AdBlock 소스 생성</h2>
+                    <div class="form-group">
+                        <label>소스 이름</label>
+                        <input type="text" id="create-adblock-name" placeholder="AdGuard DNS">
+                    </div>
+                    <div class="form-group">
+                        <label>URL</label>
+                        <input type="text" id="create-adblock-url" placeholder="https://...">
+                    </div>
+                    <button onclick="createAdblockSource()">소스 생성</button>
+                    <div id="create-adblock-response" class="response" style="display:none;"></div>
+                </div>
+
+                <div class="card">
+                    <h2><span class="method-badge method-post">POST</span>AdBlock 소스 동기화</h2>
+                    <div class="form-group">
+                        <label>소스 ID</label>
+                        <input type="number" id="sync-adblock-id" placeholder="1">
+                    </div>
+                    <button class="success" onclick="syncAdblockSource()">소스 동기화</button>
+                    <div id="sync-adblock-response" class="response" style="display:none;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Zone Fallback 테스트 탭 -->
+        <div id="fallback-tab" class="tab-content">
+            <div class="card full-width" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white;">
+                <h2 style="color: white; border-color: white;">🧪 Zone Fallback 테스트</h2>
+                <p style="margin-bottom: 20px; opacity: 0.95;">Zone은 있지만 Record가 없을 때 Upstream으로 자동 Fallback되는지 테스트</p>
+
+                <div style="background: white; border-radius: 8px; padding: 25px; color: #333;">
+                    <div class="grid">
+                        <div class="card" style="box-shadow: none; padding: 20px;">
+                            <h3 style="color: #f5576c; margin-bottom: 15px;">1️⃣ Zone 생성</h3>
+                            <p style="color: #666; margin-bottom: 10px;">fallback.test. Zone 생성</p>
+                            <button onclick="createFallbackZone()" style="width: 100%;">Zone 생성</button>
+                            <div id="fallback-zone-response" class="response" style="display:none;"></div>
+                        </div>
+
+                        <div class="card" style="box-shadow: none; padding: 20px;">
+                            <h3 style="color: #f5576c; margin-bottom: 15px;">2️⃣ Record 생성</h3>
+                            <p style="color: #666; margin-bottom: 10px;">api.fallback.test. A 레코드만 등록</p>
+                            <button onclick="createFallbackRecord()" style="width: 100%;">Record 생성</button>
+                            <div id="fallback-record-response" class="response" style="display:none;"></div>
+                        </div>
+
+                        <div class="card full-width" style="box-shadow: none; padding: 20px;">
+                            <h3 style="color: #f5576c; margin-bottom: 15px;">3️⃣ DNS 쿼리 테스트</h3>
+                            <div class="grid">
+                                <div>
+                                    <h4 style="color: #333; margin-bottom: 10px;">✅ Zone + Record 있음</h4>
+                                    <code style="background: #e9ecef; padding: 10px; display: block; border-radius: 6px; margin-bottom: 10px;">
+                                        dig @localhost -p 5300 api.fallback.test
+                                    </code>
+                                    <p style="font-size: 14px; color: #666; margin-bottom: 10px;">
+                                        기대: 10.0.0.100, flags에 "aa" 포함 (Authoritative)
+                                    </p>
+                                </div>
+                                <div>
+                                    <h4 style="color: #333; margin-bottom: 10px;">🔄 Zone만 있음 (Fallback)</h4>
+                                    <code style="background: #e9ecef; padding: 10px; display: block; border-radius: 6px; margin-bottom: 10px;">
+                                        dig @localhost -p 5300 www.fallback.test
+                                    </code>
+                                    <p style="font-size: 14px; color: #666; margin-bottom: 10px;">
+                                        기대: Upstream 응답 또는 NXDOMAIN, flags에 "aa" 없음
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card full-width" style="box-shadow: none; padding: 20px; background: #d1ecf1; border-left: 4px solid #17a2b8;">
+                            <h4 style="color: #0c5460; margin-bottom: 10px;">🔍 서버 로그 확인</h4>
+                            <p style="font-size: 14px; color: #0c5460; margin-bottom: 10px;">
+                                터미널에서 다음 로그 메시지를 확인하세요:
+                            </p>
+                            <code style="background: #fff; padding: 10px; display: block; border-radius: 6px; color: #d63384;">
+                                [DNS] Zone fallback.test. exists but no record for www.fallback.test. A, falling back to upstream
+                            </code>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -274,6 +655,16 @@
     <script>
         const API_BASE = '';
 
+        // 탭 전환
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+            event.target.classList.add('active');
+            document.getElementById(tabName + '-tab').classList.add('active');
+        }
+
+        // 응답 표시
         function showResponse(elementId, data, isError = false) {
             const el = document.getElementById(elementId);
             el.style.display = 'block';
@@ -281,17 +672,15 @@
             el.innerHTML = '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
         }
 
+        // API 호출
         async function apiCall(url, method = 'GET', body = null) {
             try {
                 const options = {
                     method: method,
-                    headers: {
-                        'Content-Type': 'application/json',
-                    }
+                    headers: { 'Content-Type': 'application/json' }
                 };
-                if (body) {
-                    options.body = JSON.stringify(body);
-                }
+                if (body) options.body = JSON.stringify(body);
+
                 const response = await fetch(API_BASE + url, options);
                 const data = await response.json();
                 return { data, isError: !response.ok };
@@ -300,73 +689,271 @@
             }
         }
 
+        // 통계
         async function getStats() {
             const { data, isError } = await apiCall('/api/stats');
-            showResponse('stats-response', data, isError);
+            if (!isError && data.data) {
+                const stats = data.data;
+                const html = `
+                    <div class="stats-display">
+                        <div class="stat-item">
+                            <div class="stat-value">${stats.queries.total || 0}</div>
+                            <div class="stat-label">Total Queries</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value">${stats.queries.l1_hits || 0}</div>
+                            <div class="stat-label">L1 Hits</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value">${stats.queries.l1_misses || 0}</div>
+                            <div class="stat-label">L1 Misses</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value">${stats.queries.upstream_hits || 0}</div>
+                            <div class="stat-label">Upstream Hits</div>
+                        </div>
+                    </div>
+                    <div class="response success" style="margin-top: 15px;">
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    </div>
+                `;
+                document.getElementById('stats-display').innerHTML = html;
+            }
         }
 
-        async function getZones() {
+        // Zones
+        async function listZones() {
             const { data, isError } = await apiCall('/api/zones');
-            showResponse('zones-response', data, isError);
+            showResponse('zones-list-response', data, isError);
         }
 
         async function createZone() {
             const zone = {
-                name: document.getElementById('zone-name').value,
-                soa_mname: document.getElementById('zone-mname').value,
-                soa_rname: document.getElementById('zone-rname').value,
-                enabled: true
+                name: document.getElementById('create-zone-name').value,
+                soa_mname: document.getElementById('create-zone-mname').value,
+                soa_rname: document.getElementById('create-zone-rname').value,
+                enabled: true,
+                allow_fallback: document.getElementById('create-zone-fallback').value === 'true'
             };
             const { data, isError } = await apiCall('/api/zones', 'POST', zone);
             showResponse('create-zone-response', data, isError);
         }
 
+        async function getZone() {
+            const id = document.getElementById('get-zone-id').value;
+            const { data, isError } = await apiCall(`/api/zones/${id}`);
+            showResponse('get-zone-response', data, isError);
+        }
+
+        async function updateZone() {
+            const id = document.getElementById('update-zone-id').value;
+            const enabled = document.getElementById('update-zone-enabled').value === 'true';
+            const allow_fallback = document.getElementById('update-zone-fallback').value === 'true';
+            const { data, isError } = await apiCall(`/api/zones/${id}`, 'PUT', { enabled, allow_fallback });
+            showResponse('update-zone-response', data, isError);
+        }
+
+        async function deleteZone() {
+            const id = document.getElementById('delete-zone-id').value;
+            const { data, isError } = await apiCall(`/api/zones/${id}`, 'DELETE');
+            showResponse('delete-zone-response', data, isError);
+        }
+
+        // Records
+        async function listRecords() {
+            const zoneId = document.getElementById('list-records-zone-id').value;
+            const { data, isError } = await apiCall(`/api/zones/${zoneId}/records`);
+            showResponse('records-list-response', data, isError);
+        }
+
         async function createRecord() {
-            const zoneId = document.getElementById('record-zone-id').value;
+            const zoneId = document.getElementById('create-record-zone-id').value;
             const record = {
-                name: document.getElementById('record-name').value,
-                type: document.getElementById('record-type').value,
-                content: document.getElementById('record-content').value,
-                ttl: parseInt(document.getElementById('record-ttl').value),
-                priority: 0
+                name: document.getElementById('create-record-name').value,
+                type: document.getElementById('create-record-type').value,
+                content: document.getElementById('create-record-content').value,
+                ttl: parseInt(document.getElementById('create-record-ttl').value),
+                priority: parseInt(document.getElementById('create-record-priority').value)
             };
             const { data, isError } = await apiCall(`/api/zones/${zoneId}/records`, 'POST', record);
             showResponse('create-record-response', data, isError);
         }
 
-        async function getUpstreams() {
-            const { data, isError } = await apiCall('/api/upstream');
-            showResponse('upstreams-response', data, isError);
+        async function updateRecord() {
+            const id = document.getElementById('update-record-id').value;
+            const record = {
+                content: document.getElementById('update-record-content').value,
+                ttl: parseInt(document.getElementById('update-record-ttl').value)
+            };
+            const { data, isError } = await apiCall(`/api/records/${id}`, 'PUT', record);
+            showResponse('update-record-response', data, isError);
         }
 
+        async function deleteRecord() {
+            const id = document.getElementById('delete-record-id').value;
+            const { data, isError } = await apiCall(`/api/records/${id}`, 'DELETE');
+            showResponse('delete-record-response', data, isError);
+        }
+
+        // Upstream
+        async function listUpstreams() {
+            const { data, isError } = await apiCall('/api/upstream');
+            showResponse('upstreams-list-response', data, isError);
+        }
+
+        async function createUpstream() {
+            const upstream = {
+                address: document.getElementById('create-upstream-address').value,
+                protocol: document.getElementById('create-upstream-protocol').value,
+                priority: parseInt(document.getElementById('create-upstream-priority').value),
+                enabled: true
+            };
+            const { data, isError } = await apiCall('/api/upstream', 'POST', upstream);
+            showResponse('create-upstream-response', data, isError);
+        }
+
+        async function updateUpstream() {
+            const id = document.getElementById('update-upstream-id').value;
+            const enabled = document.getElementById('update-upstream-enabled').value === 'true';
+            const { data, isError } = await apiCall(`/api/upstream/${id}`, 'PUT', { enabled });
+            showResponse('update-upstream-response', data, isError);
+        }
+
+        async function testUpstream() {
+            const id = document.getElementById('test-upstream-id').value;
+            const { data, isError } = await apiCall(`/api/upstream/${id}/test`, 'POST');
+            showResponse('test-upstream-response', data, isError);
+        }
+
+        async function deleteUpstream() {
+            const id = document.getElementById('delete-upstream-id').value;
+            const { data, isError } = await apiCall(`/api/upstream/${id}`, 'DELETE');
+            showResponse('delete-upstream-response', data, isError);
+        }
+
+        // Cache
         async function getCacheStats() {
             const { data, isError } = await apiCall('/api/cache/stats');
             showResponse('cache-stats-response', data, isError);
         }
 
-        async function clearCache() {
-            const domain = document.getElementById('cache-domain').value;
-            const url = domain ? `/api/cache/clear/${domain}` : '/api/cache/clear';
-            const { data, isError } = await apiCall(url, 'POST');
-            showResponse('clear-cache-response', data, isError);
+        async function getCacheSettings() {
+            const { data, isError } = await apiCall('/api/cache/settings');
+            showResponse('cache-settings-response', data, isError);
         }
 
-        async function getGSLBPolicies() {
+        async function updateCacheSettings() {
+            const settings = {
+                l1_max_size: parseInt(document.getElementById('update-cache-l1-max').value),
+                l1_default_ttl: parseInt(document.getElementById('update-cache-l1-ttl').value)
+            };
+            const { data, isError } = await apiCall('/api/cache/settings', 'PUT', settings);
+            showResponse('update-cache-response', data, isError);
+        }
+
+        async function clearCacheAll() {
+            const { data, isError } = await apiCall('/api/cache/clear', 'POST');
+            showResponse('clear-cache-all-response', data, isError);
+        }
+
+        async function clearCacheDomain() {
+            const domain = document.getElementById('clear-cache-domain').value;
+            const { data, isError } = await apiCall(`/api/cache/clear/${domain}`, 'POST');
+            showResponse('clear-cache-domain-response', data, isError);
+        }
+
+        // GSLB
+        async function getGSLBHealth() {
+            const { data, isError } = await apiCall('/api/gslb/health');
+            showResponse('gslb-health-response', data, isError);
+        }
+
+        async function listGSLBPolicies() {
             const { data, isError } = await apiCall('/api/gslb/policies');
-            showResponse('gslb-response', data, isError);
+            showResponse('gslb-policies-response', data, isError);
         }
 
+        async function createGSLBPolicy() {
+            const policy = {
+                domain: document.getElementById('create-gslb-domain').value,
+                algorithm: document.getElementById('create-gslb-algorithm').value,
+                enabled: true
+            };
+            const { data, isError } = await apiCall('/api/gslb/policies', 'POST', policy);
+            showResponse('create-gslb-response', data, isError);
+        }
+
+        async function listHealthChecks() {
+            const { data, isError } = await apiCall('/api/gslb/healthchecks');
+            showResponse('healthchecks-response', data, isError);
+        }
+
+        // AdBlock
         async function getAdblockStatus() {
             const { data, isError } = await apiCall('/api/adblock/status');
-            showResponse('adblock-response', data, isError);
+            showResponse('adblock-status-response', data, isError);
         }
 
-        async function getHealth() {
-            const { data, isError } = await apiCall('/api/gslb/health');
-            showResponse('health-response', data, isError);
+        async function getAdblockStats() {
+            const { data, isError } = await apiCall('/api/adblock/stats');
+            showResponse('adblock-stats-response', data, isError);
         }
 
-        // 자동으로 통계 로드
+        async function listAdblockSources() {
+            const { data, isError } = await apiCall('/api/adblock/sources');
+            showResponse('adblock-sources-response', data, isError);
+        }
+
+        async function createAdblockSource() {
+            const source = {
+                name: document.getElementById('create-adblock-name').value,
+                url: document.getElementById('create-adblock-url').value,
+                enabled: true
+            };
+            const { data, isError } = await apiCall('/api/adblock/sources', 'POST', source);
+            showResponse('create-adblock-response', data, isError);
+        }
+
+        async function syncAdblockSource() {
+            const id = document.getElementById('sync-adblock-id').value;
+            const { data, isError } = await apiCall(`/api/adblock/sources/${id}/sync`, 'POST');
+            showResponse('sync-adblock-response', data, isError);
+        }
+
+        // Zone Fallback 테스트
+        async function createFallbackZone() {
+            const zone = {
+                name: 'fallback.test.',
+                soa_mname: 'ns1.fallback.test.',
+                soa_rname: 'admin.fallback.test.',
+                enabled: true,
+                allow_fallback: true
+            };
+            const { data, isError } = await apiCall('/api/zones', 'POST', zone);
+            showResponse('fallback-zone-response', data, isError);
+        }
+
+        async function createFallbackRecord() {
+            const { data: zonesData } = await apiCall('/api/zones');
+            const zone = zonesData.data?.find(z => z.name === 'fallback.test.');
+
+            if (!zone) {
+                showResponse('fallback-record-response', { error: 'fallback.test. Zone을 먼저 생성하세요!' }, true);
+                return;
+            }
+
+            const record = {
+                name: 'api.fallback.test.',
+                type: 'A',
+                content: '10.0.0.100',
+                ttl: 300,
+                priority: 0
+            };
+            const { data, isError } = await apiCall(`/api/zones/${zone.id}/records`, 'POST', record);
+            showResponse('fallback-record-response', data, isError);
+        }
+
+        // 페이지 로드 시 통계 자동 조회
         window.onload = function() {
             getStats();
         };
