@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  dns-go:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dns-go
+    restart: unless-stopped
+    ports:
+      - "53:53/udp"
+      - "53:53/tcp"
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+      - ./config.yaml:/app/config.yaml:ro
+      - ./GeoLite2-City.mmdb:/app/GeoLite2-City.mmdb:ro  # GeoIP DB (선택사항)
+    environment:
+      - TZ=Asia/Seoul
+    networks:
+      - dns-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/stats"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  dns-network:
+    driver: bridge

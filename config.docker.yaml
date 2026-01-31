@@ -1,0 +1,26 @@
+dns:
+  listen: "0.0.0.0"
+  port: 53
+  tcp: true
+  udp: true
+
+upstream:
+  timeout: 5s
+
+web:
+  listen: "0.0.0.0"
+  port: 8080
+
+database:
+  path: "/data/dns-go.db"
+
+geoip:
+  city_db: "/app/GeoLite2-City.mmdb"
+
+adblock:
+  enabled: true
+  sync_interval: 1h
+  block_response: "0.0.0.0"
+
+logging:
+  level: "info"

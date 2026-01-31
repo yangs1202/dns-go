@@ -1,0 +1,39 @@
+# Git
+.git
+.gitignore
+
+# Binaries
+dns-go
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Test files
+*_test.go
+coverage.out
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Documentation
+*.md
+!README.md
+
+# Plans
+plans/
+
+# Data
+data/
+GeoLite2-*.mmdb
+
+# Build artifacts
+vendor/
