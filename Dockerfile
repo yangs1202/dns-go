@@ -2,7 +2,7 @@
 FROM golang:1.25-alpine AS builder
 
 # 빌드에 필요한 패키지 설치
-RUN apk add --no-cache git ca-certificates tzdata
+RUN apk add --no-cache git ca-certificates tzdata gcc musl-dev
 
 WORKDIR /build
 
