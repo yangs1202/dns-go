@@ -792,6 +792,81 @@ func TestServeDNS_ANYQueryBlocked(t *testing.T) {
 	}
 }
 
+// TestServeDNS_EDNS0Support는 EDNS0 지원을 테스트합니다
+func TestServeDNS_EDNS0Support(t *testing.T) {
+	handler, db, cleanup := setupTestHandler(t)
+	defer cleanup()
+
+	// Zone과 Record 추가
+	zoneID, _ := db.Writer.Exec(
+		"INSERT INTO zones (name, soa_mname, soa_rname, soa_serial) VALUES (?, ?, ?, ?)",
+		"example.com.", "ns1.example.com.", "admin.example.com.", 2026013101,
+	)
+	zid, _ := zoneID.LastInsertId()
+
+	db.Writer.Exec(
+		"INSERT INTO records (zone_id, name, type, content, ttl) VALUES (?, ?, ?, ?, ?)",
+		zid, "www.example.com.", "A", "192.0.2.1", 300,
+	)
+
+	tests := []struct {
+		name           string
+		requestEDNS    bool
+		requestBufSize uint16
+		expectEDNS     bool
+		expectBufSize  uint16
+	}{
+		{
+			name:           "EDNS0 요청 (4096 버퍼)",
+			requestEDNS:    true,
+			requestBufSize: 4096,
+			expectEDNS:     true,
+			expectBufSize:  1232, // Cloudflare 방식: 항상 1232
+		},
+		{
+			name:           "EDNS0 요청 (512 버퍼)",
+			requestEDNS:    true,
+			requestBufSize: 512,
+			expectEDNS:     true,
+			expectBufSize:  1232, // Cloudflare 방식: 항상 1232
+		},
+		{
+			name:        "EDNS0 없는 요청",
+			requestEDNS: false,
+			expectEDNS:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := new(dns.Msg)
+			req.SetQuestion("www.example.com.", dns.TypeA)
+
+			// EDNS0 설정
+			if tt.requestEDNS {
+				req.SetEdns0(tt.requestBufSize, false)
+			}
+
+			w := newMockWriter("192.0.2.100")
+			handler.ServeDNS(w, req)
+
+			// EDNS0 응답 확인
+			opt := w.msg.IsEdns0()
+			if tt.expectEDNS {
+				if opt == nil {
+					t.Errorf("EDNS0 OPT 레코드가 응답에 없음")
+				} else if opt.UDPSize() != tt.expectBufSize {
+					t.Errorf("UDP 버퍼 크기 예상: %d, 실제: %d", tt.expectBufSize, opt.UDPSize())
+				}
+			} else {
+				if opt != nil {
+					t.Errorf("EDNS0 요청하지 않았는데 OPT 레코드가 응답에 포함됨")
+				}
+			}
+		})
+	}
+}
+
 // TestServeDNS_NegativeCache은 Negative 캐시를 테스트합니다
 func TestServeDNS_NegativeCache(t *testing.T) {
 	handler, _, cleanup := setupTestHandler(t)

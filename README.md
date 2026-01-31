@@ -127,6 +127,27 @@ dns:
 - 512 bytes 초과 시 TC(Truncated) 플래그 발생 → TCP 재질의 (2배 느림)
 - 1232+ bytes면 대부분의 DNSSEC 응답을 UDP로 처리 가능
 
+### EDNS0 지원
+
+DNS 서버는 자동으로 EDNS0를 지원합니다:
+
+- **클라이언트가 EDNS0 요청 시**: OPT 레코드를 응답에 포함
+- **UDP 버퍼 크기**: Cloudflare 방식으로 **1232 bytes 고정**
+  - 클라이언트가 512 요청 → 1232 응답
+  - 클라이언트가 4096 요청 → 1232 응답
+- **이유**: IPv6 MTU(1280) - IP/UDP 헤더(48) = 1232 (RFC 8899)
+- **효과**: IP fragmentation 완전 방지, DNSSEC 지원
+
+**테스트:**
+```bash
+# EDNS0 버퍼 크기 확인
+dig +bufsize=4096 @localhost google.com
+
+# 응답에서 확인:
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 1232
+```
+
 ## DNS 쿼리 테스트
 
 ### dig 명령어

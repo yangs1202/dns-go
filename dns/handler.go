@@ -71,6 +71,17 @@ func NewHandler(
 	return handler, nil
 }
 
+// setEDNS0는 EDNS0 OPT 레코드를 응답에 추가합니다
+func (h *Handler) setEDNS0(resp *dns.Msg, req *dns.Msg) {
+	// 요청에 EDNS0가 있는지 확인
+	if opt := req.IsEdns0(); opt != nil {
+		// Cloudflare 방식: 클라이언트 요청과 무관하게 1232로 고정
+		// 이유: IPv6 MTU(1280) - IP/UDP 헤더(48) = 1232
+		// RFC 8899 권장, IP fragmentation 완전 방지
+		resp.SetEdns0(1232, false)
+	}
+}
+
 // ServeDNS는 DNS 쿼리를 처리합니다 (dns.Handler 인터페이스 구현)
 func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	if h.stats != nil {
@@ -81,6 +92,9 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	resp.SetReply(req)
 	resp.Authoritative = true
 	resp.RecursionAvailable = true
+
+	// EDNS0 지원 추가 (클라이언트가 요청한 경우)
+	h.setEDNS0(resp, req)
 
 	// 쿼리가 없으면 에러 응답
 	if len(req.Question) == 0 {
