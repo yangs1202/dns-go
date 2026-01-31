@@ -95,6 +95,14 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 
 	log.Printf("[DNS] Query: %s %s", domain, qtype)
 
+	// ANY 쿼리 차단 (RFC 8482 - DDoS 증폭 공격 방지)
+	if question.Qtype == dns.TypeANY {
+		log.Printf("[DNS] ANY query blocked: %s (RFC 8482)", domain)
+		resp.Rcode = dns.RcodeNotImplemented
+		w.WriteMsg(resp)
+		return
+	}
+
 	// 1. L1 캐시 확인
 	if entry, ok := h.cache.Get(domain, qtype); ok {
 		log.Printf("[DNS] L1 Cache HIT: %s %s", domain, qtype)

@@ -769,6 +769,29 @@ func TestServeDNS_NoQuestion(t *testing.T) {
 	}
 }
 
+// TestServeDNS_ANYQueryBlocked는 ANY 쿼리 차단을 테스트합니다 (RFC 8482)
+func TestServeDNS_ANYQueryBlocked(t *testing.T) {
+	handler, _, cleanup := setupTestHandler(t)
+	defer cleanup()
+
+	// ANY 쿼리
+	req := new(dns.Msg)
+	req.SetQuestion("example.com.", dns.TypeANY)
+
+	w := newMockWriter("192.0.2.100")
+	handler.ServeDNS(w, req)
+
+	// NOTIMP (Not Implemented) 응답 확인
+	if w.msg.Rcode != dns.RcodeNotImplemented {
+		t.Errorf("예상 Rcode: %d (NotImplemented), 실제: %d", dns.RcodeNotImplemented, w.msg.Rcode)
+	}
+
+	// 응답에 Answer가 없어야 함
+	if len(w.msg.Answer) != 0 {
+		t.Errorf("ANY 쿼리 차단 시 Answer가 비어야 함, 실제: %d개", len(w.msg.Answer))
+	}
+}
+
 // TestServeDNS_NegativeCache은 Negative 캐시를 테스트합니다
 func TestServeDNS_NegativeCache(t *testing.T) {
 	handler, _, cleanup := setupTestHandler(t)
