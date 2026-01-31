@@ -90,7 +90,11 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	// 응답 메시지 초기화
 	resp := new(dns.Msg)
 	resp.SetReply(req)
-	resp.Authoritative = true
+
+	// RFC 1035 준수:
+	// - Authoritative: 권한 서버인 경우만 설정 (나중에 Zone 응답 시 설정)
+	// - RecursionAvailable: 재귀 가능 여부 (항상 true)
+	resp.Authoritative = false  // 기본값: 재귀 응답은 non-authoritative
 	resp.RecursionAvailable = true
 
 	// EDNS0 지원 추가 (클라이언트가 요청한 경우)
@@ -258,6 +262,9 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 		if len(records) > 0 {
 			log.Printf("[DNS] Records found: %d records", len(records))
 
+			// RFC 1035: Zone에서 직접 응답하는 경우 Authoritative
+			resp.Authoritative = true
+
 			// 응답 생성
 			answer := h.buildResponse(question, records)
 			resp.Answer = answer.Answer
@@ -284,6 +291,14 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	}
 
 	// 5. Zone 또는 Record가 없으면 업스트림 포워딩
+	// RFC 1035: RD=0(+norecurse)이면 재귀 처리 안 함
+	if !req.RecursionDesired {
+		log.Printf("[DNS] Recursion not desired (RD=0), returning REFUSED")
+		resp.Rcode = dns.RcodeRefused
+		w.WriteMsg(resp)
+		return
+	}
+
 	log.Printf("[DNS] Forwarding to upstream: %s %s", domain, qtype)
 	upstreamResp, err := h.resolver.Forward(req)
 	if err != nil {

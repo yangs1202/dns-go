@@ -792,6 +792,120 @@ func TestServeDNS_ANYQueryBlocked(t *testing.T) {
 	}
 }
 
+// TestServeDNS_AuthoritativeFlag는 AA 플래그 설정을 테스트합니다 (RFC 1035)
+func TestServeDNS_AuthoritativeFlag(t *testing.T) {
+	handler, db, cleanup := setupTestHandler(t)
+	defer cleanup()
+
+	// Zone과 Record 추가
+	zoneID, _ := db.Writer.Exec(
+		"INSERT INTO zones (name, soa_mname, soa_rname, soa_serial) VALUES (?, ?, ?, ?)",
+		"example.com.", "ns1.example.com.", "admin.example.com.", 2026013101,
+	)
+	zid, _ := zoneID.LastInsertId()
+
+	db.Writer.Exec(
+		"INSERT INTO records (zone_id, name, type, content, ttl) VALUES (?, ?, ?, ?, ?)",
+		zid, "www.example.com.", "A", "192.0.2.1", 300,
+	)
+
+	// Upstream 서버 추가 (포워딩 테스트용)
+	db.Writer.Exec(
+		"INSERT INTO upstream_servers (name, address, protocol, priority, enabled) VALUES (?, ?, ?, ?, ?)",
+		"Test DNS", "8.8.8.8:53", "udp", 1, 1,
+	)
+
+	tests := []struct {
+		name           string
+		domain         string
+		expectAA       bool
+		description    string
+	}{
+		{
+			name:        "Zone 응답 - AA=true",
+			domain:      "www.example.com.",
+			expectAA:    true,
+			description: "권한 서버로 응답하는 경우 AA 플래그 설정",
+		},
+		{
+			name:        "캐시 히트 - AA=false",
+			domain:      "www.example.com.",
+			expectAA:    false,
+			description: "캐시된 응답은 non-authoritative",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := new(dns.Msg)
+			req.SetQuestion(tt.domain, dns.TypeA)
+
+			w := newMockWriter("192.0.2.100")
+			handler.ServeDNS(w, req)
+
+			if w.msg.Authoritative != tt.expectAA {
+				t.Errorf("AA 플래그 예상: %v, 실제: %v (%s)", tt.expectAA, w.msg.Authoritative, tt.description)
+			}
+		})
+	}
+}
+
+// TestServeDNS_RecursionDesired는 RD 플래그 처리를 테스트합니다 (RFC 1035)
+func TestServeDNS_RecursionDesired(t *testing.T) {
+	handler, db, cleanup := setupTestHandler(t)
+	defer cleanup()
+
+	// Upstream 서버 추가
+	db.Writer.Exec(
+		"INSERT INTO upstream_servers (name, address, protocol, priority, enabled) VALUES (?, ?, ?, ?, ?)",
+		"Test DNS", "8.8.8.8:53", "udp", 1, 1,
+	)
+
+	tests := []struct {
+		name        string
+		domain      string
+		rd          bool
+		expectRcode int
+		description string
+	}{
+		{
+			name:        "RD=0 (+norecurse) - REFUSED",
+			domain:      "google.com.",
+			rd:          false,
+			expectRcode: dns.RcodeRefused,
+			description: "재귀 요청 안 하면 업스트림 포워딩 안 함",
+		},
+		{
+			name:        "RD=1 (기본) - 정상 처리",
+			domain:      "google.com.",
+			rd:          true,
+			expectRcode: dns.RcodeSuccess,
+			description: "재귀 요청하면 업스트림 포워딩",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := new(dns.Msg)
+			req.SetQuestion(tt.domain, dns.TypeA)
+			req.RecursionDesired = tt.rd
+
+			w := newMockWriter("192.0.2.100")
+			handler.ServeDNS(w, req)
+
+			// RA (Recursion Available) 플래그는 항상 true여야 함
+			if !w.msg.RecursionAvailable {
+				t.Errorf("RA 플래그가 false (항상 true여야 함)")
+			}
+
+			// RD=0인 경우에만 Rcode 체크 (RD=1은 실제 upstream 필요)
+			if !tt.rd && w.msg.Rcode != tt.expectRcode {
+				t.Errorf("Rcode 예상: %d, 실제: %d (%s)", tt.expectRcode, w.msg.Rcode, tt.description)
+			}
+		})
+	}
+}
+
 // TestServeDNS_EDNS0Support는 EDNS0 지원을 테스트합니다
 func TestServeDNS_EDNS0Support(t *testing.T) {
 	handler, db, cleanup := setupTestHandler(t)
