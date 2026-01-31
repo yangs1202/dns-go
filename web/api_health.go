@@ -3,6 +3,7 @@ package web
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"dns-go/model"
 
@@ -66,6 +67,40 @@ func (api *API) createHealthCheck(c *gin.Context) {
 		return
 	}
 
+	checkType := strings.ToLower(strings.TrimSpace(req.CheckType))
+	if checkType == "" {
+		respondBadRequest(c, "check_type은 필수입니다")
+		return
+	}
+	if checkType != "http" && checkType != "https" && checkType != "tcp" {
+		respondBadRequest(c, "check_type은 http, https, tcp 중 하나여야 합니다")
+		return
+	}
+	if strings.TrimSpace(req.Target) == "" {
+		respondBadRequest(c, "target은 필수입니다")
+		return
+	}
+	if req.IntervalSec <= 0 {
+		respondBadRequest(c, "interval_sec는 1 이상이어야 합니다")
+		return
+	}
+	if req.TimeoutSec <= 0 {
+		respondBadRequest(c, "timeout_sec는 1 이상이어야 합니다")
+		return
+	}
+	if req.TimeoutSec >= req.IntervalSec {
+		respondBadRequest(c, "timeout_sec는 interval_sec보다 작아야 합니다")
+		return
+	}
+	if req.HealthyThreshold <= 0 {
+		respondBadRequest(c, "healthy_threshold는 1 이상이어야 합니다")
+		return
+	}
+	if req.UnhealthyThreshold <= 0 {
+		respondBadRequest(c, "unhealthy_threshold는 1 이상이어야 합니다")
+		return
+	}
+
 	enabled := true
 	if req.Enabled != nil {
 		enabled = *req.Enabled
@@ -73,7 +108,7 @@ func (api *API) createHealthCheck(c *gin.Context) {
 
 	check := &model.HealthCheck{
 		PolicyID:           policyID,
-		CheckType:          req.CheckType,
+		CheckType:          checkType,
 		Target:             req.Target,
 		IntervalSec:        req.IntervalSec,
 		TimeoutSec:         req.TimeoutSec,
@@ -116,6 +151,40 @@ func (api *API) updateHealthCheck(c *gin.Context) {
 		respondBadRequest(c, "요청 바디가 올바르지 않습니다")
 		return
 	}
+	checkType := strings.ToLower(strings.TrimSpace(req.CheckType))
+	if checkType == "" {
+		respondBadRequest(c, "check_type은 필수입니다")
+		return
+	}
+	if checkType != "http" && checkType != "https" && checkType != "tcp" {
+		respondBadRequest(c, "check_type은 http, https, tcp 중 하나여야 합니다")
+		return
+	}
+	if strings.TrimSpace(req.Target) == "" {
+		respondBadRequest(c, "target은 필수입니다")
+		return
+	}
+	if req.IntervalSec <= 0 {
+		respondBadRequest(c, "interval_sec는 1 이상이어야 합니다")
+		return
+	}
+	if req.TimeoutSec <= 0 {
+		respondBadRequest(c, "timeout_sec는 1 이상이어야 합니다")
+		return
+	}
+	if req.TimeoutSec >= req.IntervalSec {
+		respondBadRequest(c, "timeout_sec는 interval_sec보다 작아야 합니다")
+		return
+	}
+	if req.HealthyThreshold <= 0 {
+		respondBadRequest(c, "healthy_threshold는 1 이상이어야 합니다")
+		return
+	}
+	if req.UnhealthyThreshold <= 0 {
+		respondBadRequest(c, "unhealthy_threshold는 1 이상이어야 합니다")
+		return
+	}
+
 	existing, err := api.healthCheckStorage.GetHealthCheck(id)
 	if err != nil {
 		respondInternalError(c, err.Error())
@@ -133,7 +202,7 @@ func (api *API) updateHealthCheck(c *gin.Context) {
 	check := &model.HealthCheck{
 		ID:                 id,
 		PolicyID:           existing.PolicyID,
-		CheckType:          req.CheckType,
+		CheckType:          checkType,
 		Target:             req.Target,
 		IntervalSec:        req.IntervalSec,
 		TimeoutSec:         req.TimeoutSec,

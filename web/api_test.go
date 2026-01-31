@@ -27,6 +27,7 @@ func TestNewAPI(t *testing.T) {
 		nil, // adblockFilter
 		nil, // healthCheckStorage
 		nil, // healthStatus
+		nil, // healthWorker
 	)
 
 	assert.NotNil(t, api)

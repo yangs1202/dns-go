@@ -2,6 +2,7 @@ package web
 
 import (
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -87,6 +88,11 @@ func (api *API) createAdblockSource(c *gin.Context) {
 		respondBadRequest(c, "name과 url은 필수입니다")
 		return
 	}
+	parsedURL, urlErr := url.ParseRequestURI(req.URL)
+	if urlErr != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
+		respondBadRequest(c, "url은 유효한 HTTP/HTTPS URL이어야 합니다")
+		return
+	}
 	enabled := true
 	if req.Enabled != nil {
 		enabled = *req.Enabled
@@ -128,6 +134,11 @@ func (api *API) updateAdblockSource(c *gin.Context) {
 	}
 	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.URL) == "" {
 		respondBadRequest(c, "name과 url은 필수입니다")
+		return
+	}
+	parsedURL, urlErr := url.ParseRequestURI(req.URL)
+	if urlErr != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
+		respondBadRequest(c, "url은 유효한 HTTP/HTTPS URL이어야 합니다")
 		return
 	}
 	existing, err := api.adblockStorage.GetAdblockSource(id)

@@ -44,11 +44,29 @@ func (api *API) createUpstream(c *gin.Context) {
 		respondBadRequest(c, "name과 address는 필수입니다")
 		return
 	}
+	// address 형식 검증 (host:port)
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		respondBadRequest(c, "address는 host:port 형식이어야 합니다 (예: 8.8.8.8:53)")
+		return
+	}
+	if net.ParseIP(host) == nil {
+		respondBadRequest(c, "address의 host는 유효한 IP 주소여야 합니다")
+		return
+	}
+	if p, pErr := strconv.Atoi(port); pErr != nil || p < 1 || p > 65535 {
+		respondBadRequest(c, "address의 port는 1~65535 사이여야 합니다")
+		return
+	}
 	if protocol == "" {
 		protocol = "udp"
 	}
 	if protocol != "udp" && protocol != "tcp" && protocol != "tcp-tls" {
 		respondBadRequest(c, "protocol은 udp, tcp, tcp-tls 중 하나여야 합니다")
+		return
+	}
+	if req.Priority < 0 {
+		respondBadRequest(c, "priority는 0 이상이어야 합니다")
 		return
 	}
 
@@ -100,11 +118,29 @@ func (api *API) updateUpstream(c *gin.Context) {
 		respondBadRequest(c, "name과 address는 필수입니다")
 		return
 	}
+	// address 형식 검증 (host:port)
+	host, port, splitErr := net.SplitHostPort(address)
+	if splitErr != nil {
+		respondBadRequest(c, "address는 host:port 형식이어야 합니다 (예: 8.8.8.8:53)")
+		return
+	}
+	if net.ParseIP(host) == nil {
+		respondBadRequest(c, "address의 host는 유효한 IP 주소여야 합니다")
+		return
+	}
+	if p, pErr := strconv.Atoi(port); pErr != nil || p < 1 || p > 65535 {
+		respondBadRequest(c, "address의 port는 1~65535 사이여야 합니다")
+		return
+	}
 	if protocol == "" {
 		protocol = "udp"
 	}
 	if protocol != "udp" && protocol != "tcp" && protocol != "tcp-tls" {
 		respondBadRequest(c, "protocol은 udp, tcp, tcp-tls 중 하나여야 합니다")
+		return
+	}
+	if req.Priority < 0 {
+		respondBadRequest(c, "priority는 0 이상이어야 합니다")
 		return
 	}
 

@@ -34,6 +34,31 @@ func (api *API) updateCacheSettings(c *gin.Context) {
 		return
 	}
 
+	if req.MaxSize != nil && *req.MaxSize <= 0 {
+		respondBadRequest(c, "max_size는 1 이상이어야 합니다")
+		return
+	}
+	if req.DefaultTTL != nil && *req.DefaultTTL < 0 {
+		respondBadRequest(c, "default_ttl은 0 이상이어야 합니다")
+		return
+	}
+	if req.MinTTL != nil && *req.MinTTL < 0 {
+		respondBadRequest(c, "min_ttl은 0 이상이어야 합니다")
+		return
+	}
+	if req.MaxTTL != nil && *req.MaxTTL < 0 {
+		respondBadRequest(c, "max_ttl은 0 이상이어야 합니다")
+		return
+	}
+	if req.NegativeTTL != nil && *req.NegativeTTL < 0 {
+		respondBadRequest(c, "negative_ttl은 0 이상이어야 합니다")
+		return
+	}
+	if req.PrefetchTrigger != nil && (*req.PrefetchTrigger < 0 || *req.PrefetchTrigger > 1) {
+		respondBadRequest(c, "prefetch_trigger는 0.0~1.0 사이여야 합니다")
+		return
+	}
+
 	current, err := api.db.GetCacheSettings()
 	if err != nil {
 		respondInternalError(c, err.Error())
