@@ -156,6 +156,55 @@ dig +norecurse google.com @localhost
 # status: REFUSED
 ```
 
+### NSID 지원 (RFC 5001)
+
+서버 식별을 위한 NSID를 지원합니다:
+
+```bash
+# NSID 쿼리
+dig +nsid @localhost example.com
+
+# 응답:
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 1232
+; NSID: <hostname>  ← 서버 식별자
+```
+
+**설정:**
+```yaml
+dns:
+  nsid: "my-dns-server-01"  # 커스텀 NSID (비어있으면 hostname 사용)
+```
+
+**용도:**
+- Anycast 네트워크에서 실제 응답 서버 식별
+- 로드밸런서 디버깅
+- 서버 클러스터 관리
+
+### CHAOS 클래스 지원
+
+디버깅용 CHAOS 클래스 쿼리를 지원합니다:
+
+```bash
+# 버전 정보
+dig @localhost version.bind CH TXT
+# 응답: "DNS-Go v0.2.0"
+
+# 호스트명
+dig @localhost hostname.bind CH TXT
+# 응답: "<hostname>"
+
+# 서버 ID
+dig @localhost id.server CH TXT
+# 응답: "<hostname>"
+```
+
+**설정:**
+```yaml
+dns:
+  version: "DNS-Go v0.2.0"  # CHAOS version.bind 응답
+```
+
 ### EDNS0 지원
 
 DNS 서버는 자동으로 EDNS0를 지원합니다:
