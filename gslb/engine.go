@@ -2,7 +2,6 @@ package gslb
 
 import (
 	"errors"
-	"log"
 	"math/rand"
 	"net"
 	"strings"
@@ -33,14 +32,11 @@ func (e *Engine) Resolve(domain, qtype string, clientIP net.IP) ([]net.IP, uint3
 		return nil, 0, nil
 	}
 
-	log.Printf("[GSLB] Resolve: domain=%s, qtype=%s, clientIP=%s", domain, qtype, clientIP)
 	policy, err := e.policyStorage.GetPolicyByDomain(domain, qtype)
-	log.Printf("[GSLB] Policy lookup result: policy=%v, err=%v", policy, err)
 	if err != nil {
 		return nil, 0, err
 	}
 	if policy == nil {
-		log.Printf("[GSLB] No policy found for domain=%s, qtype=%s", domain, qtype)
 		return nil, 0, nil
 	}
 
@@ -48,29 +44,22 @@ func (e *Engine) Resolve(domain, qtype string, clientIP net.IP) ([]net.IP, uint3
 	if err != nil {
 		return nil, 0, err
 	}
-	log.Printf("[GSLB] Found %d pools for policy %d", len(pools), policy.ID)
 
 	var matched *model.GSLBPool
 	var fallback *model.GSLBPool
 	for _, pool := range pools {
-		log.Printf("[GSLB] Pool: id=%d, name=%s, match_type=%s, fallback=%v", pool.ID, pool.Name, pool.MatchType, pool.FallbackPool)
 		if pool.FallbackPool {
 			fallback = pool
 		}
 		if e.matchPool(pool, clientIP) {
 			matched = pool
-			log.Printf("[GSLB] Pool matched: id=%d, name=%s", pool.ID, pool.Name)
 			break
 		}
 	}
 	if matched == nil {
 		matched = fallback
-		if matched != nil {
-			log.Printf("[GSLB] Using fallback pool: id=%d", matched.ID)
-		}
 	}
 	if matched == nil {
-		log.Printf("[GSLB] No pool matched")
 		return nil, 0, nil
 	}
 
@@ -78,10 +67,8 @@ func (e *Engine) Resolve(domain, qtype string, clientIP net.IP) ([]net.IP, uint3
 	if err != nil {
 		return nil, 0, err
 	}
-	log.Printf("[GSLB] Found %d members in pool %d", len(members), matched.ID)
 
 	selected, allFailed := e.selectMembers(members)
-	log.Printf("[GSLB] Selected %d members (allFailed=%v)", len(selected), allFailed)
 	if len(selected) == 0 {
 		return nil, 0, nil
 	}
