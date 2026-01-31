@@ -1,6 +1,7 @@
 package web
 
 import (
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -10,6 +11,46 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+// validRecordTypes는 허용되는 DNS 레코드 타입 목록
+var validRecordTypes = map[string]bool{
+	"A": true, "AAAA": true, "CNAME": true, "MX": true,
+	"TXT": true, "NS": true, "SRV": true, "PTR": true, "CAA": true,
+}
+
+// validateRecordType은 레코드 타입이 유효한지 검증합니다
+func validateRecordType(t string) bool {
+	return validRecordTypes[strings.ToUpper(t)]
+}
+
+// validateRecordContent는 레코드 타입에 따라 content 값을 검증합니다
+func validateRecordContent(recordType, content string) string {
+	switch strings.ToUpper(recordType) {
+	case "A":
+		ip := net.ParseIP(content)
+		if ip == nil || ip.To4() == nil {
+			return "A 레코드의 content는 유효한 IPv4 주소여야 합니다"
+		}
+	case "AAAA":
+		ip := net.ParseIP(content)
+		if ip == nil || ip.To4() != nil {
+			return "AAAA 레코드의 content는 유효한 IPv6 주소여야 합니다"
+		}
+	case "CNAME", "NS", "PTR":
+		// 도메인명 형식 기본 검증
+		name := strings.TrimSuffix(content, ".")
+		if name == "" || strings.Contains(name, " ") {
+			return recordType + " 레코드의 content는 유효한 도메인명이어야 합니다"
+		}
+	case "MX":
+		// MX는 도메인명 형식
+		name := strings.TrimSuffix(content, ".")
+		if name == "" || strings.Contains(name, " ") {
+			return "MX 레코드의 content는 유효한 도메인명이어야 합니다"
+		}
+	}
+	return ""
+}
 
 type recordRequest struct {
 	Name     string `json:"name"`
@@ -136,6 +177,17 @@ func (api *API) createRecord(c *gin.Context) {
 		return
 	}
 
+	// Zone 존재 여부 확인
+	zone, err := api.zoneStorage.GetZone(zoneID)
+	if err != nil {
+		respondInternalError(c, err.Error())
+		return
+	}
+	if zone == nil {
+		respondNotFound(c, "Zone을 찾을 수 없습니다")
+		return
+	}
+
 	name := normalizeFQDN(req.Name)
 	if name == "" {
 		respondBadRequest(c, "name은 필수입니다")
@@ -145,8 +197,24 @@ func (api *API) createRecord(c *gin.Context) {
 		respondBadRequest(c, "type은 필수입니다")
 		return
 	}
+	if !validateRecordType(req.Type) {
+		respondBadRequest(c, "type은 A, AAAA, CNAME, MX, TXT, NS, SRV, PTR, CAA 중 하나여야 합니다")
+		return
+	}
 	if strings.TrimSpace(req.Content) == "" {
 		respondBadRequest(c, "content는 필수입니다")
+		return
+	}
+	if msg := validateRecordContent(req.Type, req.Content); msg != "" {
+		respondBadRequest(c, msg)
+		return
+	}
+	if req.TTL < 0 {
+		respondBadRequest(c, "TTL은 0 이상이어야 합니다")
+		return
+	}
+	if req.Priority < 0 {
+		respondBadRequest(c, "priority는 0 이상이어야 합니다")
 		return
 	}
 
@@ -175,11 +243,6 @@ func (api *API) createRecord(c *gin.Context) {
 	if err != nil {
 		respondInternalError(c, err.Error())
 		return
-	}
-
-	zone, err := api.zoneStorage.GetZone(created.ZoneID)
-	if err != nil {
-		zone = nil
 	}
 
 	respondSuccess(c, http.StatusCreated, toRecordResponse(created, zone))
@@ -215,8 +278,24 @@ func (api *API) updateRecord(c *gin.Context) {
 		respondBadRequest(c, "type은 필수입니다")
 		return
 	}
+	if !validateRecordType(req.Type) {
+		respondBadRequest(c, "type은 A, AAAA, CNAME, MX, TXT, NS, SRV, PTR, CAA 중 하나여야 합니다")
+		return
+	}
 	if strings.TrimSpace(req.Content) == "" {
 		respondBadRequest(c, "content는 필수입니다")
+		return
+	}
+	if msg := validateRecordContent(req.Type, req.Content); msg != "" {
+		respondBadRequest(c, msg)
+		return
+	}
+	if req.TTL < 0 {
+		respondBadRequest(c, "TTL은 0 이상이어야 합니다")
+		return
+	}
+	if req.Priority < 0 {
+		respondBadRequest(c, "priority는 0 이상이어야 합니다")
 		return
 	}
 

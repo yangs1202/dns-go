@@ -67,6 +67,19 @@ func (api *API) createPolicy(c *gin.Context) {
 		return
 	}
 
+	recordType := strings.ToUpper(strings.TrimSpace(req.RecordType))
+	if recordType == "" {
+		recordType = "A"
+	}
+	if recordType != "A" && recordType != "AAAA" {
+		respondBadRequest(c, "record_type은 A 또는 AAAA여야 합니다")
+		return
+	}
+	if req.TTL < 0 {
+		respondBadRequest(c, "TTL은 0 이상이어야 합니다")
+		return
+	}
+
 	enabled := true
 	if req.Enabled != nil {
 		enabled = *req.Enabled
@@ -75,7 +88,7 @@ func (api *API) createPolicy(c *gin.Context) {
 	policy := &model.GSLBPolicy{
 		Name:       req.Name,
 		Domain:     domain,
-		RecordType: strings.ToUpper(req.RecordType),
+		RecordType: recordType,
 		TTL:        req.TTL,
 		Enabled:    enabled,
 	}
@@ -119,6 +132,19 @@ func (api *API) updatePolicy(c *gin.Context) {
 		return
 	}
 
+	recordType := strings.ToUpper(strings.TrimSpace(req.RecordType))
+	if recordType == "" {
+		recordType = "A"
+	}
+	if recordType != "A" && recordType != "AAAA" {
+		respondBadRequest(c, "record_type은 A 또는 AAAA여야 합니다")
+		return
+	}
+	if req.TTL < 0 {
+		respondBadRequest(c, "TTL은 0 이상이어야 합니다")
+		return
+	}
+
 	enabled := true
 	if req.Enabled != nil {
 		enabled = *req.Enabled
@@ -128,7 +154,7 @@ func (api *API) updatePolicy(c *gin.Context) {
 		ID:         id,
 		Name:       req.Name,
 		Domain:     domain,
-		RecordType: strings.ToUpper(req.RecordType),
+		RecordType: recordType,
 		TTL:        req.TTL,
 		Enabled:    enabled,
 	}
@@ -201,7 +227,26 @@ func (api *API) createPool(c *gin.Context) {
 	}
 
 	// match_type이 "fallback"이면 자동으로 FallbackPool=true 설정
-	matchType := strings.ToLower(req.MatchType)
+	matchType := strings.ToLower(strings.TrimSpace(req.MatchType))
+	if matchType != "cidr" && matchType != "geo_country" && matchType != "geo_continent" && matchType != "default" && matchType != "fallback" {
+		respondBadRequest(c, "match_type은 cidr, geo_country, geo_continent, default, fallback 중 하나여야 합니다")
+		return
+	}
+	if matchType == "cidr" {
+		if strings.TrimSpace(req.MatchValue) == "" {
+			respondBadRequest(c, "cidr match_type에는 match_value가 필수입니다")
+			return
+		}
+		if _, _, err := net.ParseCIDR(req.MatchValue); err != nil {
+			respondBadRequest(c, "match_value는 유효한 CIDR 형식이어야 합니다 (예: 10.0.0.0/8)")
+			return
+		}
+	}
+	if req.Priority < 0 {
+		respondBadRequest(c, "priority는 0 이상이어야 합니다")
+		return
+	}
+
 	fallbackPool := req.FallbackPool
 	if matchType == "fallback" {
 		fallbackPool = true
@@ -249,13 +294,38 @@ func (api *API) updatePool(c *gin.Context) {
 		return
 	}
 
+	matchType := strings.ToLower(strings.TrimSpace(req.MatchType))
+	if matchType != "cidr" && matchType != "geo_country" && matchType != "geo_continent" && matchType != "default" && matchType != "fallback" {
+		respondBadRequest(c, "match_type은 cidr, geo_country, geo_continent, default, fallback 중 하나여야 합니다")
+		return
+	}
+	if matchType == "cidr" {
+		if strings.TrimSpace(req.MatchValue) == "" {
+			respondBadRequest(c, "cidr match_type에는 match_value가 필수입니다")
+			return
+		}
+		if _, _, err := net.ParseCIDR(req.MatchValue); err != nil {
+			respondBadRequest(c, "match_value는 유효한 CIDR 형식이어야 합니다 (예: 10.0.0.0/8)")
+			return
+		}
+	}
+	if req.Priority < 0 {
+		respondBadRequest(c, "priority는 0 이상이어야 합니다")
+		return
+	}
+
+	fallbackPool := req.FallbackPool
+	if matchType == "fallback" {
+		fallbackPool = true
+	}
+
 	pool := &model.GSLBPool{
 		ID:           id,
 		Name:         req.Name,
-		MatchType:    strings.ToLower(req.MatchType),
+		MatchType:    matchType,
 		MatchValue:   req.MatchValue,
 		Priority:     req.Priority,
-		FallbackPool: req.FallbackPool,
+		FallbackPool: fallbackPool,
 	}
 
 	if err := api.poolStorage.UpdatePool(pool); err != nil {
@@ -330,6 +400,10 @@ func (api *API) createMember(c *gin.Context) {
 		respondBadRequest(c, "address는 유효한 IP 주소여야 합니다 (포트 제외)")
 		return
 	}
+	if req.Weight < 0 || req.Weight > 100 {
+		respondBadRequest(c, "weight는 0~100 사이여야 합니다")
+		return
+	}
 
 	enabled := true
 	if req.Enabled != nil {
@@ -379,6 +453,10 @@ func (api *API) updateMember(c *gin.Context) {
 	// IP 주소 검증 (포트 포함 불가)
 	if net.ParseIP(req.Address) == nil {
 		respondBadRequest(c, "address는 유효한 IP 주소여야 합니다 (포트 제외)")
+		return
+	}
+	if req.Weight < 0 || req.Weight > 100 {
+		respondBadRequest(c, "weight는 0~100 사이여야 합니다")
 		return
 	}
 
