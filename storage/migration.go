@@ -172,19 +172,34 @@ func (db *Database) Migrate() error {
 		`ALTER TABLE zones ADD COLUMN allow_fallback INTEGER DEFAULT 1`,
 	}
 
-	// 헬스체크 테이블 마이그레이션: member_id -> policy_id
-	healthCheckMigrations := []string{
-		// 임시 백업 테이블 생성
-		`CREATE TABLE IF NOT EXISTS health_checks_backup AS SELECT * FROM health_checks`,
-		// 기존 테이블 삭제
-		`DROP TABLE IF EXISTS health_checks`,
-		// 새 스키마로 재생성 (위 schemas에서 이미 정의됨)
+	// 헬스체크 테이블 마이그레이션: member_id -> policy_id (일회성)
+	// 기존 테이블에 member_id 컬럼이 있는 경우에만 마이그레이션 실행
+	var hasMemberID int
+	row := db.Writer.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('health_checks') WHERE name='member_id'`)
+	if err := row.Scan(&hasMemberID); err == nil && hasMemberID > 0 {
+		healthCheckMigrations := []string{
+			`CREATE TABLE IF NOT EXISTS health_checks_new (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				policy_id INTEGER NOT NULL REFERENCES gslb_policies(id) ON DELETE CASCADE,
+				check_type TEXT NOT NULL DEFAULT 'tcp',
+				target TEXT NOT NULL,
+				interval_sec INTEGER DEFAULT 10,
+				timeout_sec INTEGER DEFAULT 5,
+				healthy_threshold INTEGER DEFAULT 3,
+				unhealthy_threshold INTEGER DEFAULT 2,
+				enabled INTEGER DEFAULT 1
+			)`,
+			`INSERT INTO health_checks_new (id, policy_id, check_type, target, interval_sec, timeout_sec, healthy_threshold, unhealthy_threshold, enabled)
+			 SELECT id, COALESCE(policy_id, member_id), check_type, target, interval_sec, timeout_sec, healthy_threshold, unhealthy_threshold, enabled FROM health_checks`,
+			`DROP TABLE health_checks`,
+			`ALTER TABLE health_checks_new RENAME TO health_checks`,
+		}
+		for _, migration := range healthCheckMigrations {
+			db.Writer.Exec(migration)
+		}
 	}
-
-	// 헬스체크 마이그레이션 먼저 실행 (테이블 재생성 필요)
-	for _, migration := range healthCheckMigrations {
-		db.Writer.Exec(migration)
-	}
+	// 남아있는 백업 테이블 정리
+	db.Writer.Exec(`DROP TABLE IF EXISTS health_checks_backup`)
 
 	for _, schema := range schemas {
 		if _, err := db.Writer.Exec(schema); err != nil {
