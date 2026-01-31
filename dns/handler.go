@@ -1,6 +1,7 @@
 package dns
 
 import (
+	"dns-go/gslb"
 	"dns-go/model"
 	"dns-go/storage"
 	"fmt"
@@ -13,12 +14,13 @@ import (
 
 // Handler는 DNS 쿼리를 처리하는 핸들러입니다
 type Handler struct {
-	cache          *DNSCache              // L1 DNS 응답 캐시
-	zoneStorage    *storage.ZoneStorage   // Zone 저장소 (L2 캐시)
-	recordStorage  *storage.RecordStorage // Record 저장소 (L2 캐시)
-	resolver       *Resolver              // 업스트림 리졸버
-	cacheSettings  *storage.Database      // 캐시 설정 조회용
-	stats          *QueryStats
+	cache         *DNSCache              // L1 DNS 응답 캐시
+	zoneStorage   *storage.ZoneStorage   // Zone 저장소 (L2 캐시)
+	recordStorage *storage.RecordStorage // Record 저장소 (L2 캐시)
+	resolver      *Resolver              // 업스트림 리졸버
+	cacheSettings *storage.Database      // 캐시 설정 조회용
+	stats         *QueryStats
+	gslbEngine    *gslb.Engine
 }
 
 // NewHandler는 새로운 DNS 핸들러를 생성합니다
@@ -28,6 +30,7 @@ func NewHandler(
 	resolver *Resolver,
 	db *storage.Database,
 	stats *QueryStats,
+	gslbEngine *gslb.Engine,
 ) (*Handler, error) {
 	// DB에서 캐시 설정 로드
 	var enabled, maxSize, defaultTTL, negativeTTL int64
@@ -49,6 +52,7 @@ func NewHandler(
 		resolver:      resolver,
 		cacheSettings: db,
 		stats:         stats,
+		gslbEngine:    gslbEngine,
 	}
 
 	// Prefetch 콜백 함수 설정
@@ -115,12 +119,49 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	// }
 
 	// 3. TODO: GSLB 정책 확인
-	// if gslbResp := h.gslbPolicy.Resolve(domain, qtype, clientIP); gslbResp != nil {
-	//     resp.Answer = gslbResp
-	//     h.cache.Set(domain, qtype, gslbResp, ttl, false)
-	//     w.WriteMsg(resp)
-	//     return
-	// }
+	if h.gslbEngine != nil {
+		clientIP := ExtractClientIP(req)
+		if clientIP == nil {
+			if addr := w.RemoteAddr(); addr != nil {
+				if host, _, err := net.SplitHostPort(addr.String()); err == nil {
+					clientIP = net.ParseIP(host)
+				}
+			}
+		}
+
+		ips, ttl, err := h.gslbEngine.Resolve(domain, qtype, clientIP)
+		if err != nil {
+			log.Printf("[DNS] GSLB resolve error: %v", err)
+		} else if len(ips) > 0 {
+			answers := make([]dns.RR, 0, len(ips))
+			for _, ip := range ips {
+				if ip == nil {
+					continue
+				}
+				if qtype == "A" {
+					if ip4 := ip.To4(); ip4 != nil {
+						answers = append(answers, &dns.A{Hdr: dns.RR_Header{Name: domain, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: ttl}, A: ip4})
+					}
+				} else if qtype == "AAAA" {
+					if ip.To4() == nil {
+						answers = append(answers, &dns.AAAA{Hdr: dns.RR_Header{Name: domain, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: ttl}, AAAA: ip})
+					}
+				}
+			}
+
+			if len(answers) > 0 {
+				resp.Answer = answers
+				resp.Rcode = dns.RcodeSuccess
+				cacheTTL := int64(ttl)
+				if cacheTTL <= 0 {
+					cacheTTL = 30
+				}
+				h.cache.Set(domain, qtype, resp.Answer, cacheTTL, false)
+				w.WriteMsg(resp)
+				return
+			}
+		}
+	}
 
 	// 4. Zone 조회 (L2 캐시 활용)
 	zoneName := h.extractDomain(domain)
@@ -306,7 +347,8 @@ func (h *Handler) recordToRR(record *model.Record) dns.RR {
 
 // extractDomain은 FQDN에서 Zone 이름을 추출합니다
 // 예: "www.example.com." -> "example.com."
-//     "api.sub.example.com." -> "example.com." (단, sub.example.com. Zone이 없을 때)
+//
+//	"api.sub.example.com." -> "example.com." (단, sub.example.com. Zone이 없을 때)
 func (h *Handler) extractDomain(fqdn string) string {
 	// FQDN을 점으로 분할
 	parts := strings.Split(strings.TrimSuffix(fqdn, "."), ".")

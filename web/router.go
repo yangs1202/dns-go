@@ -36,6 +36,19 @@ func NewRouter(api *API) *gin.Engine {
 		apiGroup.GET("/cache/stats", api.getCacheStats)
 
 		apiGroup.GET("/stats", api.getStats)
+
+		apiGroup.GET("/gslb/policies", api.listPolicies)
+		apiGroup.POST("/gslb/policies", api.createPolicy)
+		apiGroup.PUT("/gslb/policies/:id", api.updatePolicy)
+		apiGroup.DELETE("/gslb/policies/:id", api.deletePolicy)
+		apiGroup.GET("/gslb/policies/:id/pools", api.listPools)
+		apiGroup.POST("/gslb/policies/:id/pools", api.createPool)
+		apiGroup.PUT("/gslb/pools/:id", api.updatePool)
+		apiGroup.DELETE("/gslb/pools/:id", api.deletePool)
+		apiGroup.GET("/gslb/pools/:id/members", api.listMembers)
+		apiGroup.POST("/gslb/pools/:id/members", api.createMember)
+		apiGroup.PUT("/gslb/members/:id", api.updateMember)
+		apiGroup.DELETE("/gslb/members/:id", api.deleteMember)
 	}
 
 	return router

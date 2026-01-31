@@ -2,6 +2,7 @@ package web
 
 import (
 	"dns-go/dns"
+	"dns-go/gslb"
 	"dns-go/storage"
 )
 
@@ -12,6 +13,8 @@ type API struct {
 	db              *storage.Database
 	dnsHandler      *dns.Handler
 	queryStats      *dns.QueryStats
+	policyStorage   *gslb.PolicyStorage
+	poolStorage     *gslb.PoolStorage
 }
 
 func NewAPI(
@@ -21,6 +24,8 @@ func NewAPI(
 	db *storage.Database,
 	dnsHandler *dns.Handler,
 	queryStats *dns.QueryStats,
+	policyStorage *gslb.PolicyStorage,
+	poolStorage *gslb.PoolStorage,
 ) *API {
 	return &API{
 		zoneStorage:     zoneStorage,
@@ -29,5 +34,7 @@ func NewAPI(
 		db:              db,
 		dnsHandler:      dnsHandler,
 		queryStats:      queryStats,
+		policyStorage:   policyStorage,
+		poolStorage:     poolStorage,
 	}
 }

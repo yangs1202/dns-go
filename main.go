@@ -3,12 +3,14 @@ package main
 import (
 	"dns-go/config"
 	"dns-go/dns"
+	"dns-go/gslb"
 	"dns-go/storage"
 	"dns-go/web"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 )
 
@@ -45,11 +47,33 @@ func main() {
 
 	log.Println("업스트림 리졸버 초기화 완료")
 
+	// GeoIP 리졸버 초기화 (선택)
+	var geoipResolver *gslb.GeoIPResolver
+	if cfg.GeoIP.CityDB != "" {
+		var err error
+		geoipResolver, err = gslb.NewGeoIPResolver(cfg.GeoIP.CityDB)
+		if err != nil {
+			log.Printf("GeoIP DB 로드 실패 (GeoIP 비활성): %v", err)
+			geoipResolver = nil
+		} else {
+			defer geoipResolver.Close()
+			log.Println("GeoIP 리졸버 초기화 완료")
+		}
+	}
+
+	// GSLB Storage 초기화
+	policyStorage := gslb.NewPolicyStorage(db)
+	poolStorage := gslb.NewPoolStorage(db)
+	healthStatus := &sync.Map{}
+	gslbEngine := gslb.NewEngine(policyStorage, poolStorage, geoipResolver, healthStatus)
+
+	log.Println("GSLB 엔진 초기화 완료")
+
 	// 쿼리 통계
 	queryStats := dns.NewQueryStats()
 
 	// DNS 핸들러 초기화
-	handler, err := dns.NewHandler(zoneStorage, recordStorage, resolver, db, queryStats)
+	handler, err := dns.NewHandler(zoneStorage, recordStorage, resolver, db, queryStats, gslbEngine)
 	if err != nil {
 		log.Fatalf("DNS 핸들러 초기화 실패: %v", err)
 	}
@@ -66,7 +90,7 @@ func main() {
 	log.Printf("DNS 서버 시작 성공: %s", server.GetAddr())
 
 	// Web API 서버 초기화 및 시작
-	api := web.NewAPI(zoneStorage, recordStorage, upstreamStorage, db, handler, queryStats)
+	api := web.NewAPI(zoneStorage, recordStorage, upstreamStorage, db, handler, queryStats, policyStorage, poolStorage)
 	webServer := web.NewServer(cfg.Web.Listen, cfg.Web.Port, api)
 
 	go func() {
