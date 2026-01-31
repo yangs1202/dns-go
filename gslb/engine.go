@@ -68,18 +68,27 @@ func (e *Engine) Resolve(domain, qtype string, clientIP net.IP) ([]net.IP, uint3
 		return nil, 0, err
 	}
 
-	selected := e.selectMember(members)
-	if selected == nil {
+	selected, allFailed := e.selectMembers(members)
+	if len(selected) == 0 {
 		return nil, 0, nil
 	}
 
 	// Member.Address는 순수 IP만 포함 (포트 제외)
 	// 예: "10.97.11.18" 또는 "2001:db8::1"
-	ip := net.ParseIP(selected.Address)
-	if ip == nil {
-		return nil, 0, errors.New("멤버 IP 파싱 실패: " + selected.Address)
+	ips := make([]net.IP, 0, len(selected))
+	for _, member := range selected {
+		ip := net.ParseIP(member.Address)
+		if ip == nil {
+			return nil, 0, errors.New("멤버 IP 파싱 실패: " + member.Address)
+		}
+		ips = append(ips, ip)
 	}
-	return []net.IP{ip}, uint32(policy.TTL), nil
+
+	// 모든 멤버가 실패한 경우 전체 응답, 그렇지 않으면 단일 응답
+	if allFailed {
+		return ips, uint32(policy.TTL), nil
+	}
+	return ips[:1], uint32(policy.TTL), nil
 }
 
 func (e *Engine) matchPool(pool *model.GSLBPool, clientIP net.IP) bool {
@@ -121,12 +130,15 @@ func (e *Engine) matchPool(pool *model.GSLBPool, clientIP net.IP) bool {
 	}
 }
 
-func (e *Engine) selectMember(members []*model.GSLBMember) *model.GSLBMember {
+// selectMembers는 GSLB 멤버를 선택하고 모든 멤버가 실패했는지 여부를 반환합니다
+// 반환값: (선택된 멤버들, 모든 멤버가 실패했는지 여부)
+func (e *Engine) selectMembers(members []*model.GSLBMember) ([]*model.GSLBMember, bool) {
 	if len(members) == 0 {
-		return nil
+		return nil, false
 	}
 
-	enabled := make([]*model.GSLBMember, 0)
+	// 1단계: healthy한 enabled 멤버만 필터링
+	healthy := make([]*model.GSLBMember, 0)
 	for _, member := range members {
 		if !member.Enabled {
 			continue
@@ -138,35 +150,52 @@ func (e *Engine) selectMember(members []*model.GSLBMember) *model.GSLBMember {
 				}
 			}
 		}
-		enabled = append(enabled, member)
+		healthy = append(healthy, member)
 	}
 
-	if len(enabled) == 0 {
-		for _, member := range members {
-			if member.Enabled {
-				enabled = append(enabled, member)
-			}
+	// 2단계: healthy 멤버가 있으면 가중치 기반 선택
+	if len(healthy) > 0 {
+		selected := e.weightedSelect(healthy)
+		if selected != nil {
+			return []*model.GSLBMember{selected}, false
 		}
 	}
 
-	if len(enabled) == 0 {
+	// 3단계: 모든 멤버가 unhealthy → enabled된 모든 멤버 반환
+	allEnabled := make([]*model.GSLBMember, 0)
+	for _, member := range members {
+		if member.Enabled {
+			allEnabled = append(allEnabled, member)
+		}
+	}
+
+	if len(allEnabled) > 0 {
+		return allEnabled, true
+	}
+
+	return nil, false
+}
+
+// weightedSelect는 가중치 기반으로 단일 멤버를 선택합니다
+func (e *Engine) weightedSelect(members []*model.GSLBMember) *model.GSLBMember {
+	if len(members) == 0 {
 		return nil
 	}
 
 	total := int64(0)
-	for _, member := range enabled {
+	for _, member := range members {
 		if member.Weight > 0 {
 			total += member.Weight
 		}
 	}
 	if total == 0 {
-		return enabled[0]
+		return members[0]
 	}
 
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	pick := rng.Int63n(total)
 	acc := int64(0)
-	for _, member := range enabled {
+	for _, member := range members {
 		if member.Weight <= 0 {
 			continue
 		}
@@ -176,5 +205,5 @@ func (e *Engine) selectMember(members []*model.GSLBMember) *model.GSLBMember {
 		}
 	}
 
-	return enabled[0]
+	return members[0]
 }
