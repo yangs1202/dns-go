@@ -200,13 +200,20 @@ func (api *API) createPool(c *gin.Context) {
 		return
 	}
 
+	// match_type이 "fallback"이면 자동으로 FallbackPool=true 설정
+	matchType := strings.ToLower(req.MatchType)
+	fallbackPool := req.FallbackPool
+	if matchType == "fallback" {
+		fallbackPool = true
+	}
+
 	pool := &model.GSLBPool{
 		PolicyID:     policyID,
 		Name:         req.Name,
-		MatchType:    strings.ToLower(req.MatchType),
+		MatchType:    matchType,
 		MatchValue:   req.MatchValue,
 		Priority:     req.Priority,
-		FallbackPool: req.FallbackPool,
+		FallbackPool: fallbackPool,
 	}
 
 	id, err := api.poolStorage.CreatePool(pool)

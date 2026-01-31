@@ -375,7 +375,9 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 
 				// 1. GSLB 도메인인지 확인
 				if h.gslbEngine != nil {
+					log.Printf("[DNS] Checking if CNAME target is GSLB: %s", target)
 					ips, _, err := h.gslbEngine.Resolve(target, qtype, clientIP)
+					log.Printf("[DNS] GSLB Resolve result: ips=%d, err=%v", len(ips), err)
 					if err == nil && len(ips) > 0 {
 						log.Printf("[DNS] CNAME target is GSLB domain, resolved %d IPs", len(ips))
 						// GSLB 결과를 가상 레코드로 변환
@@ -390,6 +392,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 										Type:    "A",
 										Content: ip4.String(),
 										TTL:     60, // GSLB는 짧은 TTL
+										Enabled: true,
 									})
 								}
 							} else if qtype == "AAAA" {
@@ -399,6 +402,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 										Type:    "AAAA",
 										Content: ip.String(),
 										TTL:     60,
+										Enabled: true,
 									})
 								}
 							}
@@ -422,6 +426,9 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 		// 레코드가 있으면 응답 생성
 		if len(records) > 0 {
 			log.Printf("[DNS] Records found: %d records", len(records))
+			for i, r := range records {
+				log.Printf("[DNS]   Record[%d]: Name=%s, Type=%s, Content=%s", i, r.Name, r.Type, r.Content)
+			}
 
 			// RFC 1035: Zone에서 직접 응답하는 경우 Authoritative
 			resp.Authoritative = true
@@ -511,17 +518,21 @@ func (h *Handler) buildResponse(question dns.Question, records []*model.Record) 
 	resp := new(dns.Msg)
 	resp.SetQuestion(question.Name, question.Qtype)
 
-	for _, record := range records {
+	for i, record := range records {
+		log.Printf("[DNS] buildResponse[%d]: Name=%s, Type=%s, Enabled=%v", i, record.Name, record.Type, record.Enabled)
 		if !record.Enabled {
+			log.Printf("[DNS]   Skipped (disabled)")
 			continue
 		}
 
 		rr := h.recordToRR(record)
+		log.Printf("[DNS]   RR created: %v", rr)
 		if rr != nil {
 			resp.Answer = append(resp.Answer, rr)
 		}
 	}
 
+	log.Printf("[DNS] buildResponse complete: %d answers", len(resp.Answer))
 	return resp
 }
 
