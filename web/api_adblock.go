@@ -1,6 +1,7 @@
 package web
 
 import (
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -198,11 +199,13 @@ func (api *API) syncAdblockSource(c *gin.Context) {
 		respondBadRequest(c, "잘못된 source ID")
 		return
 	}
-	if err := api.adblockSyncer.SyncSource(id); err != nil {
-		respondInternalError(c, err.Error())
-		return
-	}
-	respondSuccess(c, http.StatusOK, gin.H{"message": "동기화 완료"})
+	// 비동기로 동기화 실행 (대량 도메인 다운로드로 시간이 오래 걸림)
+	go func() {
+		if err := api.adblockSyncer.SyncSource(id); err != nil {
+			log.Printf("[Adblock] source %d 동기화 실패: %v", id, err)
+		}
+	}()
+	respondSuccess(c, http.StatusAccepted, gin.H{"message": "동기화 시작됨"})
 }
 
 func (api *API) getAdblockStats(c *gin.Context) {

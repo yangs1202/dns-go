@@ -224,6 +224,28 @@ func (s *AdblockStorage) AddBlockedDomain(sourceID int64, domain string) error {
 	return nil
 }
 
+func (s *AdblockStorage) AddBlockedDomainsBatch(sourceID int64, domains []string) error {
+	tx, err := s.db.Writer.Begin()
+	if err != nil {
+		return fmt.Errorf("트랜잭션 시작 실패: %w", err)
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare(`INSERT OR IGNORE INTO adblock_domains (domain, source_id) VALUES (?, ?)`)
+	if err != nil {
+		return fmt.Errorf("prepared statement 실패: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, domain := range domains {
+		domain = normalizeDomain(domain)
+		if _, err := stmt.Exec(domain, sourceID); err != nil {
+			return fmt.Errorf("차단 도메인 추가 실패: %w", err)
+		}
+	}
+	return tx.Commit()
+}
+
 func (s *AdblockStorage) RemoveBlockedDomains(sourceID int64) error {
 	_, err := s.db.Writer.Exec("DELETE FROM adblock_domains WHERE source_id = ?", sourceID)
 	if err != nil {

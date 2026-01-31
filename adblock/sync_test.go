@@ -77,6 +77,18 @@ func (m *mockSyncStorage) AddBlockedDomain(sourceID int64, domain string) error 
 	return nil
 }
 
+func (m *mockSyncStorage) AddBlockedDomainsBatch(sourceID int64, domains []string) error {
+	if m.addDomainErr != nil {
+		return m.addDomainErr
+	}
+	m.addedDomains = append(m.addedDomains, domains...)
+	if m.domains == nil {
+		m.domains = make(map[int64][]string)
+	}
+	m.domains[sourceID] = append(m.domains[sourceID], domains...)
+	return nil
+}
+
 func (m *mockSyncStorage) RemoveBlockedDomains(sourceID int64) error {
 	if m.removeDomainErr != nil {
 		return m.removeDomainErr

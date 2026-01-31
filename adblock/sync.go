@@ -14,6 +14,7 @@ type SyncStorageInterface interface {
 	GetAdblockSource(id int64) (*model.AdblockSource, error)
 	UpdateAdblockSource(source *model.AdblockSource) error
 	AddBlockedDomain(sourceID int64, domain string) error
+	AddBlockedDomainsBatch(sourceID int64, domains []string) error
 	RemoveBlockedDomains(sourceID int64) error
 }
 
@@ -114,10 +115,8 @@ func (s *Syncer) syncSource(src *model.AdblockSource) error {
 		if err := s.storage.RemoveBlockedDomains(src.ID); err != nil {
 			return err
 		}
-		for _, domain := range rules {
-			if err := s.storage.AddBlockedDomain(src.ID, domain); err != nil {
-				return err
-			}
+		if err := s.storage.AddBlockedDomainsBatch(src.ID, rules); err != nil {
+			return err
 		}
 		src.RuleCount = int64(len(rules))
 	}
