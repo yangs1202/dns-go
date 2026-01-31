@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  dns-go:
+    image: registry.yangs.sh/yangs/dns-go:latest
+    container_name: dns-go
+    restart: unless-stopped
+
+    # 호스트 네트워크 모드 사용 (DNS 53번 포트 직접 바인딩)
+    network_mode: host
+
+    volumes:
+      # 데이터베이스 영구 저장
+      - ./data:/data
+      # 설정 파일 (선택사항 - 커스텀 설정 사용 시)
+      # - ./config.yaml:/app/config.yaml:ro
+      # GeoIP 데이터베이스 (선택사항)
+      # - ./GeoLite2-City.mmdb:/app/GeoLite2-City.mmdb:ro
+
+    environment:
+      # 환경변수로 설정 오버라이드 가능
+      - TZ=Asia/Seoul
+
+    # 헬스체크
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/stats"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    # 리소스 제한 (선택사항)
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '1.0'
+    #       memory: 512M
+    #     reservations:
+    #       cpus: '0.5'
+    #       memory: 256M
+
+    # 로깅 설정
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# 볼륨 정의 (외부 볼륨 사용 시)
+# volumes:
+#   dns-data:
+#     driver: local
