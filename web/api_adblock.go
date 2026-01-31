@@ -23,7 +23,7 @@ type adblockSourceResponse struct {
 	URL          string     `json:"url"`
 	Enabled      bool       `json:"enabled"`
 	LastSync     *time.Time `json:"last_sync"`     // null 가능
-	LastModified *string    `json:"last_modified"` // null 가능
+	LastModified *time.Time `json:"last_modified"` // null 가능
 	RuleCount    int64      `json:"rule_count"`
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`
@@ -45,7 +45,11 @@ func toAdblockSourceResponse(s *model.AdblockSource) adblockSourceResponse {
 	}
 
 	if s.LastModified.Valid {
-		resp.LastModified = &s.LastModified.String
+		// HTTP 날짜 형식을 time.Time으로 파싱 (RFC1123)
+		// 예: "Sat, 31 Jan 2026 12:12:23 GMT"
+		if t, err := time.Parse(time.RFC1123, s.LastModified.String); err == nil {
+			resp.LastModified = &t
+		}
 	}
 
 	return resp
