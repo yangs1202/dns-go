@@ -48,9 +48,9 @@ func (api *API) createRecord(c *gin.Context) {
 		return
 	}
 
-	name := strings.TrimSpace(req.Name)
-	if name == "" || !strings.HasSuffix(name, ".") {
-		respondBadRequest(c, "name은 FQDN 형식이어야 합니다 (끝에 . 필요)")
+	name := normalizeFQDN(req.Name)
+	if name == "" {
+		respondBadRequest(c, "name은 필수입니다")
 		return
 	}
 	if strings.TrimSpace(req.Type) == "" {
@@ -105,9 +105,9 @@ func (api *API) updateRecord(c *gin.Context) {
 		return
 	}
 
-	name := strings.TrimSpace(req.Name)
-	if name == "" || !strings.HasSuffix(name, ".") {
-		respondBadRequest(c, "name은 FQDN 형식이어야 합니다 (끝에 . 필요)")
+	name := normalizeFQDN(req.Name)
+	if name == "" {
+		respondBadRequest(c, "name은 필수입니다")
 		return
 	}
 	if strings.TrimSpace(req.Type) == "" {

@@ -59,8 +59,10 @@ func (api *API) createPolicy(c *gin.Context) {
 		respondBadRequest(c, "name과 domain은 필수입니다")
 		return
 	}
-	if !strings.HasSuffix(req.Domain, ".") {
-		respondBadRequest(c, "domain은 FQDN 형식이어야 합니다 (끝에 . 필요)")
+
+	domain := normalizeFQDN(req.Domain)
+	if domain == "" {
+		respondBadRequest(c, "domain은 필수입니다")
 		return
 	}
 
@@ -71,7 +73,7 @@ func (api *API) createPolicy(c *gin.Context) {
 
 	policy := &model.GSLBPolicy{
 		Name:       req.Name,
-		Domain:     req.Domain,
+		Domain:     domain,
 		RecordType: strings.ToUpper(req.RecordType),
 		TTL:        req.TTL,
 		Enabled:    enabled,
@@ -109,8 +111,10 @@ func (api *API) updatePolicy(c *gin.Context) {
 		respondBadRequest(c, "name과 domain은 필수입니다")
 		return
 	}
-	if !strings.HasSuffix(req.Domain, ".") {
-		respondBadRequest(c, "domain은 FQDN 형식이어야 합니다 (끝에 . 필요)")
+
+	domain := normalizeFQDN(req.Domain)
+	if domain == "" {
+		respondBadRequest(c, "domain은 필수입니다")
 		return
 	}
 
@@ -122,7 +126,7 @@ func (api *API) updatePolicy(c *gin.Context) {
 	policy := &model.GSLBPolicy{
 		ID:         id,
 		Name:       req.Name,
-		Domain:     req.Domain,
+		Domain:     domain,
 		RecordType: strings.ToUpper(req.RecordType),
 		TTL:        req.TTL,
 		Enabled:    enabled,

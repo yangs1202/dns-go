@@ -187,8 +187,8 @@ func (api *API) getAdblockStatus(c *gin.Context) {
 	}
 	latestSync := time.Time{}
 	for _, src := range sources {
-		if src.LastSync.After(latestSync) {
-			latestSync = src.LastSync
+		if src.LastSync.Valid && src.LastSync.Time.After(latestSync) {
+			latestSync = src.LastSync.Time
 		}
 	}
 	respondSuccess(c, http.StatusOK, gin.H{

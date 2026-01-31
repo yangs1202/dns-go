@@ -1,6 +1,7 @@
 package adblock
 
 import (
+	"database/sql"
 	"dns-go/model"
 	"dns-go/storage"
 	"log"
@@ -82,7 +83,11 @@ func (s *Syncer) SyncSource(id int64) error {
 }
 
 func (s *Syncer) syncSource(src *model.AdblockSource) error {
-	rules, lastModified, err := s.loader.Download(src.URL, src.LastModified)
+	lastMod := ""
+	if src.LastModified.Valid {
+		lastMod = src.LastModified.String
+	}
+	rules, lastModified, err := s.loader.Download(src.URL, lastMod)
 	if err != nil {
 		return err
 	}
@@ -99,7 +104,7 @@ func (s *Syncer) syncSource(src *model.AdblockSource) error {
 		src.RuleCount = int64(len(rules))
 	}
 
-	src.LastModified = lastModified
-	src.LastSync = time.Now()
+	src.LastModified = sql.NullString{String: lastModified, Valid: lastModified != ""}
+	src.LastSync = sql.NullTime{Time: time.Now(), Valid: true}
 	return s.storage.UpdateAdblockSource(src)
 }

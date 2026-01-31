@@ -10,6 +10,18 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// normalizeFQDN은 도메인명을 FQDN 형식으로 정규화합니다 (끝에 . 추가)
+func normalizeFQDN(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	if !strings.HasSuffix(name, ".") {
+		return name + "."
+	}
+	return name
+}
+
 type zoneRequest struct {
 	Name       string `json:"name"`
 	SOAMname   string `json:"soa_mname"`
@@ -58,9 +70,9 @@ func (api *API) createZone(c *gin.Context) {
 		return
 	}
 
-	name := strings.TrimSpace(req.Name)
-	if name == "" || !strings.HasSuffix(name, ".") {
-		respondBadRequest(c, "name은 FQDN 형식이어야 합니다 (끝에 . 필요)")
+	name := normalizeFQDN(req.Name)
+	if name == "" {
+		respondBadRequest(c, "name은 필수입니다")
 		return
 	}
 
@@ -109,9 +121,9 @@ func (api *API) updateZone(c *gin.Context) {
 		return
 	}
 
-	name := strings.TrimSpace(req.Name)
-	if name == "" || !strings.HasSuffix(name, ".") {
-		respondBadRequest(c, "name은 FQDN 형식이어야 합니다 (끝에 . 필요)")
+	name := normalizeFQDN(req.Name)
+	if name == "" {
+		respondBadRequest(c, "name은 필수입니다")
 		return
 	}
 

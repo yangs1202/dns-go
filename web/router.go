@@ -29,11 +29,11 @@ func NewRouter(api *API) *gin.Engine {
 		apiGroup.PUT("/records/:id", api.updateRecord)
 		apiGroup.DELETE("/records/:id", api.deleteRecord)
 
-		apiGroup.GET("/upstream", api.listUpstreams)
-		apiGroup.POST("/upstream", api.createUpstream)
-		apiGroup.PUT("/upstream/:id", api.updateUpstream)
-		apiGroup.DELETE("/upstream/:id", api.deleteUpstream)
-		apiGroup.POST("/upstream/:id/test", api.testUpstream)
+		apiGroup.GET("/upstreams", api.listUpstreams)
+		apiGroup.POST("/upstreams", api.createUpstream)
+		apiGroup.PUT("/upstreams/:id", api.updateUpstream)
+		apiGroup.DELETE("/upstreams/:id", api.deleteUpstream)
+		apiGroup.POST("/upstreams/:id/test", api.testUpstream)
 
 		apiGroup.GET("/cache/settings", api.getCacheSettings)
 		apiGroup.PUT("/cache/settings", api.updateCacheSettings)
