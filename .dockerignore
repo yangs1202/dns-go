@@ -1,39 +1,58 @@
 # Git
 .git
 .gitignore
+.github
 
-# Binaries
+# Build artifacts
+dns-server
 dns-go
 *.exe
 *.dll
 *.so
 *.dylib
+*.test
+*.out
 
 # Database
 *.db
 *.db-shm
 *.db-wal
 
-# Test files
-*_test.go
-coverage.out
+# Logs
+*.log
+server.log
+
+# Temporary
+tmp/
+temp/
+/tmp/
 
 # IDE
-.vscode
-.idea
+.idea/
+.vscode/
 *.swp
 *.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
 
 # Documentation
+README.md
+LICENSE
 *.md
-!README.md
 
-# Plans
-plans/
+# Test files
+*_test.go
+coverage.html
+coverage.out
 
-# Data
-data/
-GeoLite2-*.mmdb
+# CI/CD
+.github/
 
-# Build artifacts
+# Other
 vendor/
+go.work
+.env
+.env.*
