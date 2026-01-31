@@ -33,7 +33,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("데이터베이스 연결 실패: %v", err)
 	}
-	defer db.Close()
+	// defer db.Close() - Graceful shutdown에서 명시적으로 호출
 
 	log.Printf("데이터베이스 연결 성공: %s", cfg.Database.Path)
 
@@ -168,6 +168,12 @@ func main() {
 	}
 	if err := webServer.Stop(); err != nil {
 		log.Printf("Web 서버 종료 실패: %v", err)
+	}
+
+	// DB 연결 종료 (WAL checkpoint 포함)
+	log.Println("DB 연결 종료 중...")
+	if err := db.Close(); err != nil {
+		log.Printf("DB 종료 실패: %v", err)
 	}
 
 	log.Println("서버 종료 완료")
