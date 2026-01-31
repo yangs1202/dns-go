@@ -16,14 +16,14 @@ type Database struct {
 // NewDatabase는 새로운 데이터베이스 연결을 생성합니다
 func NewDatabase(path string) (*Database, error) {
 	// Writer 연결 (단일 연결)
-	writer, err := sql.Open("sqlite", path+"?_journal_mode=DELETE&_synchronous=FULL&_foreign_keys=ON")
+	writer, err := sql.Open("sqlite", path+"?_journal_mode=WAL&_synchronous=NORMAL&_foreign_keys=ON")
 	if err != nil {
 		return nil, fmt.Errorf("writer 연결 실패: %w", err)
 	}
 	writer.SetMaxOpenConns(1) // SQLite 쓰기 직렬화
 
 	// Reader 연결 (다중 연결)
-	reader, err := sql.Open("sqlite", path+"?_journal_mode=DELETE&_synchronous=FULL&_foreign_keys=ON")
+	reader, err := sql.Open("sqlite", path+"?_journal_mode=WAL&_synchronous=NORMAL&_foreign_keys=ON")
 	if err != nil {
 		writer.Close()
 		return nil, fmt.Errorf("reader 연결 실패: %w", err)
@@ -64,6 +64,11 @@ func NewDatabase(path string) (*Database, error) {
 
 // configurePragmas는 SQLite PRAGMA 설정을 확인합니다
 func (db *Database) configurePragmas() error {
+	// WAL 모드 활성화
+	if _, err := db.Writer.Exec("PRAGMA journal_mode=WAL"); err != nil {
+		return fmt.Errorf("WAL 모드 활성화 실패: %w", err)
+	}
+
 	// 외래 키 활성화
 	if _, err := db.Writer.Exec("PRAGMA foreign_keys=ON"); err != nil {
 		return fmt.Errorf("외래 키 활성화 실패: %w", err)
@@ -80,7 +85,6 @@ func (db *Database) configurePragmas() error {
 // Close는 데이터베이스 연결을 닫습니다
 func (db *Database) Close() error {
 	var err error
-
 	if db.Writer != nil {
 		if e := db.Writer.Close(); e != nil {
 			err = e
