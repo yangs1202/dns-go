@@ -127,6 +127,35 @@ dns:
 - 512 bytes 초과 시 TC(Truncated) 플래그 발생 → TCP 재질의 (2배 느림)
 - 1232+ bytes면 대부분의 DNSSEC 응답을 UDP로 처리 가능
 
+### RFC 1035 준수
+
+DNS 서버는 RFC 1035를 엄격히 준수합니다:
+
+**AA (Authoritative Answer) 플래그:**
+- ✅ Zone 응답: `AA=true` (권한 서버로 응답)
+- ✅ 캐시 응답: `AA=false` (non-authoritative)
+- ✅ Upstream 응답: `AA=false` (재귀 리졸버)
+
+**RD (Recursion Desired) 플래그:**
+- ✅ `+norecurse` (RD=0): `REFUSED` 응답 (재귀 안 함)
+- ✅ 기본 (RD=1): 정상 재귀 처리
+- ✅ `RA=true` 항상 설정 (재귀 가능 서버)
+
+**검증:**
+```bash
+# Zone 응답 - AA=true
+dig www.example.com @localhost | grep flags:
+# flags: qr aa rd ra  ← AA 플래그 있음
+
+# Upstream 응답 - AA=false
+dig google.com @localhost | grep flags:
+# flags: qr rd ra  ← AA 플래그 없음
+
+# +norecurse - REFUSED
+dig +norecurse google.com @localhost
+# status: REFUSED
+```
+
 ### EDNS0 지원
 
 DNS 서버는 자동으로 EDNS0를 지원합니다:
