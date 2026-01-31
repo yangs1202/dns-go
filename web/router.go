@@ -10,6 +10,12 @@ func NewRouter(api *API) *gin.Engine {
 	router.Use(requestLogger())
 	router.Use(corsMiddleware())
 
+	// 테스트 페이지
+	router.GET("/test/", func(c *gin.Context) {
+		c.Header("Content-Type", "text/html; charset=utf-8")
+		c.File("web/test.html")
+	})
+
 	apiGroup := router.Group("/api")
 	{
 		apiGroup.GET("/zones", api.listZones)

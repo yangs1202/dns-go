@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DNS-Go API 테스트</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        .card h2 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #333;
+            font-weight: 600;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        textarea {
+            resize: vertical;
+            min-height: 100px;
+            font-family: 'Courier New', monospace;
+        }
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            width: 100%;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        .response {
+            background: #f8f9fa;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 15px;
+            margin-top: 15px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .response pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            color: #333;
+        }
+        .response.success {
+            border-color: #28a745;
+            background: #d4edda;
+        }
+        .response.error {
+            border-color: #dc3545;
+            background: #f8d7da;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+        .method-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-right: 8px;
+        }
+        .method-get { background: #28a745; color: white; }
+        .method-post { background: #007bff; color: white; }
+        .method-put { background: #ffc107; color: black; }
+        .method-delete { background: #dc3545; color: white; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 DNS-Go API 테스트 대시보드</h1>
+
+        <div class="grid">
+            <!-- 통계 조회 -->
+            <div class="card">
+                <h2><span class="method-badge method-get">GET</span>서버 통계</h2>
+                <button onclick="getStats()">통계 조회</button>
+                <div id="stats-response" class="response" style="display:none;"></div>
+            </div>
+
+            <!-- Zone 목록 -->
+            <div class="card">
+                <h2><span class="method-badge method-get">GET</span>Zone 목록</h2>
+                <button onclick="getZones()">Zone 목록 조회</button>
+                <div id="zones-response" class="response" style="display:none;"></div>
+            </div>
+
+            <!-- Zone 생성 -->
+            <div class="card">
+                <h2><span class="method-badge method-post">POST</span>Zone 생성</h2>
+                <div class="form-group">
+                    <label>Zone 이름 (FQDN)</label>
+                    <input type="text" id="zone-name" placeholder="example.com." value="test.local.">
+                </div>
+                <div class="form-group">
+                    <label>SOA MNAME</label>
+                    <input type="text" id="zone-mname" placeholder="ns1.example.com." value="ns1.test.local.">
+                </div>
+                <div class="form-group">
+                    <label>SOA RNAME</label>
+                    <input type="text" id="zone-rname" placeholder="admin.example.com." value="admin.test.local.">
+                </div>
+                <button onclick="createZone()">Zone 생성</button>
+                <div id="create-zone-response" class="response" style="display:none;"></div>
+            </div>
+
+            <!-- Record 생성 -->
+            <div class="card">
+                <h2><span class="method-badge method-post">POST</span>Record 생성</h2>
+                <div class="form-group">
+                    <label>Zone ID</label>
+                    <input type="number" id="record-zone-id" placeholder="1" value="1">
+                </div>
+                <div class="form-group">
+                    <label>레코드 이름</label>
+                    <input type="text" id="record-name" placeholder="www.example.com." value="www.test.local.">
+                </div>
+                <div class="form-group">
+                    <label>타입</label>
+                    <select id="record-type">
+                        <option value="A">A</option>
+                        <option value="AAAA">AAAA</option>
+                        <option value="CNAME">CNAME</option>
+                        <option value="MX">MX</option>
+                        <option value="TXT">TXT</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Content</label>
+                    <input type="text" id="record-content" placeholder="192.0.2.1" value="192.168.1.100">
+                </div>
+                <div class="form-group">
+                    <label>TTL</label>
+                    <input type="number" id="record-ttl" placeholder="300" value="300">
+                </div>
+                <button onclick="createRecord()">Record 생성</button>
+                <div id="create-record-response" class="response" style="display:none;"></div>
+            </div>
+
+            <!-- Upstream 서버 -->
+            <div class="card">
+                <h2><span class="method-badge method-get">GET</span>Upstream 서버</h2>
+                <button onclick="getUpstreams()">Upstream 목록</button>
+                <div id="upstreams-response" class="response" style="display:none;"></div>
+            </div>
+
+            <!-- 캐시 통계 -->
+            <div class="card">
+                <h2><span class="method-badge method-get">GET</span>캐시 통계</h2>
+                <button onclick="getCacheStats()">캐시 통계 조회</button>
+                <div id="cache-stats-response" class="response" style="display:none;"></div>
+            </div>
+
+            <!-- 캐시 초기화 -->
+            <div class="card">
+                <h2><span class="method-badge method-post">POST</span>캐시 초기화</h2>
+                <div class="form-group">
+                    <label>도메인 (선택사항)</label>
+                    <input type="text" id="cache-domain" placeholder="example.com. (비우면 전체 초기화)">
+                </div>
+                <button onclick="clearCache()">캐시 초기화</button>
+                <div id="clear-cache-response" class="response" style="display:none;"></div>
+            </div>
+
+            <!-- GSLB 정책 -->
+            <div class="card">
+                <h2><span class="method-badge method-get">GET</span>GSLB 정책</h2>
+                <button onclick="getGSLBPolicies()">GSLB 정책 조회</button>
+                <div id="gslb-response" class="response" style="display:none;"></div>
+            </div>
+
+            <!-- Adblock 상태 -->
+            <div class="card">
+                <h2><span class="method-badge method-get">GET</span>광고차단 상태</h2>
+                <button onclick="getAdblockStatus()">Adblock 상태</button>
+                <div id="adblock-response" class="response" style="display:none;"></div>
+            </div>
+
+            <!-- Health Check -->
+            <div class="card">
+                <h2><span class="method-badge method-get">GET</span>헬스체크 상태</h2>
+                <button onclick="getHealth()">헬스 상태 조회</button>
+                <div id="health-response" class="response" style="display:none;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '';
+
+        function showResponse(elementId, data, isError = false) {
+            const el = document.getElementById(elementId);
+            el.style.display = 'block';
+            el.className = 'response ' + (isError ? 'error' : 'success');
+            el.innerHTML = '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+        }
+
+        async function apiCall(url, method = 'GET', body = null) {
+            try {
+                const options = {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                };
+                if (body) {
+                    options.body = JSON.stringify(body);
+                }
+                const response = await fetch(API_BASE + url, options);
+                const data = await response.json();
+                return { data, isError: !response.ok };
+            } catch (error) {
+                return { data: { error: error.message }, isError: true };
+            }
+        }
+
+        async function getStats() {
+            const { data, isError } = await apiCall('/api/stats');
+            showResponse('stats-response', data, isError);
+        }
+
+        async function getZones() {
+            const { data, isError } = await apiCall('/api/zones');
+            showResponse('zones-response', data, isError);
+        }
+
+        async function createZone() {
+            const zone = {
+                name: document.getElementById('zone-name').value,
+                soa_mname: document.getElementById('zone-mname').value,
+                soa_rname: document.getElementById('zone-rname').value,
+                enabled: true
+            };
+            const { data, isError } = await apiCall('/api/zones', 'POST', zone);
+            showResponse('create-zone-response', data, isError);
+        }
+
+        async function createRecord() {
+            const zoneId = document.getElementById('record-zone-id').value;
+            const record = {
+                name: document.getElementById('record-name').value,
+                type: document.getElementById('record-type').value,
+                content: document.getElementById('record-content').value,
+                ttl: parseInt(document.getElementById('record-ttl').value),
+                priority: 0
+            };
+            const { data, isError } = await apiCall(`/api/zones/${zoneId}/records`, 'POST', record);
+            showResponse('create-record-response', data, isError);
+        }
+
+        async function getUpstreams() {
+            const { data, isError } = await apiCall('/api/upstream');
+            showResponse('upstreams-response', data, isError);
+        }
+
+        async function getCacheStats() {
+            const { data, isError } = await apiCall('/api/cache/stats');
+            showResponse('cache-stats-response', data, isError);
+        }
+
+        async function clearCache() {
+            const domain = document.getElementById('cache-domain').value;
+            const url = domain ? `/api/cache/clear/${domain}` : '/api/cache/clear';
+            const { data, isError } = await apiCall(url, 'POST');
+            showResponse('clear-cache-response', data, isError);
+        }
+
+        async function getGSLBPolicies() {
+            const { data, isError } = await apiCall('/api/gslb/policies');
+            showResponse('gslb-response', data, isError);
+        }
+
+        async function getAdblockStatus() {
+            const { data, isError } = await apiCall('/api/adblock/status');
+            showResponse('adblock-response', data, isError);
+        }
+
+        async function getHealth() {
+            const { data, isError } = await apiCall('/api/gslb/health');
+            showResponse('health-response', data, isError);
+        }
+
+        // 자동으로 통계 로드
+        window.onload = function() {
+            getStats();
+        };
+    </script>
+</body>
+</html>
