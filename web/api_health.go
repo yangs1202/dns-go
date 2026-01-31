@@ -92,6 +92,12 @@ func (api *API) createHealthCheck(c *gin.Context) {
 		respondInternalError(c, err.Error())
 		return
 	}
+
+	// 워커에 새 헬스체크 추가
+	if api.healthWorker != nil {
+		api.healthWorker.AddCheck(created)
+	}
+
 	respondSuccess(c, http.StatusCreated, created)
 }
 
@@ -145,6 +151,12 @@ func (api *API) updateHealthCheck(c *gin.Context) {
 		respondInternalError(c, err.Error())
 		return
 	}
+
+	// 워커에 헬스체크 업데이트
+	if api.healthWorker != nil {
+		api.healthWorker.UpdateCheck(updated)
+	}
+
 	respondSuccess(c, http.StatusOK, updated)
 }
 
@@ -158,6 +170,12 @@ func (api *API) deleteHealthCheck(c *gin.Context) {
 		respondBadRequest(c, "잘못된 헬스체크 ID")
 		return
 	}
+
+	// 워커에서 헬스체크 제거
+	if api.healthWorker != nil {
+		api.healthWorker.RemoveCheck(id)
+	}
+
 	if err := api.healthCheckStorage.DeleteHealthCheck(id); err != nil {
 		respondInternalError(c, err.Error())
 		return

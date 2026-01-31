@@ -137,7 +137,7 @@ func main() {
 	}
 
 	// Web API 서버 초기화 및 시작
-	api := web.NewAPI(zoneStorage, recordStorage, upstreamStorage, db, handler, queryStats, policyStorage, poolStorage, adblockStorage, adblockSyncer, adblockFilter, healthCheckStorage, healthStatus)
+	api := web.NewAPI(zoneStorage, recordStorage, upstreamStorage, db, handler, queryStats, policyStorage, poolStorage, adblockStorage, adblockSyncer, adblockFilter, healthCheckStorage, healthStatus, healthWorker)
 
 	// Read-Only 모드 설정 (Secondary)
 	if cfg.Sync.ReadOnly {

@@ -22,7 +22,8 @@ type API struct {
 	adblockFilter      *adblock.Filter
 	healthCheckStorage *gslb.HealthCheckStorage
 	healthStatus       *sync.Map
-	readOnly           bool // Read-Only 모드
+	healthWorker       *gslb.HealthCheckWorker // 동적 헬스체크 관리
+	readOnly           bool                    // Read-Only 모드
 }
 
 func NewAPI(
@@ -39,6 +40,7 @@ func NewAPI(
 	adblockFilter *adblock.Filter,
 	healthCheckStorage *gslb.HealthCheckStorage,
 	healthStatus *sync.Map,
+	healthWorker *gslb.HealthCheckWorker,
 ) *API {
 	return &API{
 		zoneStorage:        zoneStorage,
@@ -54,6 +56,7 @@ func NewAPI(
 		adblockFilter:      adblockFilter,
 		healthCheckStorage: healthCheckStorage,
 		healthStatus:       healthStatus,
+		healthWorker:       healthWorker,
 		readOnly:           false, // 기본값: Read-Write
 	}
 }

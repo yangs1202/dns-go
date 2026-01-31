@@ -19,6 +19,7 @@ type HealthCheckWorker struct {
 	healthStatus  *sync.Map
 	stopCh        chan struct{}
 	wg            sync.WaitGroup
+	runners       sync.Map // map[int64]chan struct{} - 각 헬스체크의 종료 채널
 }
 
 func NewHealthCheckWorker(storage *HealthCheckStorage, poolStorage *PoolStorage, healthStatus *sync.Map) *HealthCheckWorker {
@@ -56,6 +57,13 @@ func (w *HealthCheckWorker) Stop() {
 }
 
 func (w *HealthCheckWorker) runCheckLoop(check *model.HealthCheck) {
+	stopCh := make(chan struct{})
+	w.runners.Store(check.ID, stopCh)
+	defer func() {
+		w.runners.Delete(check.ID)
+		close(stopCh)
+	}()
+
 	ticker := time.NewTicker(time.Duration(check.IntervalSec) * time.Second)
 	defer ticker.Stop()
 
@@ -66,6 +74,9 @@ func (w *HealthCheckWorker) runCheckLoop(check *model.HealthCheck) {
 		select {
 		case <-ticker.C:
 			w.runPolicyCheck(check)
+		case <-stopCh:
+			log.Printf("헬스체크 종료: check_id=%d", check.ID)
+			return
 		case <-w.stopCh:
 			return
 		}
@@ -259,4 +270,42 @@ func (w *HealthCheckWorker) getStatus(memberID int64) HealthStatus {
 		}
 	}
 	return HealthStatus{Healthy: true}
+}
+
+// AddCheck는 새로운 헬스체크를 동적으로 추가합니다
+func (w *HealthCheckWorker) AddCheck(check *model.HealthCheck) {
+	if !check.Enabled {
+		return
+	}
+
+	// 이미 실행 중인지 확인
+	if _, exists := w.runners.Load(check.ID); exists {
+		log.Printf("헬스체크 이미 실행 중: check_id=%d", check.ID)
+		return
+	}
+
+	log.Printf("헬스체크 추가: check_id=%d, policy_id=%d", check.ID, check.PolicyID)
+	w.wg.Add(1)
+	go func(c *model.HealthCheck) {
+		defer w.wg.Done()
+		w.runCheckLoop(c)
+	}(check)
+}
+
+// RemoveCheck는 실행 중인 헬스체크를 제거합니다
+func (w *HealthCheckWorker) RemoveCheck(checkID int64) {
+	if v, ok := w.runners.Load(checkID); ok {
+		if stopCh, ok := v.(chan struct{}); ok {
+			log.Printf("헬스체크 제거: check_id=%d", checkID)
+			close(stopCh)
+			w.runners.Delete(checkID)
+		}
+	}
+}
+
+// UpdateCheck는 헬스체크를 업데이트합니다 (기존 제거 후 재시작)
+func (w *HealthCheckWorker) UpdateCheck(check *model.HealthCheck) {
+	w.RemoveCheck(check.ID)
+	time.Sleep(100 * time.Millisecond) // 기존 고루틴 종료 대기
+	w.AddCheck(check)
 }
