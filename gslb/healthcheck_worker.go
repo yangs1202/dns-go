@@ -7,24 +7,26 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 )
 
 type HealthCheckWorker struct {
 	storage       *HealthCheckStorage
-	memberStorage *PoolStorage
+	poolStorage   *PoolStorage
 	healthStatus  *sync.Map
 	stopCh        chan struct{}
 	wg            sync.WaitGroup
 }
 
-func NewHealthCheckWorker(storage *HealthCheckStorage, memberStorage *PoolStorage, healthStatus *sync.Map) *HealthCheckWorker {
+func NewHealthCheckWorker(storage *HealthCheckStorage, poolStorage *PoolStorage, healthStatus *sync.Map) *HealthCheckWorker {
 	return &HealthCheckWorker{
-		storage:       storage,
-		memberStorage: memberStorage,
-		healthStatus:  healthStatus,
-		stopCh:        make(chan struct{}),
+		storage:      storage,
+		poolStorage:  poolStorage,
+		healthStatus: healthStatus,
+		stopCh:       make(chan struct{}),
 	}
 }
 
@@ -57,20 +59,41 @@ func (w *HealthCheckWorker) runCheckLoop(check *model.HealthCheck) {
 	ticker := time.NewTicker(time.Duration(check.IntervalSec) * time.Second)
 	defer ticker.Stop()
 
-	member, _ := w.memberStorage.GetMember(check.MemberID)
-	if member != nil {
-		w.runCheck(check, member)
-	}
+	// 초기 체크 실행
+	w.runPolicyCheck(check)
 
 	for {
 		select {
 		case <-ticker.C:
-			member, _ := w.memberStorage.GetMember(check.MemberID)
-			if member != nil {
-				w.runCheck(check, member)
-			}
+			w.runPolicyCheck(check)
 		case <-w.stopCh:
 			return
+		}
+	}
+}
+
+// runPolicyCheck는 GSLB 정책에 속한 모든 멤버를 체크합니다
+func (w *HealthCheckWorker) runPolicyCheck(check *model.HealthCheck) {
+	// Policy에 속한 모든 Pool 조회
+	pools, err := w.poolStorage.GetPoolsByPolicy(check.PolicyID)
+	if err != nil {
+		log.Printf("풀 목록 조회 실패 (policy_id=%d): %v", check.PolicyID, err)
+		return
+	}
+
+	// 각 Pool의 모든 Member 체크
+	for _, pool := range pools {
+		members, err := w.poolStorage.GetMembersByPool(pool.ID)
+		if err != nil {
+			log.Printf("멤버 목록 조회 실패 (pool_id=%d): %v", pool.ID, err)
+			continue
+		}
+
+		for _, member := range members {
+			if !member.Enabled {
+				continue
+			}
+			w.runCheck(check, member)
 		}
 	}
 }
@@ -101,15 +124,91 @@ func (w *HealthCheckWorker) runCheck(check *model.HealthCheck, member *model.GSL
 
 func (w *HealthCheckWorker) probe(check *model.HealthCheck, member *model.GSLBMember) error {
 	switch check.CheckType {
-	case "http":
-		// Target URL의 scheme을 자동 감지 (http:// 또는 https://)
-		client := &http.Client{
-			Timeout: time.Duration(check.TimeoutSec) * time.Second,
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			},
+	case "http", "https":
+		// Target URL 파싱
+		targetURL := check.Target
+		var parsedURL *url.URL
+		var err error
+
+		if strings.HasPrefix(targetURL, "http://") || strings.HasPrefix(targetURL, "https://") {
+			// 전체 URL인 경우
+			parsedURL, err = url.Parse(targetURL)
+			if err != nil {
+				return fmt.Errorf("invalid target URL: %w", err)
+			}
+		} else {
+			// 경로만 있는 경우, 멤버 IP와 조합
+			scheme := "http"
+			if check.CheckType == "https" {
+				scheme = "https"
+			}
+			// 경로가 /로 시작하지 않으면 추가
+			path := targetURL
+			if !strings.HasPrefix(path, "/") {
+				path = "/" + path
+			}
+			fullURL := fmt.Sprintf("%s://%s%s", scheme, member.Address, path)
+			parsedURL, err = url.Parse(fullURL)
+			if err != nil {
+				return fmt.Errorf("invalid target URL: %w", err)
+			}
 		}
-		resp, err := client.Get(check.Target)
+
+		// 실제 연결할 주소: 멤버 IP + 포트
+		port := parsedURL.Port()
+		if port == "" {
+			if parsedURL.Scheme == "https" {
+				port = "443"
+			} else {
+				port = "80"
+			}
+		}
+
+		// 원본 Host 헤더 보존
+		originalHost := parsedURL.Host
+
+		// 멤버 주소 (포트 포함 여부 확인)
+		memberHost := member.Address
+		if strings.Contains(memberHost, ":") {
+			// 이미 포트가 포함된 경우
+			memberHost = member.Address
+		} else {
+			// 포트가 없으면 추가
+			memberHost = net.JoinHostPort(member.Address, port)
+		}
+
+		// 요청 URL을 멤버 IP로 변경 (Host 헤더는 나중에 수동 설정)
+		requestURL := &url.URL{
+			Scheme:   parsedURL.Scheme,
+			Host:     memberHost,
+			Path:     parsedURL.Path,
+			RawQuery: parsedURL.RawQuery,
+		}
+
+		// HTTP 요청 생성
+		req, err := http.NewRequest("GET", requestURL.String(), nil)
+		if err != nil {
+			return err
+		}
+
+		// Host 헤더를 원본 도메인으로 설정
+		req.Host = originalHost
+
+		// Transport 설정
+		transport := &http.Transport{}
+		if parsedURL.Scheme == "https" {
+			transport.TLSClientConfig = &tls.Config{
+				InsecureSkipVerify: true,
+				ServerName:         parsedURL.Hostname(), // SNI에 원본 도메인 사용
+			}
+		}
+
+		client := &http.Client{
+			Timeout:   time.Duration(check.TimeoutSec) * time.Second,
+			Transport: transport,
+		}
+
+		resp, err := client.Do(req)
 		if err != nil {
 			return err
 		}
@@ -119,7 +218,16 @@ func (w *HealthCheckWorker) probe(check *model.HealthCheck, member *model.GSLBMe
 		}
 		return nil
 	case "tcp":
-		conn, err := net.DialTimeout("tcp", check.Target, time.Duration(check.TimeoutSec)*time.Second)
+		// Target이 "host:port" 형태면 포트만 추출, 아니면 Target을 포트로 사용
+		var port string
+		if strings.Contains(check.Target, ":") {
+			_, port, _ = net.SplitHostPort(check.Target)
+		} else {
+			port = check.Target
+		}
+		target := net.JoinHostPort(member.Address, port)
+
+		conn, err := net.DialTimeout("tcp", target, time.Duration(check.TimeoutSec)*time.Second)
 		if err != nil {
 			return err
 		}
@@ -127,7 +235,15 @@ func (w *HealthCheckWorker) probe(check *model.HealthCheck, member *model.GSLBMe
 		return nil
 	default:
 		// 기본값: TCP 체크
-		conn, err := net.DialTimeout("tcp", check.Target, time.Duration(check.TimeoutSec)*time.Second)
+		var port string
+		if strings.Contains(check.Target, ":") {
+			_, port, _ = net.SplitHostPort(check.Target)
+		} else {
+			port = check.Target
+		}
+		target := net.JoinHostPort(member.Address, port)
+
+		conn, err := net.DialTimeout("tcp", target, time.Duration(check.TimeoutSec)*time.Second)
 		if err != nil {
 			return err
 		}

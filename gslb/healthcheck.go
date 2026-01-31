@@ -16,12 +16,12 @@ func NewHealthCheckStorage(db *storage.Database) *HealthCheckStorage {
 }
 
 func (s *HealthCheckStorage) GetHealthCheck(id int64) (*model.HealthCheck, error) {
-	query := `SELECT id, member_id, check_type, target, interval_sec, timeout_sec, healthy_threshold, unhealthy_threshold, enabled
+	query := `SELECT id, policy_id, check_type, target, interval_sec, timeout_sec, healthy_threshold, unhealthy_threshold, enabled
 		FROM health_checks WHERE id = ?`
 	var hc model.HealthCheck
 	err := s.db.Reader.QueryRow(query, id).Scan(
 		&hc.ID,
-		&hc.MemberID,
+		&hc.PolicyID,
 		&hc.CheckType,
 		&hc.Target,
 		&hc.IntervalSec,
@@ -39,13 +39,13 @@ func (s *HealthCheckStorage) GetHealthCheck(id int64) (*model.HealthCheck, error
 	return &hc, nil
 }
 
-func (s *HealthCheckStorage) GetHealthCheckByMember(memberID int64) (*model.HealthCheck, error) {
-	query := `SELECT id, member_id, check_type, target, interval_sec, timeout_sec, healthy_threshold, unhealthy_threshold, enabled
-		FROM health_checks WHERE member_id = ?`
+func (s *HealthCheckStorage) GetHealthCheckByPolicy(policyID int64) (*model.HealthCheck, error) {
+	query := `SELECT id, policy_id, check_type, target, interval_sec, timeout_sec, healthy_threshold, unhealthy_threshold, enabled
+		FROM health_checks WHERE policy_id = ?`
 	var hc model.HealthCheck
-	err := s.db.Reader.QueryRow(query, memberID).Scan(
+	err := s.db.Reader.QueryRow(query, policyID).Scan(
 		&hc.ID,
-		&hc.MemberID,
+		&hc.PolicyID,
 		&hc.CheckType,
 		&hc.Target,
 		&hc.IntervalSec,
@@ -64,7 +64,7 @@ func (s *HealthCheckStorage) GetHealthCheckByMember(memberID int64) (*model.Heal
 }
 
 func (s *HealthCheckStorage) ListHealthChecks() ([]*model.HealthCheck, error) {
-	query := `SELECT id, member_id, check_type, target, interval_sec, timeout_sec, healthy_threshold, unhealthy_threshold, enabled
+	query := `SELECT id, policy_id, check_type, target, interval_sec, timeout_sec, healthy_threshold, unhealthy_threshold, enabled
 		FROM health_checks ORDER BY id`
 	rows, err := s.db.Reader.Query(query)
 	if err != nil {
@@ -77,7 +77,7 @@ func (s *HealthCheckStorage) ListHealthChecks() ([]*model.HealthCheck, error) {
 		var hc model.HealthCheck
 		if err := rows.Scan(
 			&hc.ID,
-			&hc.MemberID,
+			&hc.PolicyID,
 			&hc.CheckType,
 			&hc.Target,
 			&hc.IntervalSec,
@@ -98,10 +98,10 @@ func (s *HealthCheckStorage) ListHealthChecks() ([]*model.HealthCheck, error) {
 
 func (s *HealthCheckStorage) CreateHealthCheck(check *model.HealthCheck) (int64, error) {
 	applyDefaults(check)
-	query := `INSERT INTO health_checks (member_id, check_type, target, interval_sec, timeout_sec, healthy_threshold, unhealthy_threshold, enabled)
+	query := `INSERT INTO health_checks (policy_id, check_type, target, interval_sec, timeout_sec, healthy_threshold, unhealthy_threshold, enabled)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 	result, err := s.db.Writer.Exec(query,
-		check.MemberID,
+		check.PolicyID,
 		check.CheckType,
 		check.Target,
 		check.IntervalSec,

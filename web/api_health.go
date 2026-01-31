@@ -54,9 +54,9 @@ func (api *API) createHealthCheck(c *gin.Context) {
 		respondInternalError(c, "health storage가 초기화되지 않았습니다")
 		return
 	}
-	memberID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	policyID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		respondBadRequest(c, "잘못된 멤버 ID")
+		respondBadRequest(c, "잘못된 정책 ID")
 		return
 	}
 
@@ -72,7 +72,7 @@ func (api *API) createHealthCheck(c *gin.Context) {
 	}
 
 	check := &model.HealthCheck{
-		MemberID:           memberID,
+		PolicyID:           policyID,
 		CheckType:          req.CheckType,
 		Target:             req.Target,
 		IntervalSec:        req.IntervalSec,
@@ -126,7 +126,7 @@ func (api *API) updateHealthCheck(c *gin.Context) {
 
 	check := &model.HealthCheck{
 		ID:                 id,
-		MemberID:           existing.MemberID,
+		PolicyID:           existing.PolicyID,
 		CheckType:          req.CheckType,
 		Target:             req.Target,
 		IntervalSec:        req.IntervalSec,

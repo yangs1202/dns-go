@@ -33,12 +33,12 @@ type GSLBMember struct {
 	Enabled bool   `json:"enabled"`
 }
 
-// HealthCheck는 헬스체크 설정을 나타냅니다
+// HealthCheck는 GSLB 정책 단위 헬스체크 설정을 나타냅니다
 type HealthCheck struct {
 	ID                 int64  `json:"id"`
-	MemberID           int64  `json:"member_id"`
-	CheckType          string `json:"check_type"`           // "http" (URL의 scheme으로 자동 판단), "tcp"
-	Target             string `json:"target"`               // "http://10.0.0.1/health", "https://example.com/health", "10.0.0.1:443"
+	PolicyID           int64  `json:"policy_id"`            // GSLB 정책 ID
+	CheckType          string `json:"check_type"`           // "http", "https", "tcp"
+	Target             string `json:"target"`               // 체크 대상: "http://domain.com/health", "https://1.2.3.4:8080/health", "domain.com:443"
 	IntervalSec        int64  `json:"interval_sec"`         // 체크 간격 (초)
 	TimeoutSec         int64  `json:"timeout_sec"`          // 타임아웃 (초)
 	HealthyThreshold   int64  `json:"healthy_threshold"`    // 정상 판정 임계값

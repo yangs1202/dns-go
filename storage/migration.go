@@ -70,10 +70,10 @@ func (db *Database) Migrate() error {
 			enabled INTEGER DEFAULT 1
 		)`,
 
-		// 헬스체크 설정
+		// 헬스체크 설정 (GSLB 정책 단위)
 		`CREATE TABLE IF NOT EXISTS health_checks (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			member_id INTEGER NOT NULL REFERENCES gslb_members(id) ON DELETE CASCADE,
+			policy_id INTEGER NOT NULL REFERENCES gslb_policies(id) ON DELETE CASCADE,
 			check_type TEXT NOT NULL DEFAULT 'tcp',
 			target TEXT NOT NULL,
 			interval_sec INTEGER DEFAULT 10,
@@ -170,6 +170,20 @@ func (db *Database) Migrate() error {
 	// 기존 테이블에 컬럼 추가 (ALTER TABLE은 실패해도 계속 진행)
 	migrations := []string{
 		`ALTER TABLE zones ADD COLUMN allow_fallback INTEGER DEFAULT 1`,
+	}
+
+	// 헬스체크 테이블 마이그레이션: member_id -> policy_id
+	healthCheckMigrations := []string{
+		// 임시 백업 테이블 생성
+		`CREATE TABLE IF NOT EXISTS health_checks_backup AS SELECT * FROM health_checks`,
+		// 기존 테이블 삭제
+		`DROP TABLE IF EXISTS health_checks`,
+		// 새 스키마로 재생성 (위 schemas에서 이미 정의됨)
+	}
+
+	// 헬스체크 마이그레이션 먼저 실행 (테이블 재생성 필요)
+	for _, migration := range healthCheckMigrations {
+		db.Writer.Exec(migration)
 	}
 
 	for _, schema := range schemas {

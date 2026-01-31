@@ -58,7 +58,7 @@ func NewRouter(api *API, syncAPI *SyncAPI) *gin.Engine {
 		apiGroup.DELETE("/gslb/members/:id", api.deleteMember)
 		apiGroup.GET("/gslb/health", api.getHealthStatus)
 		apiGroup.GET("/gslb/healthchecks", api.listHealthChecks)
-		apiGroup.POST("/gslb/members/:id/healthcheck", api.createHealthCheck)
+		apiGroup.POST("/gslb/policies/:id/healthcheck", api.createHealthCheck)
 		apiGroup.PUT("/gslb/healthchecks/:id", api.updateHealthCheck)
 		apiGroup.DELETE("/gslb/healthchecks/:id", api.deleteHealthCheck)
 
