@@ -4,6 +4,7 @@ import (
 	"dns-go/config"
 	"dns-go/dns"
 	"dns-go/storage"
+	"dns-go/web"
 	"fmt"
 	"log"
 	"os"
@@ -44,8 +45,11 @@ func main() {
 
 	log.Println("업스트림 리졸버 초기화 완료")
 
+	// 쿼리 통계
+	queryStats := dns.NewQueryStats()
+
 	// DNS 핸들러 초기화
-	handler, err := dns.NewHandler(zoneStorage, recordStorage, resolver, db)
+	handler, err := dns.NewHandler(zoneStorage, recordStorage, resolver, db, queryStats)
 	if err != nil {
 		log.Fatalf("DNS 핸들러 초기화 실패: %v", err)
 	}
@@ -61,6 +65,18 @@ func main() {
 
 	log.Printf("DNS 서버 시작 성공: %s", server.GetAddr())
 
+	// Web API 서버 초기화 및 시작
+	api := web.NewAPI(zoneStorage, recordStorage, upstreamStorage, db, handler, queryStats)
+	webServer := web.NewServer(cfg.Web.Listen, cfg.Web.Port, api)
+
+	go func() {
+		if err := webServer.Start(); err != nil {
+			log.Printf("Web 서버 종료: %v", err)
+		}
+	}()
+
+	log.Printf("Web 서버 시작 성공: %s", webServer.Addr())
+
 	// Graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -71,6 +87,9 @@ func main() {
 	// 서버 종료
 	if err := server.Stop(); err != nil {
 		log.Printf("서버 종료 실패: %v", err)
+	}
+	if err := webServer.Stop(); err != nil {
+		log.Printf("Web 서버 종료 실패: %v", err)
 	}
 
 	log.Println("서버 종료 완료")

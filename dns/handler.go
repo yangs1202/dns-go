@@ -18,6 +18,7 @@ type Handler struct {
 	recordStorage  *storage.RecordStorage // Record 저장소 (L2 캐시)
 	resolver       *Resolver              // 업스트림 리졸버
 	cacheSettings  *storage.Database      // 캐시 설정 조회용
+	stats          *QueryStats
 }
 
 // NewHandler는 새로운 DNS 핸들러를 생성합니다
@@ -26,6 +27,7 @@ func NewHandler(
 	recordStorage *storage.RecordStorage,
 	resolver *Resolver,
 	db *storage.Database,
+	stats *QueryStats,
 ) (*Handler, error) {
 	// DB에서 캐시 설정 로드
 	var enabled, maxSize, defaultTTL, negativeTTL int64
@@ -46,6 +48,7 @@ func NewHandler(
 		recordStorage: recordStorage,
 		resolver:      resolver,
 		cacheSettings: db,
+		stats:         stats,
 	}
 
 	// Prefetch 콜백 함수 설정
@@ -56,6 +59,9 @@ func NewHandler(
 
 // ServeDNS는 DNS 쿼리를 처리합니다 (dns.Handler 인터페이스 구현)
 func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
+	if h.stats != nil {
+		h.stats.IncTotal()
+	}
 	// 응답 메시지 초기화
 	resp := new(dns.Msg)
 	resp.SetReply(req)
@@ -78,6 +84,9 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	// 1. L1 캐시 확인
 	if entry, ok := h.cache.Get(domain, qtype); ok {
 		log.Printf("[DNS] L1 Cache HIT: %s %s", domain, qtype)
+		if h.stats != nil {
+			h.stats.IncL1Hit()
+		}
 
 		if entry.IsNegative {
 			// NXDOMAIN 캐시
@@ -93,6 +102,9 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	}
 
 	log.Printf("[DNS] L1 Cache MISS: %s %s", domain, qtype)
+	if h.stats != nil {
+		h.stats.IncL1Miss()
+	}
 
 	// 2. TODO: 광고차단 필터 체크
 	// if h.adblockFilter.IsBlocked(domain) {
@@ -173,6 +185,9 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 		h.cache.Set(domain, qtype, nil, 0, true)
 		w.WriteMsg(resp)
 		return
+	}
+	if h.stats != nil {
+		h.stats.IncUpstreamHit()
 	}
 
 	// 업스트림 응답 캐싱 (TTL 준수)
@@ -396,4 +411,14 @@ func parseUint32(s string) uint32 {
 // GetCache는 L1 캐시를 반환합니다 (테스트용)
 func (h *Handler) GetCache() *DNSCache {
 	return h.cache
+}
+
+// ReconfigureCache applies new cache settings to L1 cache
+func (h *Handler) ReconfigureCache(settings *model.CacheSettings) {
+	if settings == nil {
+		return
+	}
+	cache := NewDNSCache(settings.MaxSize, settings.DefaultTTL, settings.NegativeTTL, settings.PrefetchTrigger)
+	cache.SetPrefetchFunc(h.handlePrefetch)
+	h.cache = cache
 }
