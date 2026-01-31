@@ -142,6 +142,29 @@ func (db *Database) Migrate() error {
 		// 기본 캐시 설정 삽입
 		`INSERT OR IGNORE INTO cache_settings (id, enabled, max_size, default_ttl, min_ttl, max_ttl, negative_ttl, prefetch_trigger)
 		 VALUES (1, 1, 10000, 300, 60, 86400, 300, 0.9)`,
+
+		// 동기화 상태 관리 (Primary/Secondary 공통)
+		`CREATE TABLE IF NOT EXISTS sync_state (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			last_sync_version INTEGER DEFAULT 0,
+			last_sync_at DATETIME,
+			data_checksum TEXT,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`INSERT OR IGNORE INTO sync_state (id, last_sync_version) VALUES (1, 0)`,
+
+		// Secondary 메타데이터 (Secondary만 사용)
+		`CREATE TABLE IF NOT EXISTS sync_metadata (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			primary_url TEXT DEFAULT '',
+			mode TEXT DEFAULT 'primary',
+			readonly INTEGER DEFAULT 0,
+			sync_interval_sec INTEGER DEFAULT 1,
+			last_success_at DATETIME,
+			last_error TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`INSERT OR IGNORE INTO sync_metadata (id, mode) VALUES (1, 'primary')`,
 	}
 
 	// 기존 테이블에 컬럼 추가 (ALTER TABLE은 실패해도 계속 진행)

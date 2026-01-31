@@ -211,10 +211,17 @@ func (s *ZoneStorage) CreateZone(zone *model.Zone) (int64, error) {
 		zone.SOAMinimum = 300
 	}
 
+	// 트랜잭션 시작
+	tx, err := s.db.Writer.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("트랜잭션 시작 실패: %w", err)
+	}
+	defer tx.Rollback()
+
 	query := `INSERT INTO zones (name, soa_mname, soa_rname, soa_serial, soa_refresh, soa_retry, soa_expire, soa_minimum, enabled, allow_fallback)
 	          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
-	result, err := s.db.Writer.Exec(query,
+	result, err := tx.Exec(query,
 		zone.Name,
 		zone.SOAMname,
 		zone.SOARname,
@@ -236,6 +243,22 @@ func (s *ZoneStorage) CreateZone(zone *model.Zone) (int64, error) {
 		return 0, fmt.Errorf("Zone ID 조회 실패: %w", err)
 	}
 
+	// 동기화 버전 증가
+	_, err = tx.Exec(`
+		UPDATE sync_state
+		SET last_sync_version = last_sync_version + 1,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE id = 1
+	`)
+	if err != nil {
+		return 0, fmt.Errorf("동기화 버전 업데이트 실패: %w", err)
+	}
+
+	// 트랜잭션 커밋
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("트랜잭션 커밋 실패: %w", err)
+	}
+
 	// 캐시 무효화
 	s.cache.Invalidate()
 
@@ -244,12 +267,19 @@ func (s *ZoneStorage) CreateZone(zone *model.Zone) (int64, error) {
 
 // UpdateZone은 Zone을 업데이트합니다
 func (s *ZoneStorage) UpdateZone(zone *model.Zone) error {
+	// 트랜잭션 시작
+	tx, err := s.db.Writer.Begin()
+	if err != nil {
+		return fmt.Errorf("트랜잭션 시작 실패: %w", err)
+	}
+	defer tx.Rollback()
+
 	query := `UPDATE zones
 	          SET name = ?, soa_mname = ?, soa_rname = ?, soa_serial = ?, soa_refresh = ?, soa_retry = ?,
 	              soa_expire = ?, soa_minimum = ?, enabled = ?, allow_fallback = ?, updated_at = CURRENT_TIMESTAMP
 	          WHERE id = ?`
 
-	result, err := s.db.Writer.Exec(query,
+	result, err := tx.Exec(query,
 		zone.Name,
 		zone.SOAMname,
 		zone.SOARname,
@@ -276,6 +306,22 @@ func (s *ZoneStorage) UpdateZone(zone *model.Zone) error {
 		return fmt.Errorf("Zone을 찾을 수 없습니다")
 	}
 
+	// 동기화 버전 증가
+	_, err = tx.Exec(`
+		UPDATE sync_state
+		SET last_sync_version = last_sync_version + 1,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE id = 1
+	`)
+	if err != nil {
+		return fmt.Errorf("동기화 버전 업데이트 실패: %w", err)
+	}
+
+	// 트랜잭션 커밋
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("트랜잭션 커밋 실패: %w", err)
+	}
+
 	// 캐시 무효화
 	s.cache.Invalidate()
 
@@ -284,7 +330,14 @@ func (s *ZoneStorage) UpdateZone(zone *model.Zone) error {
 
 // DeleteZone은 Zone을 삭제합니다 (CASCADE로 레코드도 함께 삭제)
 func (s *ZoneStorage) DeleteZone(id int64) error {
-	result, err := s.db.Writer.Exec("DELETE FROM zones WHERE id = ?", id)
+	// 트랜잭션 시작
+	tx, err := s.db.Writer.Begin()
+	if err != nil {
+		return fmt.Errorf("트랜잭션 시작 실패: %w", err)
+	}
+	defer tx.Rollback()
+
+	result, err := tx.Exec("DELETE FROM zones WHERE id = ?", id)
 	if err != nil {
 		return fmt.Errorf("Zone 삭제 실패: %w", err)
 	}
@@ -296,6 +349,22 @@ func (s *ZoneStorage) DeleteZone(id int64) error {
 
 	if rows == 0 {
 		return fmt.Errorf("Zone을 찾을 수 없습니다")
+	}
+
+	// 동기화 버전 증가
+	_, err = tx.Exec(`
+		UPDATE sync_state
+		SET last_sync_version = last_sync_version + 1,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE id = 1
+	`)
+	if err != nil {
+		return fmt.Errorf("동기화 버전 업데이트 실패: %w", err)
+	}
+
+	// 트랜잭션 커밋
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("트랜잭션 커밋 실패: %w", err)
 	}
 
 	// 캐시 무효화

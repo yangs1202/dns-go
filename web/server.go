@@ -13,9 +13,9 @@ type Server struct {
 	router http.Handler
 }
 
-func NewServer(listen string, port int, api *API) *Server {
+func NewServer(listen string, port int, api *API, syncAPI *SyncAPI) *Server {
 	addr := fmt.Sprintf("%s:%d", listen, port)
-	router := NewRouter(api)
+	router := NewRouter(api, syncAPI)
 
 	return &Server{
 		addr:   addr,

@@ -496,3 +496,159 @@ func TestNewZoneCache(t *testing.T) {
 	assert.Equal(t, ttl, cache.ttl)
 	assert.True(t, cache.expiry.IsZero())
 }
+
+// TestCreateZone_VersionIncrement는 Zone 생성 시 버전 증가를 테스트합니다
+func TestCreateZone_VersionIncrement(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewZoneStorage(db)
+	syncVersion := NewSyncVersion(db)
+
+	// 초기 버전 확인
+	version, err := syncVersion.GetVersion()
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), version)
+
+	// Zone 생성
+	zone := &model.Zone{
+		Name:       "test.com.",
+		SOAMname:   "ns1.test.com.",
+		SOARname:   "admin.test.com.",
+		SOASerial:  1,
+		SOARefresh: 3600,
+		SOARetry:   900,
+		SOAExpire:  86400,
+		SOAMinimum: 300,
+		Enabled:    true,
+	}
+
+	_, err = storage.CreateZone(zone)
+	require.NoError(t, err)
+
+	// 버전 증가 확인
+	version, err = syncVersion.GetVersion()
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), version, "Zone 생성 시 버전이 증가해야 함")
+}
+
+// TestUpdateZone_VersionIncrement는 Zone 업데이트 시 버전 증가를 테스트합니다
+func TestUpdateZone_VersionIncrement(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewZoneStorage(db)
+	syncVersion := NewSyncVersion(db)
+
+	// Zone 생성
+	zone := &model.Zone{
+		Name:       "test.com.",
+		SOAMname:   "ns1.test.com.",
+		SOARname:   "admin.test.com.",
+		SOASerial:  1,
+		SOARefresh: 3600,
+		SOARetry:   900,
+		SOAExpire:  86400,
+		SOAMinimum: 300,
+		Enabled:    true,
+	}
+
+	id, err := storage.CreateZone(zone)
+	require.NoError(t, err)
+
+	// 현재 버전 확인
+	version, err := syncVersion.GetVersion()
+	require.NoError(t, err)
+
+	// Zone 업데이트
+	zone.ID = id
+	zone.SOASerial = 2
+	err = storage.UpdateZone(zone)
+	require.NoError(t, err)
+
+	// 버전 증가 확인
+	newVersion, err := syncVersion.GetVersion()
+	require.NoError(t, err)
+	assert.Equal(t, version+1, newVersion, "Zone 업데이트 시 버전이 증가해야 함")
+}
+
+// TestDeleteZone_VersionIncrement는 Zone 삭제 시 버전 증가를 테스트합니다
+func TestDeleteZone_VersionIncrement(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewZoneStorage(db)
+	syncVersion := NewSyncVersion(db)
+
+	// Zone 생성
+	zone := &model.Zone{
+		Name:       "test.com.",
+		SOAMname:   "ns1.test.com.",
+		SOARname:   "admin.test.com.",
+		SOASerial:  1,
+		SOARefresh: 3600,
+		SOARetry:   900,
+		SOAExpire:  86400,
+		SOAMinimum: 300,
+		Enabled:    true,
+	}
+
+	id, err := storage.CreateZone(zone)
+	require.NoError(t, err)
+
+	// 현재 버전 확인
+	version, err := syncVersion.GetVersion()
+	require.NoError(t, err)
+
+	// Zone 삭제
+	err = storage.DeleteZone(id)
+	require.NoError(t, err)
+
+	// 버전 증가 확인
+	newVersion, err := syncVersion.GetVersion()
+	require.NoError(t, err)
+	assert.Equal(t, version+1, newVersion, "Zone 삭제 시 버전이 증가해야 함")
+}
+
+// TestCreateZone_TransactionRollback는 트랜잭션 롤백 테스트입니다
+func TestCreateZone_TransactionRollback(t *testing.T) {
+	db := setupTestDB(t)
+	syncVersion := NewSyncVersion(db)
+
+	// 초기 버전
+	initialVersion, err := syncVersion.GetVersion()
+	require.NoError(t, err)
+
+	// 잘못된 Zone 생성 시도 (중복 이름)
+	storage := NewZoneStorage(db)
+
+	zone1 := &model.Zone{
+		Name:       "duplicate.com.",
+		SOAMname:   "ns1.test.com.",
+		SOARname:   "admin.test.com.",
+		SOASerial:  1,
+		SOARefresh: 3600,
+		SOARetry:   900,
+		SOAExpire:  86400,
+		SOAMinimum: 300,
+		Enabled:    true,
+	}
+
+	_, err = storage.CreateZone(zone1)
+	require.NoError(t, err)
+
+	// 중복 생성 시도
+	zone2 := &model.Zone{
+		Name:       "duplicate.com.",
+		SOAMname:   "ns2.test.com.",
+		SOARname:   "admin2.test.com.",
+		SOASerial:  1,
+		SOARefresh: 3600,
+		SOARetry:   900,
+		SOAExpire:  86400,
+		SOAMinimum: 300,
+		Enabled:    true,
+	}
+
+	_, err = storage.CreateZone(zone2)
+	assert.Error(t, err, "중복 Zone 생성은 실패해야 함")
+
+	// 버전 확인 (실패한 트랜잭션은 버전 증가 안 함)
+	currentVersion, err := syncVersion.GetVersion()
+	require.NoError(t, err)
+	assert.Equal(t, initialVersion+1, currentVersion, "성공한 트랜잭션만 버전 증가")
+}

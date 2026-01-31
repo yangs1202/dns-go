@@ -3,22 +3,40 @@ package adblock
 import (
 	"database/sql"
 	"dns-go/model"
-	"dns-go/storage"
 	"log"
 	"sync"
 	"time"
 )
 
+// SyncStorageInterface defines the methods needed from storage for syncing
+type SyncStorageInterface interface {
+	GetEnabledAdblockSources() ([]*model.AdblockSource, error)
+	GetAdblockSource(id int64) (*model.AdblockSource, error)
+	UpdateAdblockSource(source *model.AdblockSource) error
+	AddBlockedDomain(sourceID int64, domain string) error
+	RemoveBlockedDomains(sourceID int64) error
+}
+
+// LoaderInterface defines the methods for downloading and parsing rules
+type LoaderInterface interface {
+	Download(url, lastModified string) ([]string, string, error)
+}
+
+// FilterInterface defines the methods for filter rebuilding
+type FilterInterface interface {
+	Rebuild() error
+}
+
 type Syncer struct {
-	storage  *storage.AdblockStorage
-	loader   *Loader
-	filter   *Filter
+	storage  SyncStorageInterface
+	loader   LoaderInterface
+	filter   FilterInterface
 	interval time.Duration
 	stopCh   chan struct{}
 	wg       sync.WaitGroup
 }
 
-func NewSyncer(storage *storage.AdblockStorage, loader *Loader, filter *Filter, interval time.Duration) *Syncer {
+func NewSyncer(storage SyncStorageInterface, loader LoaderInterface, filter FilterInterface, interval time.Duration) *Syncer {
 	return &Syncer{
 		storage:  storage,
 		loader:   loader,

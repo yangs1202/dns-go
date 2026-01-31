@@ -22,6 +22,7 @@ type API struct {
 	adblockFilter      *adblock.Filter
 	healthCheckStorage *gslb.HealthCheckStorage
 	healthStatus       *sync.Map
+	readOnly           bool // Read-Only 모드
 }
 
 func NewAPI(
@@ -53,5 +54,16 @@ func NewAPI(
 		adblockFilter:      adblockFilter,
 		healthCheckStorage: healthCheckStorage,
 		healthStatus:       healthStatus,
+		readOnly:           false, // 기본값: Read-Write
 	}
+}
+
+// SetReadOnly는 Read-Only 모드를 설정합니다
+func (api *API) SetReadOnly(readOnly bool) {
+	api.readOnly = readOnly
+}
+
+// IsReadOnly는 현재 Read-Only 모드 여부를 반환합니다
+func (api *API) IsReadOnly() bool {
+	return api.readOnly
 }

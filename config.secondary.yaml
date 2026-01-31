@@ -1,0 +1,35 @@
+dns:
+  listen: "0.0.0.0"
+  port: 53
+  tcp: true
+  udp: true
+  udp_size: 1232
+  nsid: "secondary-dns-01"
+  version: "DNS-Go v0.3.0"
+
+upstream:
+  timeout: 5s
+
+web:
+  listen: "0.0.0.0"
+  port: 8080
+
+database:
+  path: "./dns-secondary.db"
+
+geoip:
+  city_db: "./GeoLite2-City.mmdb"
+
+adblock:
+  enabled: true
+  sync_interval: 1h
+  block_response: "0.0.0.0"
+
+sync:
+  mode: "secondary"
+  primary_url: "http://localhost:8080"  # Primary 서버 주소로 변경
+  interval: 1s                           # 동기화 주기 (1초)
+  readonly: true                         # Write API 차단
+
+logging:
+  level: "info"

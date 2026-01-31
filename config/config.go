@@ -16,6 +16,7 @@ type Config struct {
 	Database DatabaseConfig `yaml:"database"`
 	GeoIP    GeoIPConfig    `yaml:"geoip"`
 	Adblock  AdblockConfig  `yaml:"adblock"`
+	Sync     SyncConfig     `yaml:"sync"`
 	Logging  LoggingConfig  `yaml:"logging"`
 }
 
@@ -56,6 +57,14 @@ type AdblockConfig struct {
 	Enabled       bool          `yaml:"enabled"`
 	SyncInterval  time.Duration `yaml:"sync_interval"`
 	BlockResponse string        `yaml:"block_response"`
+}
+
+// SyncConfig는 Primary/Secondary 동기화 설정입니다
+type SyncConfig struct {
+	Mode       string        `yaml:"mode"`        // "primary" | "secondary"
+	PrimaryURL string        `yaml:"primary_url"` // Secondary가 연결할 Primary URL
+	Interval   time.Duration `yaml:"interval"`    // 동기화 주기 (기본: 1초)
+	ReadOnly   bool          `yaml:"readonly"`    // Write API 차단 여부
 }
 
 // LoggingConfig는 로깅 설정입니다
@@ -107,6 +116,12 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Logging.Level == "" {
 		cfg.Logging.Level = "info"
+	}
+	if cfg.Sync.Mode == "" {
+		cfg.Sync.Mode = "primary"
+	}
+	if cfg.Sync.Interval == 0 {
+		cfg.Sync.Interval = 1 * time.Second // 기본 1초
 	}
 
 	return &cfg, nil

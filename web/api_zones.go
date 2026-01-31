@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"dns-go/model"
 
@@ -22,6 +23,14 @@ func normalizeFQDN(name string) string {
 	return name
 }
 
+// removeFQDNDot은 FQDN 형식의 도메인명에서 마지막 마침표를 제거합니다
+func removeFQDNDot(name string) string {
+	if name == "" {
+		return ""
+	}
+	return strings.TrimSuffix(name, ".")
+}
+
 type zoneRequest struct {
 	Name          string `json:"name"`
 	SOAMname      string `json:"soa_mname"`
@@ -35,13 +44,53 @@ type zoneRequest struct {
 	AllowFallback *bool  `json:"allow_fallback"`
 }
 
+// zoneResponse는 API 응답용 Zone 구조체 (마침표 제거)
+type zoneResponse struct {
+	ID            int64     `json:"id"`
+	Name          string    `json:"name"`
+	SOAMname      string    `json:"soa_mname"`
+	SOARname      string    `json:"soa_rname"`
+	SOASerial     int64     `json:"soa_serial"`
+	SOARefresh    int64     `json:"soa_refresh"`
+	SOARetry      int64     `json:"soa_retry"`
+	SOAExpire     int64     `json:"soa_expire"`
+	SOAMinimum    int64     `json:"soa_minimum"`
+	Enabled       bool      `json:"enabled"`
+	AllowFallback bool      `json:"allow_fallback"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+// toZoneResponse는 model.Zone을 zoneResponse로 변환합니다
+func toZoneResponse(z *model.Zone) zoneResponse {
+	return zoneResponse{
+		ID:            z.ID,
+		Name:          removeFQDNDot(z.Name),
+		SOAMname:      removeFQDNDot(z.SOAMname),
+		SOARname:      removeFQDNDot(z.SOARname),
+		SOASerial:     z.SOASerial,
+		SOARefresh:    z.SOARefresh,
+		SOARetry:      z.SOARetry,
+		SOAExpire:     z.SOAExpire,
+		SOAMinimum:    z.SOAMinimum,
+		Enabled:       z.Enabled,
+		AllowFallback: z.AllowFallback,
+		CreatedAt:     z.CreatedAt,
+		UpdatedAt:     z.UpdatedAt,
+	}
+}
+
 func (api *API) listZones(c *gin.Context) {
 	zones, err := api.zoneStorage.ListZones()
 	if err != nil {
 		respondInternalError(c, err.Error())
 		return
 	}
-	respondSuccess(c, http.StatusOK, zones)
+	responses := make([]zoneResponse, len(zones))
+	for i := range zones {
+		responses[i] = toZoneResponse(zones[i])
+	}
+	respondSuccess(c, http.StatusOK, responses)
 }
 
 func (api *API) getZone(c *gin.Context) {
@@ -61,10 +110,18 @@ func (api *API) getZone(c *gin.Context) {
 		return
 	}
 
-	respondSuccess(c, http.StatusOK, zone)
+	respondSuccess(c, http.StatusOK, toZoneResponse(zone))
 }
 
 func (api *API) createZone(c *gin.Context) {
+	// Read-Only 모드 체크
+	if api.readOnly {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "Read-Only mode (Secondary server)",
+		})
+		return
+	}
+
 	var req zoneRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		respondBadRequest(c, "요청 바디가 올바르지 않습니다")
@@ -112,10 +169,18 @@ func (api *API) createZone(c *gin.Context) {
 		return
 	}
 
-	respondSuccess(c, http.StatusCreated, created)
+	respondSuccess(c, http.StatusCreated, toZoneResponse(created))
 }
 
 func (api *API) updateZone(c *gin.Context) {
+	// Read-Only 모드 체크
+	if api.readOnly {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "Read-Only mode (Secondary server)",
+		})
+		return
+	}
+
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		respondBadRequest(c, "잘못된 Zone ID")
@@ -169,10 +234,18 @@ func (api *API) updateZone(c *gin.Context) {
 		return
 	}
 
-	respondSuccess(c, http.StatusOK, updated)
+	respondSuccess(c, http.StatusOK, toZoneResponse(updated))
 }
 
 func (api *API) deleteZone(c *gin.Context) {
+	// Read-Only 모드 체크
+	if api.readOnly {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "Read-Only mode (Secondary server)",
+		})
+		return
+	}
+
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		respondBadRequest(c, "잘못된 Zone ID")

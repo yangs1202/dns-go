@@ -600,3 +600,159 @@ func TestNewRecordCache(t *testing.T) {
 	assert.Empty(t, cache.cache)
 	assert.Empty(t, cache.expiry)
 }
+
+// TestCreateRecord_VersionIncrement는 Record 생성 시 버전 증가를 테스트합니다
+func TestCreateRecord_VersionIncrement(t *testing.T) {
+	db := setupTestDB(t)
+	recordStorage := NewRecordStorage(db)
+	syncVersion := NewSyncVersion(db)
+
+	// Zone 생성
+	zoneID := insertTestZone(t, db, "test.com.")
+
+	// 현재 버전 확인
+	version, err := syncVersion.GetVersion()
+	require.NoError(t, err)
+
+	// Record 생성
+	record := &model.Record{
+		ZoneID:   zoneID,
+		Name:     "www.test.com.",
+		Type:     "A",
+		Content:  "10.0.0.1",
+		TTL:      300,
+		Priority: 0,
+		Enabled:  true,
+	}
+
+	_, err = recordStorage.CreateRecord(record)
+	require.NoError(t, err)
+
+	// 버전 증가 확인
+	newVersion, err := syncVersion.GetVersion()
+	require.NoError(t, err)
+	assert.Equal(t, version+1, newVersion, "Record 생성 시 버전이 증가해야 함")
+}
+
+// TestUpdateRecord_VersionIncrement는 Record 업데이트 시 버전 증가를 테스트합니다
+func TestUpdateRecord_VersionIncrement(t *testing.T) {
+	db := setupTestDB(t)
+	recordStorage := NewRecordStorage(db)
+	syncVersion := NewSyncVersion(db)
+
+	// Zone 생성
+	zoneID := insertTestZone(t, db, "test.com.")
+
+	// Record 생성
+	record := &model.Record{
+		ZoneID:   zoneID,
+		Name:     "www.test.com.",
+		Type:     "A",
+		Content:  "10.0.0.1",
+		TTL:      300,
+		Priority: 0,
+		Enabled:  true,
+	}
+
+	id, err := recordStorage.CreateRecord(record)
+	require.NoError(t, err)
+
+	// 현재 버전 확인
+	version, err := syncVersion.GetVersion()
+	require.NoError(t, err)
+
+	// Record 업데이트
+	record.ID = id
+	record.Content = "10.0.0.2"
+	err = recordStorage.UpdateRecord(record)
+	require.NoError(t, err)
+
+	// 버전 증가 확인
+	newVersion, err := syncVersion.GetVersion()
+	require.NoError(t, err)
+	assert.Equal(t, version+1, newVersion, "Record 업데이트 시 버전이 증가해야 함")
+}
+
+// TestDeleteRecord_VersionIncrement는 Record 삭제 시 버전 증가를 테스트합니다
+func TestDeleteRecord_VersionIncrement(t *testing.T) {
+	db := setupTestDB(t)
+	recordStorage := NewRecordStorage(db)
+	syncVersion := NewSyncVersion(db)
+
+	// Zone 생성
+	zoneID := insertTestZone(t, db, "test.com.")
+
+	// Record 생성
+	record := &model.Record{
+		ZoneID:   zoneID,
+		Name:     "www.test.com.",
+		Type:     "A",
+		Content:  "10.0.0.1",
+		TTL:      300,
+		Priority: 0,
+		Enabled:  true,
+	}
+
+	id, err := recordStorage.CreateRecord(record)
+	require.NoError(t, err)
+
+	// 현재 버전 확인
+	version, err := syncVersion.GetVersion()
+	require.NoError(t, err)
+
+	// Record 삭제
+	err = recordStorage.DeleteRecord(id)
+	require.NoError(t, err)
+
+	// 버전 증가 확인
+	newVersion, err := syncVersion.GetVersion()
+	require.NoError(t, err)
+	assert.Equal(t, version+1, newVersion, "Record 삭제 시 버전이 증가해야 함")
+}
+
+// TestCreateRecord_TransactionRollback는 트랜잭션 롤백 테스트입니다
+func TestCreateRecord_TransactionRollback(t *testing.T) {
+	db := setupTestDB(t)
+	recordStorage := NewRecordStorage(db)
+	syncVersion := NewSyncVersion(db)
+
+	// Zone 생성
+	zoneID := insertTestZone(t, db, "test.com.")
+
+	// 초기 버전
+	initialVersion, err := syncVersion.GetVersion()
+	require.NoError(t, err)
+
+	// 정상 Record 생성
+	record1 := &model.Record{
+		ZoneID:   zoneID,
+		Name:     "www.test.com.",
+		Type:     "A",
+		Content:  "10.0.0.1",
+		TTL:      300,
+		Priority: 0,
+		Enabled:  true,
+	}
+
+	_, err = recordStorage.CreateRecord(record1)
+	require.NoError(t, err)
+
+	// 잘못된 Record 생성 시도 (존재하지 않는 Zone)
+	record2 := &model.Record{
+		ZoneID:   9999,
+		Name:     "invalid.test.com.",
+		Type:     "A",
+		Content:  "10.0.0.2",
+		TTL:      300,
+		Priority: 0,
+		Enabled:  true,
+	}
+
+	_, err = recordStorage.CreateRecord(record2)
+	assert.Error(t, err, "존재하지 않는 Zone의 Record 생성은 실패해야 함")
+
+	// 버전 확인 (실패한 트랜잭션은 버전 증가 안 함)
+	currentVersion, err := syncVersion.GetVersion()
+	require.NoError(t, err)
+	assert.Equal(t, initialVersion+1, currentVersion, "성공한 트랜잭션만 버전 증가")
+}

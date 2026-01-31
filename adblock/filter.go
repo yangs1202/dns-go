@@ -1,21 +1,26 @@
 package adblock
 
 import (
-	"dns-go/storage"
 	"strings"
 	"sync"
 
 	"github.com/bits-and-blooms/bloom/v3"
 )
 
+// AdblockStorageInterface defines the methods needed from storage
+type AdblockStorageInterface interface {
+	ListBlockedDomains() ([]string, error)
+	IsBlocked(domain string) (bool, error)
+}
+
 type Filter struct {
-	storage *storage.AdblockStorage
+	storage AdblockStorageInterface
 	bloom   *bloom.BloomFilter
 	mu      sync.RWMutex
 	enabled bool
 }
 
-func NewFilter(storage *storage.AdblockStorage, enabled bool) *Filter {
+func NewFilter(storage AdblockStorageInterface, enabled bool) *Filter {
 	f := &Filter{storage: storage, enabled: enabled}
 	f.Rebuild()
 	return f

@@ -1,0 +1,33 @@
+dns:
+  listen: "0.0.0.0"
+  port: 53
+  tcp: true
+  udp: true
+  udp_size: 1232
+  nsid: "primary-dns"
+  version: "DNS-Go v0.3.0"
+
+upstream:
+  timeout: 5s
+
+web:
+  listen: "0.0.0.0"
+  port: 8080
+
+database:
+  path: "./dns-primary.db"
+
+geoip:
+  city_db: "./GeoLite2-City.mmdb"
+
+adblock:
+  enabled: true
+  sync_interval: 1h
+  block_response: "0.0.0.0"
+
+sync:
+  mode: "primary"
+  readonly: false
+
+logging:
+  level: "info"

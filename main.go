@@ -6,12 +6,13 @@ import (
 	"dns-go/dns"
 	"dns-go/gslb"
 	"dns-go/storage"
+	"dns-go/sync"
 	"dns-go/web"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
-	"sync"
+	synclib "sync"
 	"syscall"
 )
 
@@ -65,7 +66,7 @@ func main() {
 	// GSLB Storage 초기화
 	policyStorage := gslb.NewPolicyStorage(db)
 	poolStorage := gslb.NewPoolStorage(db)
-	healthStatus := &sync.Map{}
+	healthStatus := &synclib.Map{}
 	gslbEngine := gslb.NewEngine(policyStorage, poolStorage, geoipResolver, healthStatus)
 
 	log.Println("GSLB 엔진 초기화 완료")
@@ -118,9 +119,33 @@ func main() {
 
 	log.Printf("DNS 서버 시작 성공: %s", server.GetAddr())
 
+	// Sync Worker 시작 (Secondary 모드)
+	var syncWorker *sync.Worker
+	if cfg.Sync.Mode == "secondary" {
+		syncWorker = sync.NewWorker(cfg.Sync.PrimaryURL, db, cfg.Sync.Interval)
+		syncWorker.Start()
+		defer syncWorker.Stop()
+		log.Printf("Secondary 모드: Primary=%s, Interval=%v", cfg.Sync.PrimaryURL, cfg.Sync.Interval)
+	}
+
+	// Sync Version (Primary 모드에서만 API 제공)
+	var syncAPI *web.SyncAPI
+	if cfg.Sync.Mode == "primary" {
+		syncVersion := storage.NewSyncVersion(db)
+		syncAPI = web.NewSyncAPI(syncVersion)
+		log.Println("Primary 모드: Sync API 활성화")
+	}
+
 	// Web API 서버 초기화 및 시작
 	api := web.NewAPI(zoneStorage, recordStorage, upstreamStorage, db, handler, queryStats, policyStorage, poolStorage, adblockStorage, adblockSyncer, adblockFilter, healthCheckStorage, healthStatus)
-	webServer := web.NewServer(cfg.Web.Listen, cfg.Web.Port, api)
+
+	// Read-Only 모드 설정 (Secondary)
+	if cfg.Sync.ReadOnly {
+		api.SetReadOnly(true)
+		log.Println("Read-Only 모드 활성화 (Write API 차단)")
+	}
+
+	webServer := web.NewServer(cfg.Web.Listen, cfg.Web.Port, api, syncAPI)
 
 	go func() {
 		if err := webServer.Start(); err != nil {

@@ -4,7 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func NewRouter(api *API) *gin.Engine {
+func NewRouter(api *API, syncAPI *SyncAPI) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(requestLogger())
@@ -69,6 +69,13 @@ func NewRouter(api *API) *gin.Engine {
 		apiGroup.POST("/adblock/sources/:id/sync", api.syncAdblockSource)
 		apiGroup.GET("/adblock/stats", api.getAdblockStats)
 		apiGroup.GET("/adblock/status", api.getAdblockStatus)
+
+		// Sync API (Primary만)
+		if syncAPI != nil {
+			apiGroup.GET("/sync/metadata", syncAPI.GetMetadata)
+			apiGroup.GET("/sync/full", syncAPI.GetFull)
+			apiGroup.GET("/sync/changes", syncAPI.GetChanges)
+		}
 	}
 
 	return router

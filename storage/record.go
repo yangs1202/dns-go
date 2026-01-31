@@ -247,10 +247,17 @@ func (s *RecordStorage) CreateRecord(record *model.Record) (int64, error) {
 		record.Priority = 0
 	}
 
+	// 트랜잭션 시작
+	tx, err := s.db.Writer.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("트랜잭션 시작 실패: %w", err)
+	}
+	defer tx.Rollback()
+
 	query := `INSERT INTO records (zone_id, name, type, content, ttl, priority, enabled)
 	          VALUES (?, ?, ?, ?, ?, ?, ?)`
 
-	result, err := s.db.Writer.Exec(query,
+	result, err := tx.Exec(query,
 		record.ZoneID,
 		record.Name,
 		record.Type,
@@ -269,6 +276,17 @@ func (s *RecordStorage) CreateRecord(record *model.Record) (int64, error) {
 		return 0, fmt.Errorf("Record ID 조회 실패: %w", err)
 	}
 
+	// 동기화 버전 증가
+	_, err = tx.Exec(`UPDATE sync_state SET last_sync_version = last_sync_version + 1 WHERE id = 1`)
+	if err != nil {
+		return 0, fmt.Errorf("동기화 버전 업데이트 실패: %w", err)
+	}
+
+	// 트랜잭션 커밋
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("트랜잭션 커밋 실패: %w", err)
+	}
+
 	// 해당 Zone의 캐시 무효화
 	s.cache.Invalidate(record.ZoneID)
 
@@ -277,12 +295,19 @@ func (s *RecordStorage) CreateRecord(record *model.Record) (int64, error) {
 
 // UpdateRecord는 Record를 업데이트합니다
 func (s *RecordStorage) UpdateRecord(record *model.Record) error {
+	// 트랜잭션 시작
+	tx, err := s.db.Writer.Begin()
+	if err != nil {
+		return fmt.Errorf("트랜잭션 시작 실패: %w", err)
+	}
+	defer tx.Rollback()
+
 	query := `UPDATE records
 	          SET zone_id = ?, name = ?, type = ?, content = ?, ttl = ?, priority = ?, enabled = ?,
 	              updated_at = CURRENT_TIMESTAMP
 	          WHERE id = ?`
 
-	result, err := s.db.Writer.Exec(query,
+	result, err := tx.Exec(query,
 		record.ZoneID,
 		record.Name,
 		record.Type,
@@ -306,6 +331,17 @@ func (s *RecordStorage) UpdateRecord(record *model.Record) error {
 		return fmt.Errorf("Record를 찾을 수 없습니다")
 	}
 
+	// 동기화 버전 증가
+	_, err = tx.Exec(`UPDATE sync_state SET last_sync_version = last_sync_version + 1 WHERE id = 1`)
+	if err != nil {
+		return fmt.Errorf("동기화 버전 업데이트 실패: %w", err)
+	}
+
+	// 트랜잭션 커밋
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("트랜잭션 커밋 실패: %w", err)
+	}
+
 	// 해당 Zone의 캐시 무효화
 	s.cache.Invalidate(record.ZoneID)
 
@@ -323,7 +359,14 @@ func (s *RecordStorage) DeleteRecord(id int64) error {
 		return fmt.Errorf("Record를 찾을 수 없습니다")
 	}
 
-	result, err := s.db.Writer.Exec("DELETE FROM records WHERE id = ?", id)
+	// 트랜잭션 시작
+	tx, err := s.db.Writer.Begin()
+	if err != nil {
+		return fmt.Errorf("트랜잭션 시작 실패: %w", err)
+	}
+	defer tx.Rollback()
+
+	result, err := tx.Exec("DELETE FROM records WHERE id = ?", id)
 	if err != nil {
 		return fmt.Errorf("Record 삭제 실패: %w", err)
 	}
@@ -335,6 +378,17 @@ func (s *RecordStorage) DeleteRecord(id int64) error {
 
 	if rows == 0 {
 		return fmt.Errorf("Record를 찾을 수 없습니다")
+	}
+
+	// 동기화 버전 증가
+	_, err = tx.Exec(`UPDATE sync_state SET last_sync_version = last_sync_version + 1 WHERE id = 1`)
+	if err != nil {
+		return fmt.Errorf("동기화 버전 업데이트 실패: %w", err)
+	}
+
+	// 트랜잭션 커밋
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("트랜잭션 커밋 실패: %w", err)
 	}
 
 	// 해당 Zone의 캐시 무효화
