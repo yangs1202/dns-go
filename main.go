@@ -70,6 +70,13 @@ func main() {
 
 	log.Println("GSLB 엔진 초기화 완료")
 
+	// 헬스체크 워커 초기화
+	healthCheckStorage := gslb.NewHealthCheckStorage(db)
+	healthWorker := gslb.NewHealthCheckWorker(healthCheckStorage, poolStorage, healthStatus)
+	healthWorker.Start()
+	defer healthWorker.Stop()
+	log.Println("헬스체크 워커 시작")
+
 	// Adblock 초기화
 	adblockStorage := storage.NewAdblockStorage(db)
 	adblockFilter := adblock.NewFilter(adblockStorage, cfg.Adblock.Enabled)
@@ -100,7 +107,7 @@ func main() {
 	log.Printf("DNS 서버 시작 성공: %s", server.GetAddr())
 
 	// Web API 서버 초기화 및 시작
-	api := web.NewAPI(zoneStorage, recordStorage, upstreamStorage, db, handler, queryStats, policyStorage, poolStorage, adblockStorage, adblockSyncer, adblockFilter)
+	api := web.NewAPI(zoneStorage, recordStorage, upstreamStorage, db, handler, queryStats, policyStorage, poolStorage, adblockStorage, adblockSyncer, adblockFilter, healthCheckStorage, healthStatus)
 	webServer := web.NewServer(cfg.Web.Listen, cfg.Web.Port, api)
 
 	go func() {
