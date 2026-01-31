@@ -1,5 +1,5 @@
 # 멀티 스테이지 빌드
-FROM golang:1.23-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 # 빌드에 필요한 패키지 설치
 RUN apk add --no-cache git ca-certificates tzdata
