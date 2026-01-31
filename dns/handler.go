@@ -361,6 +361,30 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 			return
 		}
 
+		// A/AAAA 레코드가 없으면 CNAME 레코드 확인
+		if len(records) == 0 && (qtype == "A" || qtype == "AAAA") {
+			cnameRecords, err := h.recordStorage.GetRecordsByName(domain, "CNAME")
+			if err != nil {
+				log.Printf("[DNS] CNAME 조회 에러: %v", err)
+			} else if len(cnameRecords) > 0 {
+				log.Printf("[DNS] CNAME found: %s -> %s", domain, cnameRecords[0].Content)
+				records = cnameRecords
+
+				// CNAME 타겟에 대한 A/AAAA 레코드 추가 조회
+				target := cnameRecords[0].Content
+				if !strings.HasSuffix(target, ".") {
+					target = target + "."
+				}
+				targetRecords, err := h.recordStorage.GetRecordsByName(target, qtype)
+				if err != nil {
+					log.Printf("[DNS] CNAME target 조회 에러: %v", err)
+				} else if len(targetRecords) > 0 {
+					log.Printf("[DNS] CNAME target records found: %d records", len(targetRecords))
+					records = append(records, targetRecords...)
+				}
+			}
+		}
+
 		// 레코드가 있으면 응답 생성
 		if len(records) > 0 {
 			log.Printf("[DNS] Records found: %d records", len(records))
@@ -490,9 +514,13 @@ func (h *Handler) recordToRR(record *model.Record) dns.RR {
 		}
 
 	case "CNAME":
+		target := record.Content
+		if !strings.HasSuffix(target, ".") {
+			target = target + "."
+		}
 		return &dns.CNAME{
 			Hdr:    header,
-			Target: record.Content,
+			Target: target,
 		}
 
 	case "MX":
