@@ -197,8 +197,28 @@ func (s *RecordStorage) ListAllRecords() ([]*model.Record, error) {
 	return records, nil
 }
 
-// GetRecordsByName은 이름과 타입으로 Record를 조회합니다
+// GetRecordsByNameAndZone은 zone_id, 이름, 타입으로 Record를 조회합니다 (L2 캐시 활용)
+func (s *RecordStorage) GetRecordsByNameAndZone(zoneID int64, name, recordType string) ([]*model.Record, error) {
+	// L2 캐시에서 zone의 모든 레코드 조회
+	allRecords, err := s.GetRecordsByZone(zoneID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 메모리에서 name과 type으로 필터링
+	var result []*model.Record
+	for _, record := range allRecords {
+		if record.Name == name && record.Type == recordType && record.Enabled {
+			result = append(result, record)
+		}
+	}
+
+	return result, nil
+}
+
+// GetRecordsByName은 이름과 타입으로 Record를 조회합니다 (하위 호환성을 위해 유지)
 func (s *RecordStorage) GetRecordsByName(name, recordType string) ([]*model.Record, error) {
+	// zone_id를 모르는 경우 DB 직접 조회
 	query := `SELECT id, zone_id, name, type, content, ttl, priority, enabled, created_at, updated_at
 	          FROM records WHERE name = ? AND type = ? AND enabled = 1
 	          ORDER BY priority, id`

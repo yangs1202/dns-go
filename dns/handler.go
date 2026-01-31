@@ -353,7 +353,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 		log.Printf("[DNS] Zone found: %s (ID: %d)", zone.Name, zone.ID)
 
 		// Record 조회 (L2 캐시 활용)
-		records, err := h.recordStorage.GetRecordsByName(domain, qtype)
+		records, err := h.recordStorage.GetRecordsByNameAndZone(zone.ID, domain, qtype)
 		if err != nil {
 			log.Printf("[DNS] Record 조회 에러: %v", err)
 			resp.Rcode = dns.RcodeServerFailure
@@ -363,7 +363,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 
 		// A/AAAA 레코드가 없으면 CNAME 레코드 확인
 		if len(records) == 0 && (qtype == "A" || qtype == "AAAA") {
-			cnameRecords, err := h.recordStorage.GetRecordsByName(domain, "CNAME")
+			cnameRecords, err := h.recordStorage.GetRecordsByNameAndZone(zone.ID, domain, "CNAME")
 			if err != nil {
 				log.Printf("[DNS] CNAME 조회 에러: %v", err)
 			} else if len(cnameRecords) > 0 {
@@ -375,7 +375,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 				if !strings.HasSuffix(target, ".") {
 					target = target + "."
 				}
-				targetRecords, err := h.recordStorage.GetRecordsByName(target, qtype)
+				targetRecords, err := h.recordStorage.GetRecordsByNameAndZone(zone.ID, target, qtype)
 				if err != nil {
 					log.Printf("[DNS] CNAME target 조회 에러: %v", err)
 				} else if len(targetRecords) > 0 {

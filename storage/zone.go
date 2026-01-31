@@ -143,6 +143,9 @@ func (s *ZoneStorage) GetZoneByName(name string) (*model.Zone, error) {
 		return nil, fmt.Errorf("Zone 조회 실패: %w", err)
 	}
 
+	// L2 캐시에 저장
+	s.cache.Set([]*model.Zone{&zone})
+
 	return &zone, nil
 }
 
