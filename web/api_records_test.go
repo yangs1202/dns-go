@@ -32,18 +32,42 @@ func TestToRecordResponse(t *testing.T) {
 		UpdatedAt: now,
 	}
 
-	resp := toRecordResponse(record)
+	zone := &model.Zone{
+		ID:         1,
+		Name:       "example.com.",
+		SOAMname:   "ns1.example.com.",
+		SOARname:   "admin.example.com.",
+		SOASerial:  1,
+		SOARefresh: 3600,
+		SOARetry:   600,
+		SOAExpire:  86400,
+		SOAMinimum: 300,
+		Enabled:    true,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
 
-	assert.Equal(t, record.ID, resp.ID)
-	assert.Equal(t, record.ZoneID, resp.ZoneID)
-	assert.Equal(t, "www.example.com", resp.Name) // Dot removed
-	assert.Equal(t, record.Type, resp.Type)
-	assert.Equal(t, record.Content, resp.Content)
-	assert.Equal(t, record.TTL, resp.TTL)
-	assert.Equal(t, record.Priority, resp.Priority)
-	assert.Equal(t, record.Enabled, resp.Enabled)
-	assert.Equal(t, record.CreatedAt, resp.CreatedAt)
-	assert.Equal(t, record.UpdatedAt, resp.UpdatedAt)
+	// Zone 없이 변환
+	respWithoutZone := toRecordResponse(record, nil)
+	assert.Equal(t, record.ID, respWithoutZone.ID)
+	assert.Equal(t, record.ZoneID, respWithoutZone.ZoneID)
+	assert.Nil(t, respWithoutZone.Zone)
+	assert.Equal(t, "www.example.com", respWithoutZone.Name) // Dot removed
+	assert.Equal(t, record.Type, respWithoutZone.Type)
+	assert.Equal(t, record.Content, respWithoutZone.Content)
+	assert.Equal(t, record.TTL, respWithoutZone.TTL)
+	assert.Equal(t, record.Priority, respWithoutZone.Priority)
+	assert.Equal(t, record.Enabled, respWithoutZone.Enabled)
+	assert.Equal(t, record.CreatedAt, respWithoutZone.CreatedAt)
+	assert.Equal(t, record.UpdatedAt, respWithoutZone.UpdatedAt)
+
+	// Zone과 함께 변환
+	respWithZone := toRecordResponse(record, zone)
+	assert.Equal(t, record.ID, respWithZone.ID)
+	assert.Equal(t, record.ZoneID, respWithZone.ZoneID)
+	assert.NotNil(t, respWithZone.Zone)
+	assert.Equal(t, zone.ID, respWithZone.Zone.ID)
+	assert.Equal(t, "example.com", respWithZone.Zone.Name) // Dot removed
 }
 
 func TestListAllRecords(t *testing.T) {

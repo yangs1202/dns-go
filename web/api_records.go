@@ -22,21 +22,22 @@ type recordRequest struct {
 
 // recordResponse는 API 응답용 Record 구조체 (마침표 제거)
 type recordResponse struct {
-	ID        int64     `json:"id"`
-	ZoneID    int64     `json:"zone_id"`
-	Name      string    `json:"name"`
-	Type      string    `json:"type"`
-	Content   string    `json:"content"`
-	TTL       int64     `json:"ttl"`
-	Priority  int64     `json:"priority"`
-	Enabled   bool      `json:"enabled"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID        int64         `json:"id"`
+	ZoneID    int64         `json:"zone_id"`
+	Zone      *zoneResponse `json:"zone,omitempty"` // Zone 정보 추가
+	Name      string        `json:"name"`
+	Type      string        `json:"type"`
+	Content   string        `json:"content"`
+	TTL       int64         `json:"ttl"`
+	Priority  int64         `json:"priority"`
+	Enabled   bool          `json:"enabled"`
+	CreatedAt time.Time     `json:"created_at"`
+	UpdatedAt time.Time     `json:"updated_at"`
 }
 
 // toRecordResponse는 model.Record를 recordResponse로 변환합니다
-func toRecordResponse(r *model.Record) recordResponse {
-	return recordResponse{
+func toRecordResponse(r *model.Record, zone *model.Zone) recordResponse {
+	resp := recordResponse{
 		ID:        r.ID,
 		ZoneID:    r.ZoneID,
 		Name:      removeFQDNDot(r.Name),
@@ -48,6 +49,13 @@ func toRecordResponse(r *model.Record) recordResponse {
 		CreatedAt: r.CreatedAt,
 		UpdatedAt: r.UpdatedAt,
 	}
+
+	if zone != nil {
+		zr := toZoneResponse(zone)
+		resp.Zone = &zr
+	}
+
+	return resp
 }
 
 func (api *API) listAllRecords(c *gin.Context) {
@@ -57,9 +65,22 @@ func (api *API) listAllRecords(c *gin.Context) {
 		return
 	}
 
+	// Zone 정보를 캐시하기 위한 맵
+	zoneCache := make(map[int64]*model.Zone)
+
 	responses := make([]recordResponse, len(records))
 	for i := range records {
-		responses[i] = toRecordResponse(records[i])
+		// Zone 정보가 캐시에 없으면 조회
+		zone, exists := zoneCache[records[i].ZoneID]
+		if !exists {
+			zone, err = api.zoneStorage.GetZone(records[i].ZoneID)
+			if err != nil {
+				// Zone 조회 실패 시에도 Record는 반환
+				zone = nil
+			}
+			zoneCache[records[i].ZoneID] = zone
+		}
+		responses[i] = toRecordResponse(records[i], zone)
 	}
 	respondSuccess(c, http.StatusOK, responses)
 }
@@ -77,9 +98,19 @@ func (api *API) listRecords(c *gin.Context) {
 		return
 	}
 
+	// 모든 레코드가 같은 Zone이므로 한 번만 조회
+	var zone *model.Zone
+	if len(records) > 0 {
+		zone, err = api.zoneStorage.GetZone(zoneID)
+		if err != nil {
+			// Zone 조회 실패 시에도 Record는 반환
+			zone = nil
+		}
+	}
+
 	responses := make([]recordResponse, len(records))
 	for i := range records {
-		responses[i] = toRecordResponse(records[i])
+		responses[i] = toRecordResponse(records[i], zone)
 	}
 	respondSuccess(c, http.StatusOK, responses)
 }
@@ -146,7 +177,12 @@ func (api *API) createRecord(c *gin.Context) {
 		return
 	}
 
-	respondSuccess(c, http.StatusCreated, toRecordResponse(created))
+	zone, err := api.zoneStorage.GetZone(created.ZoneID)
+	if err != nil {
+		zone = nil
+	}
+
+	respondSuccess(c, http.StatusCreated, toRecordResponse(created, zone))
 }
 
 func (api *API) updateRecord(c *gin.Context) {
@@ -221,7 +257,12 @@ func (api *API) updateRecord(c *gin.Context) {
 		return
 	}
 
-	respondSuccess(c, http.StatusOK, toRecordResponse(updated))
+	zone, err := api.zoneStorage.GetZone(updated.ZoneID)
+	if err != nil {
+		zone = nil
+	}
+
+	respondSuccess(c, http.StatusOK, toRecordResponse(updated, zone))
 }
 
 func (api *API) deleteRecord(c *gin.Context) {
