@@ -293,9 +293,10 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 		}
 	}
 
-	// 3. TODO: GSLB 정책 확인
+	// 3. Client IP 추출 (GSLB 사용 시)
+	var clientIP net.IP
 	if h.gslbEngine != nil {
-		clientIP := ExtractClientIP(req)
+		clientIP = ExtractClientIP(req)
 		if clientIP == nil {
 			if addr := w.RemoteAddr(); addr != nil {
 				if host, _, err := net.SplitHostPort(addr.String()); err == nil {
@@ -371,12 +372,49 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 				if !strings.HasSuffix(target, ".") {
 					target = target + "."
 				}
-				targetRecords, err := h.recordStorage.GetRecordsByNameAndZone(zone.ID, target, qtype)
-				if err != nil {
-					log.Printf("[DNS] CNAME target 조회 에러: %v", err)
-				} else if len(targetRecords) > 0 {
-					log.Printf("[DNS] CNAME target records found: %d records", len(targetRecords))
-					records = append(records, targetRecords...)
+
+				// 1. GSLB 도메인인지 확인
+				if h.gslbEngine != nil {
+					ips, _, err := h.gslbEngine.Resolve(target, qtype, clientIP)
+					if err == nil && len(ips) > 0 {
+						log.Printf("[DNS] CNAME target is GSLB domain, resolved %d IPs", len(ips))
+						// GSLB 결과를 가상 레코드로 변환
+						for _, ip := range ips {
+							if ip == nil {
+								continue
+							}
+							if qtype == "A" {
+								if ip4 := ip.To4(); ip4 != nil {
+									records = append(records, &model.Record{
+										Name:    target,
+										Type:    "A",
+										Content: ip4.String(),
+										TTL:     60, // GSLB는 짧은 TTL
+									})
+								}
+							} else if qtype == "AAAA" {
+								if ip.To4() == nil {
+									records = append(records, &model.Record{
+										Name:    target,
+										Type:    "AAAA",
+										Content: ip.String(),
+										TTL:     60,
+									})
+								}
+							}
+						}
+					}
+				}
+
+				// 2. GSLB가 아니면 일반 레코드 조회
+				if len(records) == len(cnameRecords) {
+					targetRecords, err := h.recordStorage.GetRecordsByNameAndZone(zone.ID, target, qtype)
+					if err != nil {
+						log.Printf("[DNS] CNAME target 조회 에러: %v", err)
+					} else if len(targetRecords) > 0 {
+						log.Printf("[DNS] CNAME target records found: %d records", len(targetRecords))
+						records = append(records, targetRecords...)
+					}
 				}
 			}
 		}
