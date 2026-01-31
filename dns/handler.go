@@ -327,11 +327,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 			if len(answers) > 0 {
 				resp.Answer = answers
 				resp.Rcode = dns.RcodeSuccess
-				cacheTTL := int64(ttl)
-				if cacheTTL <= 0 {
-					cacheTTL = 30
-				}
-				h.cache.Set(domain, qtype, resp.Answer, cacheTTL, false)
+				// GSLB 응답은 캐시하지 않음 (클라이언트 IP 기반 동적 응답)
 				w.WriteMsg(resp)
 				return
 			}

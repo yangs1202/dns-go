@@ -724,3 +724,100 @@ func TestResolvePartiallyHealthy(t *testing.T) {
 		t.Fatalf("expected healthy member IP 192.0.2.20, got %s", ips[0].String())
 	}
 }
+
+func TestResolveCIDRWithFallback(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	policyStorage := NewPolicyStorage(db)
+	poolStorage := NewPoolStorage(db)
+
+	policyID, err := policyStorage.CreatePolicy(&model.GSLBPolicy{
+		Name:       "test",
+		Domain:     "multi.example.com.",
+		RecordType: "A",
+		TTL:        30,
+		Enabled:    true,
+	})
+	if err != nil {
+		t.Fatalf("create policy error: %v", err)
+	}
+
+	// CIDR pool (priority 0)
+	cidrPoolID, err := poolStorage.CreatePool(&model.GSLBPool{
+		PolicyID:     policyID,
+		Name:         "cidr-pool",
+		MatchType:    "cidr",
+		MatchValue:   "10.97.0.0/16",
+		Priority:     0,
+		FallbackPool: false,
+	})
+	if err != nil {
+		t.Fatalf("create cidr pool error: %v", err)
+	}
+
+	_, err = poolStorage.CreateMember(&model.GSLBMember{
+		PoolID:  cidrPoolID,
+		Address: "192.168.1.100",
+		Weight:  100,
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("create cidr member error: %v", err)
+	}
+
+	// Fallback pool (priority 100)
+	fallbackPoolID, err := poolStorage.CreatePool(&model.GSLBPool{
+		PolicyID:     policyID,
+		Name:         "fallback-pool",
+		MatchType:    "default",
+		MatchValue:   "*",
+		Priority:     100,
+		FallbackPool: true,
+	})
+	if err != nil {
+		t.Fatalf("create fallback pool error: %v", err)
+	}
+
+	_, err = poolStorage.CreateMember(&model.GSLBMember{
+		PoolID:  fallbackPoolID,
+		Address: "203.0.113.1",
+		Weight:  100,
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("create fallback member error: %v", err)
+	}
+
+	engine := NewEngine(policyStorage, poolStorage, nil, nil)
+
+	// 10.97.11.18은 CIDR pool에 매칭되어야 함
+	ips, ttl, err := engine.Resolve("multi.example.com.", "A", net.ParseIP("10.97.11.18"))
+	if err != nil {
+		t.Fatalf("resolve error: %v", err)
+	}
+	if ttl != 30 {
+		t.Fatalf("expected ttl 30, got %d", ttl)
+	}
+	if len(ips) != 1 {
+		t.Fatalf("expected 1 ip, got %d", len(ips))
+	}
+	if ips[0].String() != "192.168.1.100" {
+		t.Fatalf("expected CIDR pool IP 192.168.1.100, got %s", ips[0].String())
+	}
+
+	// 8.8.8.8은 CIDR pool에 매칭되지 않아 fallback으로 가야 함
+	ips, ttl, err = engine.Resolve("multi.example.com.", "A", net.ParseIP("8.8.8.8"))
+	if err != nil {
+		t.Fatalf("resolve error: %v", err)
+	}
+	if ttl != 30 {
+		t.Fatalf("expected ttl 30, got %d", ttl)
+	}
+	if len(ips) != 1 {
+		t.Fatalf("expected 1 ip, got %d", len(ips))
+	}
+	if ips[0].String() != "203.0.113.1" {
+		t.Fatalf("expected fallback pool IP 203.0.113.1, got %s", ips[0].String())
+	}
+}
