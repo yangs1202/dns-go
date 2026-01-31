@@ -19,6 +19,16 @@ type recordRequest struct {
 	Enabled  *bool  `json:"enabled"`
 }
 
+func (api *API) listAllRecords(c *gin.Context) {
+	records, err := api.recordStorage.ListAllRecords()
+	if err != nil {
+		respondInternalError(c, err.Error())
+		return
+	}
+
+	respondSuccess(c, http.StatusOK, records)
+}
+
 func (api *API) listRecords(c *gin.Context) {
 	zoneID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {

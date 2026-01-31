@@ -158,6 +158,45 @@ func (s *RecordStorage) GetRecordsByZone(zoneID int64) ([]*model.Record, error) 
 	return records, nil
 }
 
+// ListAllRecords는 모든 Zone의 모든 Record를 조회합니다
+func (s *RecordStorage) ListAllRecords() ([]*model.Record, error) {
+	query := `SELECT id, zone_id, name, type, content, ttl, priority, enabled, created_at, updated_at
+	          FROM records ORDER BY zone_id, name, type`
+
+	rows, err := s.db.Reader.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("Record 목록 조회 실패: %w", err)
+	}
+	defer rows.Close()
+
+	var records []*model.Record
+	for rows.Next() {
+		var record model.Record
+		err := rows.Scan(
+			&record.ID,
+			&record.ZoneID,
+			&record.Name,
+			&record.Type,
+			&record.Content,
+			&record.TTL,
+			&record.Priority,
+			&record.Enabled,
+			&record.CreatedAt,
+			&record.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("Record 스캔 실패: %w", err)
+		}
+		records = append(records, &record)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("Record 행 반복 실패: %w", err)
+	}
+
+	return records, nil
+}
+
 // GetRecordsByName은 이름과 타입으로 Record를 조회합니다
 func (s *RecordStorage) GetRecordsByName(name, recordType string) ([]*model.Record, error) {
 	query := `SELECT id, zone_id, name, type, content, ttl, priority, enabled, created_at, updated_at

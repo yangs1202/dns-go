@@ -24,6 +24,7 @@ func NewRouter(api *API) *gin.Engine {
 		apiGroup.PUT("/zones/:id", api.updateZone)
 		apiGroup.DELETE("/zones/:id", api.deleteZone)
 
+		apiGroup.GET("/records", api.listAllRecords)
 		apiGroup.GET("/zones/:id/records", api.listRecords)
 		apiGroup.POST("/zones/:id/records", api.createRecord)
 		apiGroup.PUT("/records/:id", api.updateRecord)
