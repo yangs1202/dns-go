@@ -23,6 +23,16 @@ type Server struct {
 func NewServer(cfg *config.DNSConfig, handler dns.Handler) *Server {
 	addr := fmt.Sprintf("%s:%d", cfg.Listen, cfg.Port)
 
+	// UDP 버퍼 크기 설정
+	// - 512: RFC 1035 기본값 (너무 작음, DNSSEC 불가)
+	// - 1232: RFC 6891 권장 (IPv4 MTU 고려, DNSSEC 지원)
+	// - 1410: Cloudflare 권장 (IPv6 MTU 고려)
+	// - 4096: 최대 실용값 (과도할 수 있음)
+	udpSize := cfg.UDPSize
+	if udpSize == 0 {
+		udpSize = 1232 // 기본값
+	}
+
 	return &Server{
 		config:  cfg,
 		handler: handler,
@@ -30,7 +40,7 @@ func NewServer(cfg *config.DNSConfig, handler dns.Handler) *Server {
 			Addr:    addr,
 			Net:     "udp",
 			Handler: handler,
-			UDPSize: 65535,
+			UDPSize: udpSize,
 		},
 		tcp: &dns.Server{
 			Addr:    addr,

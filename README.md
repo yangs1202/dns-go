@@ -102,6 +102,31 @@ go tool cover -html=coverage.out
 - `storage`: 83.7%
 - `dns`: 79.1%
 
+## 설정
+
+### UDP 버퍼 크기 (EDNS0)
+
+`config.yaml`에서 UDP 버퍼 크기를 조정할 수 있습니다:
+
+```yaml
+dns:
+  udp_size: 1232  # EDNS0 UDP 버퍼 크기
+```
+
+**권장 값:**
+
+| 크기 | 용도 | 설명 |
+|------|------|------|
+| 512  | RFC 1035 기본값 | ❌ DNSSEC 응답에 부족 (비권장) |
+| 1232 | RFC 6891 권장 | ✅ IPv4 MTU 고려, DNSSEC 지원 (기본값) |
+| 1410 | Cloudflare 권장 | ✅ IPv6 MTU 고려, 대부분의 네트워크에서 안전 |
+| 4096 | 최대 실용값 | ⚠️ 일부 네트워크에서 문제 발생 가능 |
+
+**이유:**
+- DNSSEC 서명 포함 시 응답 크기가 1000~1500 bytes로 증가
+- 512 bytes 초과 시 TC(Truncated) 플래그 발생 → TCP 재질의 (2배 느림)
+- 1232+ bytes면 대부분의 DNSSEC 응답을 UDP로 처리 가능
+
 ## DNS 쿼리 테스트
 
 ### dig 명령어
@@ -111,6 +136,9 @@ dig @127.0.0.1 example.com A
 
 # 업스트림 포워딩 테스트 (로컬 레코드 없는 경우)
 dig @127.0.0.1 google.com A
+
+# DNSSEC 응답 테스트 (큰 응답)
+dig @127.0.0.1 +dnssec cloudflare.com A
 
 # TCP 프로토콜
 dig @127.0.0.1 example.com A +tcp

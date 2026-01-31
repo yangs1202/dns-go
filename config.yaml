@@ -3,6 +3,7 @@ dns:
   port: 53
   tcp: true
   udp: true
+  udp_size: 1232  # EDNS0 UDP 버퍼 크기 (1232=권장, 1410=Cloudflare, 4096=최대)
 
 upstream:
   timeout: 5s

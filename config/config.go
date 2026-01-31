@@ -21,10 +21,11 @@ type Config struct {
 
 // DNSConfig는 DNS 서버 설정입니다
 type DNSConfig struct {
-	Listen string `yaml:"listen"`
-	Port   int    `yaml:"port"`
-	TCP    bool   `yaml:"tcp"`
-	UDP    bool   `yaml:"udp"`
+	Listen    string `yaml:"listen"`
+	Port      int    `yaml:"port"`
+	TCP       bool   `yaml:"tcp"`
+	UDP       bool   `yaml:"udp"`
+	UDPSize   int    `yaml:"udp_size"`   // EDNS0 UDP 버퍼 크기 (기본: 1232)
 }
 
 // UpstreamConfig는 업스트림 리졸버 설정입니다
@@ -75,6 +76,9 @@ func Load(path string) (*Config, error) {
 	// 기본값 설정
 	if cfg.DNS.Port == 0 {
 		cfg.DNS.Port = 53
+	}
+	if cfg.DNS.UDPSize == 0 {
+		cfg.DNS.UDPSize = 1232 // RFC 6891 권장 (DNSSEC 지원)
 	}
 	if cfg.Web.Port == 0 {
 		cfg.Web.Port = 8080
