@@ -3,9 +3,9 @@ package gslb
 import "time"
 
 type HealthStatus struct {
-	Healthy          bool
-	ConsecutiveFails int
-	ConsecutiveOKs   int
-	LastCheck        time.Time
-	LastError        string
+	Healthy          bool      `json:"healthy"`
+	ConsecutiveFails int       `json:"consecutiveFails"`
+	ConsecutiveOKs   int       `json:"consecutiveOKs"`
+	LastCheck        time.Time `json:"lastCheck"`
+	LastError        string    `json:"lastError"`
 }

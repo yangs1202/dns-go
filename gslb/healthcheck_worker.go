@@ -63,7 +63,6 @@ func (w *HealthCheckWorker) runCheckLoop(check *model.HealthCheck) {
 	w.runners.Store(check.ID, stopCh)
 	defer func() {
 		w.runners.Delete(check.ID)
-		close(stopCh)
 	}()
 
 	ticker := time.NewTicker(time.Duration(check.IntervalSec) * time.Second)
@@ -116,6 +115,8 @@ func (w *HealthCheckWorker) runCheck(check *model.HealthCheck, member *model.GSL
 	status := w.getStatus(member.ID)
 	status.LastCheck = time.Now()
 
+	prevHealthy := status.Healthy
+
 	if err == nil {
 		status.ConsecutiveOKs++
 		status.ConsecutiveFails = 0
@@ -133,6 +134,18 @@ func (w *HealthCheckWorker) runCheck(check *model.HealthCheck, member *model.GSL
 	}
 
 	w.healthStatus.Store(member.ID, status)
+
+	if prevHealthy != status.Healthy {
+		if status.Healthy {
+			log.Printf("[HEALTH] member_id=%d addr=%s 상태 변경: unhealthy → healthy (check_id=%d, pool=%s)", member.ID, member.Address, check.ID, pool.Name)
+		} else {
+			log.Printf("[HEALTH] member_id=%d addr=%s 상태 변경: healthy → unhealthy (check_id=%d, pool=%s, error=%s)", member.ID, member.Address, check.ID, pool.Name, status.LastError)
+		}
+	} else if err != nil {
+		log.Printf("[HEALTH] member_id=%d addr=%s 체크 실패 (check_id=%d, pool=%s, fails=%d/%d, error=%s)", member.ID, member.Address, check.ID, pool.Name, status.ConsecutiveFails, check.UnhealthyThreshold, err.Error())
+	} else {
+		log.Printf("[HEALTH] member_id=%d addr=%s 체크 성공 (check_id=%d, pool=%s, healthy=%v)", member.ID, member.Address, check.ID, pool.Name, status.Healthy)
+	}
 
 	healthValue := 0.0
 	if status.Healthy {
@@ -311,7 +324,6 @@ func (w *HealthCheckWorker) RemoveCheck(checkID int64) {
 		if stopCh, ok := v.(chan struct{}); ok {
 			log.Printf("헬스체크 제거: check_id=%d", checkID)
 			close(stopCh)
-			w.runners.Delete(checkID)
 		}
 	}
 }
