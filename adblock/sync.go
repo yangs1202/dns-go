@@ -2,8 +2,10 @@ package adblock
 
 import (
 	"database/sql"
+	"dns-go/metrics"
 	"dns-go/model"
 	"log"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -123,5 +125,11 @@ func (s *Syncer) syncSource(src *model.AdblockSource) error {
 
 	src.LastModified = sql.NullString{String: lastModified, Valid: lastModified != ""}
 	src.LastSync = sql.NullTime{Time: time.Now(), Valid: true}
+
+	srcID := strconv.FormatInt(src.ID, 10)
+	metrics.AdblockSourceRules.WithLabelValues(srcID, src.Name).Set(float64(src.RuleCount))
+	metrics.AdblockSourceLastSync.WithLabelValues(srcID, src.Name).SetToCurrentTime()
+	metrics.AdblockLastSyncTimestamp.SetToCurrentTime()
+
 	return s.storage.UpdateAdblockSource(src)
 }

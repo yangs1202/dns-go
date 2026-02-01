@@ -3,12 +3,14 @@ package dns
 import (
 	"dns-go/adblock"
 	"dns-go/gslb"
+	"dns-go/metrics"
 	"dns-go/model"
 	"dns-go/storage"
 	"fmt"
 	"log"
 	"net"
 	"strings"
+	"time"
 
 	"github.com/miekg/dns"
 )
@@ -181,6 +183,7 @@ func (h *Handler) setEDNS0(resp *dns.Msg, req *dns.Msg) {
 
 // ServeDNS는 DNS 쿼리를 처리합니다 (dns.Handler 인터페이스 구현)
 func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
+	start := time.Now()
 	if h.stats != nil {
 		h.stats.IncTotal()
 	}
@@ -200,6 +203,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	// 쿼리가 없으면 에러 응답
 	if len(req.Question) == 0 {
 		resp.Rcode = dns.RcodeFormatError
+		metrics.QueriesTotal.WithLabelValues("", dns.RcodeToString[dns.RcodeFormatError]).Inc()
 		w.WriteMsg(resp)
 		return
 	}
@@ -220,6 +224,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	if question.Qtype == dns.TypeANY {
 		log.Printf("[DNS] ANY query blocked: %s (RFC 8482)", domain)
 		resp.Rcode = dns.RcodeNotImplemented
+		metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeNotImplemented]).Inc()
 		w.WriteMsg(resp)
 		return
 	}
@@ -240,6 +245,8 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 			resp.Rcode = dns.RcodeSuccess
 		}
 
+		metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[resp.Rcode]).Inc()
+		metrics.QueryDurationSeconds.WithLabelValues("cache").Observe(time.Since(start).Seconds())
 		w.WriteMsg(resp)
 		return
 	}
@@ -255,6 +262,8 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 		if err != nil {
 			log.Printf("[DNS] Adblock check error: %v", err)
 		} else if blocked {
+			metrics.QueriesBlockedTotal.Inc()
+			metrics.AdblockBlockedTotal.Inc()
 			clientIP := ExtractClientIP(req)
 			if clientIP == nil {
 				if addr := w.RemoteAddr(); addr != nil {
@@ -269,6 +278,8 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 			if strings.ToUpper(h.adblockResponse) == "NXDOMAIN" {
 				resp.Rcode = dns.RcodeNameError
 				h.cache.Set(domain, qtype, nil, 0, true)
+				metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeNameError]).Inc()
+				metrics.QueryDurationSeconds.WithLabelValues("adblock").Observe(time.Since(start).Seconds())
 				w.WriteMsg(resp)
 				return
 			}
@@ -276,6 +287,8 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 				resp.Answer = []dns.RR{&dns.A{Hdr: dns.RR_Header{Name: domain, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60}, A: net.ParseIP("0.0.0.0")}}
 				resp.Rcode = dns.RcodeSuccess
 				h.cache.Set(domain, qtype, resp.Answer, 60, false)
+				metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeSuccess]).Inc()
+				metrics.QueryDurationSeconds.WithLabelValues("adblock").Observe(time.Since(start).Seconds())
 				w.WriteMsg(resp)
 				return
 			}
@@ -283,11 +296,15 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 				resp.Answer = []dns.RR{&dns.AAAA{Hdr: dns.RR_Header{Name: domain, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 60}, AAAA: net.ParseIP("::")}}
 				resp.Rcode = dns.RcodeSuccess
 				h.cache.Set(domain, qtype, resp.Answer, 60, false)
+				metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeSuccess]).Inc()
+				metrics.QueryDurationSeconds.WithLabelValues("adblock").Observe(time.Since(start).Seconds())
 				w.WriteMsg(resp)
 				return
 			}
 			resp.Rcode = dns.RcodeNameError
 			h.cache.Set(domain, qtype, nil, 0, true)
+			metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeNameError]).Inc()
+			metrics.QueryDurationSeconds.WithLabelValues("adblock").Observe(time.Since(start).Seconds())
 			w.WriteMsg(resp)
 			return
 		}
@@ -329,6 +346,8 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 				resp.Answer = answers
 				resp.Rcode = dns.RcodeSuccess
 				// GSLB 응답은 캐시하지 않음 (클라이언트 IP 기반 동적 응답)
+				metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeSuccess]).Inc()
+				metrics.QueryDurationSeconds.WithLabelValues("gslb").Observe(time.Since(start).Seconds())
 				w.WriteMsg(resp)
 				return
 			}
@@ -341,6 +360,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	if err != nil {
 		log.Printf("[DNS] Zone 조회 에러: %v", err)
 		resp.Rcode = dns.RcodeServerFailure
+		metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeServerFailure]).Inc()
 		w.WriteMsg(resp)
 		return
 	}
@@ -354,6 +374,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 		if err != nil {
 			log.Printf("[DNS] Record 조회 에러: %v", err)
 			resp.Rcode = dns.RcodeServerFailure
+			metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeServerFailure]).Inc()
 			w.WriteMsg(resp)
 			return
 		}
@@ -445,6 +466,8 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 			}
 			h.cache.Set(domain, qtype, resp.Answer, minTTL, false)
 
+			metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeSuccess]).Inc()
+			metrics.QueryDurationSeconds.WithLabelValues("zone").Observe(time.Since(start).Seconds())
 			w.WriteMsg(resp)
 			return
 		}
@@ -454,6 +477,8 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 			// Fallback 비활성화 → NXDOMAIN 반환
 			log.Printf("[DNS] Zone %s exists but no record for %s %s, returning NXDOMAIN (fallback disabled)", zone.Name, domain, qtype)
 			resp.Rcode = dns.RcodeNameError
+			metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeNameError]).Inc()
+			metrics.QueryDurationSeconds.WithLabelValues("zone").Observe(time.Since(start).Seconds())
 			w.WriteMsg(resp)
 			return
 		}
@@ -467,6 +492,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	if !req.RecursionDesired {
 		log.Printf("[DNS] Recursion not desired (RD=0), returning REFUSED")
 		resp.Rcode = dns.RcodeRefused
+		metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeRefused]).Inc()
 		w.WriteMsg(resp)
 		return
 	}
@@ -479,12 +505,15 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 		// NXDOMAIN 캐시
 		resp.Rcode = dns.RcodeNameError
 		h.cache.Set(domain, qtype, nil, 0, true)
+		metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeNameError]).Inc()
+		metrics.QueryDurationSeconds.WithLabelValues("upstream").Observe(time.Since(start).Seconds())
 		w.WriteMsg(resp)
 		return
 	}
 	if h.stats != nil {
 		h.stats.IncUpstreamHit()
 	}
+	metrics.QueriesForwardedTotal.Inc()
 
 	// 업스트림 응답 캐싱 (TTL 준수)
 	if len(upstreamResp.Answer) > 0 {
@@ -505,6 +534,8 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	}
 
 	// 6. 응답 반환
+	metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[upstreamResp.Rcode]).Inc()
+	metrics.QueryDurationSeconds.WithLabelValues("upstream").Observe(time.Since(start).Seconds())
 	w.WriteMsg(upstreamResp)
 }
 

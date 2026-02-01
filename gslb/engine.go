@@ -4,10 +4,12 @@ import (
 	"errors"
 	"math/rand"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"dns-go/metrics"
 	"dns-go/model"
 )
 
@@ -83,6 +85,8 @@ func (e *Engine) Resolve(domain, qtype string, clientIP net.IP) ([]net.IP, uint3
 		}
 		ips = append(ips, ip)
 	}
+
+	metrics.GSLBQueriesTotal.WithLabelValues(strconv.FormatInt(policy.ID, 10), policy.Name).Inc()
 
 	// 모든 멤버가 실패한 경우 전체 응답, 그렇지 않으면 단일 응답
 	if allFailed {

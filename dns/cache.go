@@ -1,6 +1,7 @@
 package dns
 
 import (
+	"dns-go/metrics"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -83,6 +84,7 @@ func (c *DNSCache) Get(domain, qtype string) (*DNSCacheEntry, bool) {
 	value, ok := c.entries.Load(key)
 	if !ok {
 		atomic.AddUint64(&c.stats.Misses, 1)
+		metrics.CacheMissesTotal.Inc()
 		return nil, false
 	}
 
@@ -96,6 +98,8 @@ func (c *DNSCache) Get(domain, qtype string) (*DNSCacheEntry, bool) {
 		c.mu.Unlock()
 		atomic.AddUint64(&c.stats.Size, ^uint64(0)) // Decrement
 		atomic.AddUint64(&c.stats.Misses, 1)
+		metrics.CacheMissesTotal.Inc()
+		metrics.CacheSize.Set(float64(atomic.LoadUint64(&c.stats.Size)))
 		return nil, false
 	}
 
@@ -107,6 +111,7 @@ func (c *DNSCache) Get(domain, qtype string) (*DNSCacheEntry, bool) {
 	c.mu.Unlock()
 
 	atomic.AddUint64(&c.stats.Hits, 1)
+	metrics.CacheHitsTotal.Inc()
 
 	// Check if prefetch should be triggered
 	c.checkPrefetch(entry, domain, qtype)
@@ -161,6 +166,7 @@ func (c *DNSCache) Set(domain, qtype string, rrs []dns.RR, ttl int64, isNegative
 	// Increment size only if it's a new entry
 	if !exists {
 		atomic.AddUint64(&c.stats.Size, 1)
+		metrics.CacheSize.Set(float64(atomic.LoadUint64(&c.stats.Size)))
 	}
 }
 
@@ -185,6 +191,9 @@ func (c *DNSCache) Delete(domain string) {
 		delete(c.items, key)
 		atomic.AddUint64(&c.stats.Size, ^uint64(0)) // Decrement
 	}
+	if len(keysToDelete) > 0 {
+		metrics.CacheSize.Set(float64(atomic.LoadUint64(&c.stats.Size)))
+	}
 }
 
 // Clear removes all entries from the cache
@@ -203,6 +212,7 @@ func (c *DNSCache) Clear() {
 
 	// Reset size
 	atomic.StoreUint64(&c.stats.Size, 0)
+	metrics.CacheSize.Set(0)
 }
 
 // GetStats returns a copy of the cache statistics
@@ -229,6 +239,7 @@ func (c *DNSCache) checkPrefetch(entry *DNSCacheEntry, domain, qtype string) {
 	if entry.ShouldPrefetch() && !entry.IsNegative {
 		// Use atomic CAS to ensure prefetch is only triggered once
 		if atomic.CompareAndSwapUint32(&entry.prefetchTriggered, 0, 1) {
+			metrics.CachePrefetchTotal.Inc()
 			// Trigger prefetch asynchronously
 			go c.prefetchFn(domain, qtype)
 		}
@@ -261,8 +272,10 @@ func (c *DNSCache) evictOldest() {
 	if oldestKey != "" {
 		c.entries.Delete(oldestKey)
 		delete(c.items, oldestKey)
-		atomic.AddUint64(&c.stats.Size, ^uint64(0))    // Decrement
+		atomic.AddUint64(&c.stats.Size, ^uint64(0)) // Decrement
 		atomic.AddUint64(&c.stats.Evictions, 1)
+		metrics.CacheEvictionsTotal.Inc()
+		metrics.CacheSize.Set(float64(atomic.LoadUint64(&c.stats.Size)))
 	}
 }
 
@@ -285,6 +298,9 @@ func (c *DNSCache) cleanupExpired() {
 			c.entries.Delete(key)
 			delete(c.items, key)
 			atomic.AddUint64(&c.stats.Size, ^uint64(0)) // Decrement
+		}
+		if len(expiredKeys) > 0 {
+			metrics.CacheSize.Set(float64(atomic.LoadUint64(&c.stats.Size)))
 		}
 		c.mu.Unlock()
 	}

@@ -375,14 +375,16 @@ func TestHealthCheckWorker_HTTPCheckWithFullURL(t *testing.T) {
 		Enabled: true,
 	}
 
-	worker.runCheck(check, member)
+	pool := &model.GSLBPool{ID: 1, Name: "testpool"}
+
+	worker.runCheck(check, member, pool)
 
 	status := worker.getStatus(1)
 	if status.ConsecutiveOKs != 1 {
 		t.Fatalf("expected 1 consecutive OK, got %d (error: %s)", status.ConsecutiveOKs, status.LastError)
 	}
 
-	worker.runCheck(check, member)
+	worker.runCheck(check, member, pool)
 	status = worker.getStatus(1)
 	if status.ConsecutiveOKs != 2 {
 		t.Fatalf("expected 2 consecutive OKs, got %d", status.ConsecutiveOKs)
@@ -434,7 +436,9 @@ func TestHealthCheckWorker_HTTPCheckWithPath(t *testing.T) {
 		Enabled: true,
 	}
 
-	worker.runCheck(check, member)
+	pool := &model.GSLBPool{ID: 1, Name: "testpool"}
+
+	worker.runCheck(check, member, pool)
 
 	status := worker.getStatus(1)
 	if status.ConsecutiveOKs != 1 {
@@ -478,8 +482,10 @@ func TestHealthCheckWorker_HTTPCheckFailure(t *testing.T) {
 		Enabled: true,
 	}
 
-	worker.runCheck(check, member)
-	worker.runCheck(check, member)
+	pool := &model.GSLBPool{ID: 1, Name: "testpool"}
+
+	worker.runCheck(check, member, pool)
+	worker.runCheck(check, member, pool)
 
 	status := worker.getStatus(1)
 	if status.ConsecutiveFails != 2 {
@@ -534,7 +540,9 @@ func TestHealthCheckWorker_TCPCheck(t *testing.T) {
 		Enabled: true,
 	}
 
-	worker.runCheck(check, member)
+	pool := &model.GSLBPool{ID: 1, Name: "testpool"}
+
+	worker.runCheck(check, member, pool)
 
 	status := worker.getStatus(1)
 	if status.ConsecutiveOKs != 1 {
@@ -571,7 +579,9 @@ func TestHealthCheckWorker_TCPCheckWithPort(t *testing.T) {
 		Enabled: true,
 	}
 
-	worker.runCheck(check, member)
+	pool := &model.GSLBPool{ID: 1, Name: "testpool"}
+
+	worker.runCheck(check, member, pool)
 
 	status := worker.getStatus(1)
 	if status.ConsecutiveOKs != 1 {
@@ -608,7 +618,9 @@ func TestHealthCheckWorker_TCPCheckFailure(t *testing.T) {
 		Enabled: true,
 	}
 
-	worker.runCheck(check, member)
+	pool := &model.GSLBPool{ID: 1, Name: "testpool"}
+
+	worker.runCheck(check, member, pool)
 
 	status := worker.getStatus(1)
 	if status.ConsecutiveFails != 1 {
@@ -656,7 +668,9 @@ func TestHealthCheckWorker_HTTPSCheck(t *testing.T) {
 		Enabled: true,
 	}
 
-	worker.runCheck(check, member)
+	pool := &model.GSLBPool{ID: 1, Name: "testpool"}
+
+	worker.runCheck(check, member, pool)
 
 	status := worker.getStatus(1)
 	if status.ConsecutiveOKs != 1 {

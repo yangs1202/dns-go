@@ -2,6 +2,9 @@ package web
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	_ "dns-go/metrics" // init()으로 메트릭 등록
 )
 
 func NewRouter(api *API, syncAPI *SyncAPI) *gin.Engine {
@@ -9,6 +12,9 @@ func NewRouter(api *API, syncAPI *SyncAPI) *gin.Engine {
 	router.Use(gin.Recovery())
 	router.Use(requestLogger())
 	router.Use(corsMiddleware())
+
+	// Prometheus 메트릭
+	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	// 테스트 페이지
 	router.GET("/test/", func(c *gin.Context) {

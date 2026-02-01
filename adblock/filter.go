@@ -1,6 +1,7 @@
 package adblock
 
 import (
+	"dns-go/metrics"
 	"strings"
 	"sync"
 
@@ -61,6 +62,7 @@ func (f *Filter) Rebuild() error {
 	f.mu.Lock()
 	f.bloom = bf
 	f.mu.Unlock()
+	metrics.AdblockRulesTotal.Set(float64(len(domains)))
 	return nil
 }
 

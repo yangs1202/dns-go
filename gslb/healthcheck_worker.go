@@ -2,12 +2,14 @@ package gslb
 
 import (
 	"crypto/tls"
+	"dns-go/metrics"
 	"dns-go/model"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -104,12 +106,12 @@ func (w *HealthCheckWorker) runPolicyCheck(check *model.HealthCheck) {
 			if !member.Enabled {
 				continue
 			}
-			w.runCheck(check, member)
+			w.runCheck(check, member, pool)
 		}
 	}
 }
 
-func (w *HealthCheckWorker) runCheck(check *model.HealthCheck, member *model.GSLBMember) {
+func (w *HealthCheckWorker) runCheck(check *model.HealthCheck, member *model.GSLBMember, pool *model.GSLBPool) {
 	err := w.probe(check, member)
 	status := w.getStatus(member.ID)
 	status.LastCheck = time.Now()
@@ -131,6 +133,17 @@ func (w *HealthCheckWorker) runCheck(check *model.HealthCheck, member *model.GSL
 	}
 
 	w.healthStatus.Store(member.ID, status)
+
+	healthValue := 0.0
+	if status.Healthy {
+		healthValue = 1.0
+	}
+	metrics.GSLBHealthStatus.WithLabelValues(
+		strconv.FormatInt(member.ID, 10),
+		member.Address,
+		strconv.FormatInt(pool.ID, 10),
+		pool.Name,
+	).Set(healthValue)
 }
 
 func (w *HealthCheckWorker) probe(check *model.HealthCheck, member *model.GSLBMember) error {

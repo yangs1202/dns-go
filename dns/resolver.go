@@ -2,9 +2,11 @@ package dns
 
 import (
 	"crypto/tls"
+	"dns-go/metrics"
 	"dns-go/model"
 	"dns-go/storage"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/miekg/dns"
@@ -71,10 +73,18 @@ func (r *Resolver) forwardToServer(server *model.UpstreamServer, req *dns.Msg) (
 		return nil, fmt.Errorf("지원하지 않는 프로토콜: %s", server.Protocol)
 	}
 
+	serverID := strconv.FormatInt(server.ID, 10)
+	start := time.Now()
 	resp, _, err := client.Exchange(req, server.Address)
+	duration := time.Since(start).Seconds()
+
 	if err != nil {
+		metrics.UpstreamRequestsTotal.WithLabelValues(serverID, server.Name, "error").Inc()
+		metrics.UpstreamDurationSeconds.WithLabelValues(serverID, server.Name).Observe(duration)
 		return nil, fmt.Errorf("서버 %s (%s)로 쿼리 전달 실패: %w", server.Name, server.Address, err)
 	}
 
+	metrics.UpstreamRequestsTotal.WithLabelValues(serverID, server.Name, "success").Inc()
+	metrics.UpstreamDurationSeconds.WithLabelValues(serverID, server.Name).Observe(duration)
 	return resp, nil
 }
