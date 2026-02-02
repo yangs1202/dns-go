@@ -6,6 +6,7 @@ import (
 	"dns-go/metrics"
 	"dns-go/model"
 	"dns-go/storage"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"net"
@@ -211,7 +212,7 @@ func (h *Handler) setEDNS0(resp *dns.Msg, req *dns.Msg) {
 			if respOpt := resp.IsEdns0(); respOpt != nil {
 				nsidOpt := &dns.EDNS0_NSID{
 					Code: dns.EDNS0NSID,
-					Nsid: h.nsid,
+					Nsid: hex.EncodeToString([]byte(h.nsid)),
 				}
 				respOpt.Option = append(respOpt.Option, nsidOpt)
 			}
