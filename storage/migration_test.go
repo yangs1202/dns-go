@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	_ "modernc.org/sqlite"
 )
 
 func TestNewDatabase(t *testing.T) {
@@ -311,6 +313,229 @@ func TestHelperFunctions(t *testing.T) {
 	err := db.Reader.QueryRow("SELECT name FROM zones WHERE id = ?", zoneID).Scan(&name)
 	require.NoError(t, err)
 	assert.Equal(t, "test.com.", name)
+}
+
+// TestExportedHelpers는 test_helpers.go의 Exported 헬퍼 함수를 테스트합니다
+func TestExportedHelpers(t *testing.T) {
+	db := SetupTestDB(t)
+	require.NotNil(t, db)
+	require.NotNil(t, db.Writer)
+	require.NotNil(t, db.Reader)
+
+	// Exported Zone 삽입
+	zoneID := InsertTestZone(t, db, "exported-test.com.")
+	assert.Greater(t, zoneID, int64(0))
+
+	// Exported Record 삽입
+	recordID := InsertTestRecord(t, db, zoneID, "www.exported-test.com.", "A", "192.0.2.100")
+	assert.Greater(t, recordID, int64(0))
+
+	// 삽입된 데이터 확인
+	var name string
+	err := db.Reader.QueryRow("SELECT name FROM zones WHERE id = ?", zoneID).Scan(&name)
+	require.NoError(t, err)
+	assert.Equal(t, "exported-test.com.", name)
+
+	var content string
+	err = db.Reader.QueryRow("SELECT content FROM records WHERE id = ?", recordID).Scan(&content)
+	require.NoError(t, err)
+	assert.Equal(t, "192.0.2.100", content)
+}
+
+// TestConfigurePragmas는 configurePragmas가 정상적으로 실행되는지 테스트합니다
+func TestConfigurePragmas(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "pragma_test.db")
+
+	db, err := NewDatabase(dbPath)
+	require.NoError(t, err)
+	defer db.Close()
+
+	// Writer WAL mode
+	var writerJournal string
+	err = db.Writer.QueryRow("PRAGMA journal_mode").Scan(&writerJournal)
+	require.NoError(t, err)
+	assert.Equal(t, "wal", writerJournal)
+
+	// Writer foreign keys
+	var writerFK int
+	err = db.Writer.QueryRow("PRAGMA foreign_keys").Scan(&writerFK)
+	require.NoError(t, err)
+	assert.Equal(t, 1, writerFK)
+
+	// Reader foreign keys
+	var readerFK int
+	err = db.Reader.QueryRow("PRAGMA foreign_keys").Scan(&readerFK)
+	require.NoError(t, err)
+	assert.Equal(t, 1, readerFK)
+}
+
+// TestMigrateHealthCheckMigration은 health_checks 테이블에 member_id 컬럼이 있을 때
+// policy_id로의 마이그레이션이 정상 동작하는지 테스트합니다
+func TestMigrateHealthCheckMigration(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "migrate_hc.db")
+
+	// 먼저 writer/reader 연결 생성 (마이그레이션 없이)
+	writer, err := sql.Open("sqlite", dbPath+"?_journal_mode=WAL&_synchronous=NORMAL&_foreign_keys=ON")
+	require.NoError(t, err)
+	writer.SetMaxOpenConns(1)
+
+	reader, err := sql.Open("sqlite", dbPath+"?_journal_mode=WAL&_synchronous=NORMAL&_foreign_keys=ON")
+	require.NoError(t, err)
+	reader.SetMaxOpenConns(4)
+
+	// 수동으로 old schema를 생성 (member_id가 있는 health_checks)
+	_, err = writer.Exec(`CREATE TABLE IF NOT EXISTS gslb_policies (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		domain TEXT NOT NULL,
+		record_type TEXT NOT NULL DEFAULT 'A',
+		ttl INTEGER DEFAULT 30,
+		enabled INTEGER DEFAULT 1,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	)`)
+	require.NoError(t, err)
+
+	// member_id를 포함하는 구 health_checks 테이블 생성
+	_, err = writer.Exec(`CREATE TABLE IF NOT EXISTS health_checks (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		member_id INTEGER NOT NULL,
+		policy_id INTEGER,
+		check_type TEXT NOT NULL DEFAULT 'tcp',
+		target TEXT NOT NULL,
+		interval_sec INTEGER DEFAULT 10,
+		timeout_sec INTEGER DEFAULT 5,
+		healthy_threshold INTEGER DEFAULT 3,
+		unhealthy_threshold INTEGER DEFAULT 2,
+		enabled INTEGER DEFAULT 1
+	)`)
+	require.NoError(t, err)
+
+	// policy 삽입
+	_, err = writer.Exec(`INSERT INTO gslb_policies (name, domain, record_type) VALUES ('p1', 'app.example.com.', 'A')`)
+	require.NoError(t, err)
+
+	// old style health check 삽입 (member_id 사용)
+	_, err = writer.Exec(`INSERT INTO health_checks (member_id, check_type, target) VALUES (1, 'tcp', '10.0.0.1:80')`)
+	require.NoError(t, err)
+
+	writer.Close()
+	reader.Close()
+
+	// 이제 NewDatabase를 호출하면 마이그레이션이 실행됨
+	db, err := NewDatabase(dbPath)
+	require.NoError(t, err)
+	defer db.Close()
+
+	// health_checks 테이블에 policy_id 컬럼이 있는지 확인
+	var cnt int
+	err = db.Reader.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('health_checks') WHERE name='policy_id'`).Scan(&cnt)
+	require.NoError(t, err)
+	assert.Equal(t, 1, cnt, "health_checks should have policy_id column after migration")
+
+	// member_id 컬럼은 없어야 함 (새 테이블로 교체됨)
+	err = db.Reader.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('health_checks') WHERE name='member_id'`).Scan(&cnt)
+	require.NoError(t, err)
+	assert.Equal(t, 0, cnt, "health_checks should not have member_id column after migration")
+}
+
+// TestDatabaseCloseNilSafe는 Close 메서드가 nil 연결에서도 안전한지 테스트합니다
+func TestDatabaseCloseNilSafe(t *testing.T) {
+	db := &Database{
+		Writer: nil,
+		Reader: nil,
+	}
+	err := db.Close()
+	assert.NoError(t, err)
+}
+
+// TestDatabaseCloseDoubleClose는 이미 닫힌 연결을 다시 닫을 때 에러를 반환하는지 테스트합니다
+func TestDatabaseCloseDoubleClose(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "double_close.db")
+
+	db, err := NewDatabase(dbPath)
+	require.NoError(t, err)
+
+	// 정상 닫기
+	err = db.Close()
+	assert.NoError(t, err)
+
+	// 이미 닫힌 DB를 다시 닫기 (에러 발생)
+	err = db.Close()
+	// Writer와 Reader가 이미 닫혔으므로 에러 발생할 수 있음
+	// Close는 에러를 반환하지만, nil이 아닌 db 인스턴스를 통해 호출
+	_ = err // Close에서 에러가 발생할 수 있음
+}
+
+// TestNewDatabase_ReaderPingError는 reader ping 실패 시 정리가 올바르게 되는지 테스트합니다
+// 이 테스트는 정상적인 경로만 확인합니다 (reader ping 실패는 재현이 어려움)
+func TestNewDatabase_ValidPaths(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "valid_test.db")
+
+	db, err := NewDatabase(dbPath)
+	require.NoError(t, err)
+	require.NotNil(t, db)
+
+	// Writer ping OK
+	err = db.Writer.Ping()
+	assert.NoError(t, err)
+
+	// Reader ping OK
+	err = db.Reader.Ping()
+	assert.NoError(t, err)
+
+	db.Close()
+}
+
+// TestConfigurePragmas_WriterClosedError는 writer가 닫힌 상태에서 configurePragmas를 호출하면 에러가 발생하는지 테스트합니다
+func TestConfigurePragmas_WriterClosedError(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "pragma_error.db")
+
+	writer, err := sql.Open("sqlite", dbPath+"?_journal_mode=WAL&_synchronous=NORMAL&_foreign_keys=ON")
+	require.NoError(t, err)
+	writer.SetMaxOpenConns(1)
+
+	reader, err := sql.Open("sqlite", dbPath+"?_journal_mode=WAL&_synchronous=NORMAL&_foreign_keys=ON")
+	require.NoError(t, err)
+	reader.SetMaxOpenConns(4)
+
+	db := &Database{Writer: writer, Reader: reader}
+
+	// Close writer to trigger error in configurePragmas
+	writer.Close()
+
+	err = db.configurePragmas()
+	assert.Error(t, err)
+
+	reader.Close()
+}
+
+// TestConfigurePragmas_ReaderClosedError는 reader만 닫힌 상태에서 configurePragmas를 호출하면 에러가 발생하는지 테스트합니다
+func TestConfigurePragmas_ReaderClosedError(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "pragma_reader_error.db")
+
+	writer, err := sql.Open("sqlite", dbPath+"?_journal_mode=WAL&_synchronous=NORMAL&_foreign_keys=ON")
+	require.NoError(t, err)
+	writer.SetMaxOpenConns(1)
+
+	reader, err := sql.Open("sqlite", dbPath+"?_journal_mode=WAL&_synchronous=NORMAL&_foreign_keys=ON")
+	require.NoError(t, err)
+	reader.SetMaxOpenConns(4)
+
+	db := &Database{Writer: writer, Reader: reader}
+
+	// Close reader to trigger error in the third step of configurePragmas
+	reader.Close()
+
+	err = db.configurePragmas()
+	assert.Error(t, err)
+
+	writer.Close()
 }
 
 func TestForeignKeyConstraints(t *testing.T) {

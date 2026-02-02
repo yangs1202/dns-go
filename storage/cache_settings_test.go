@@ -271,6 +271,33 @@ func TestCacheSettingsEdgeCases(t *testing.T) {
 	assert.Equal(t, int64(300), updated.DefaultTTL)
 }
 
+// === Error path tests ===
+
+func TestGetCacheSettings_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	db.Reader.Close()
+
+	_, err := db.GetCacheSettings()
+	assert.Error(t, err)
+}
+
+func TestUpdateCacheSettings_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	db.Writer.Close()
+
+	settings := &model.CacheSettings{
+		Enabled:         true,
+		MaxSize:         10000,
+		DefaultTTL:      300,
+		MinTTL:          60,
+		MaxTTL:          86400,
+		NegativeTTL:     300,
+		PrefetchTrigger: 0.9,
+	}
+	err := db.UpdateCacheSettings(settings)
+	assert.Error(t, err)
+}
+
 func TestCacheSettingsPrefetchTriggerBoundary(t *testing.T) {
 	db := setupTestDB(t)
 

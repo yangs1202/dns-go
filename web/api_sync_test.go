@@ -301,6 +301,115 @@ func TestGetChanges_QueryParam(t *testing.T) {
 	}
 }
 
+func TestGetFull_WithAllData(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	api, db := setupSyncAPI(t)
+
+	// Insert zones, records, upstreams
+	zoneID := storage.InsertTestZone(t, db, "example.com.")
+	storage.InsertTestRecord(t, db, zoneID, "www.example.com.", "A", "192.0.2.1")
+
+	// Insert upstream
+	db.Writer.Exec("INSERT INTO upstream_servers (name, address, protocol, priority, enabled) VALUES (?, ?, ?, ?, ?)",
+		"Google DNS", "8.8.8.8:53", "udp", 0, true)
+
+	// Insert GSLB policy
+	db.Writer.Exec("INSERT INTO gslb_policies (name, domain, record_type, ttl, enabled) VALUES (?, ?, ?, ?, ?)",
+		"test-policy", "gslb.example.com.", "A", 30, true)
+
+	// Insert GSLB pool
+	db.Writer.Exec("INSERT INTO gslb_pools (policy_id, name, match_type, match_value, priority, fallback_pool) VALUES (?, ?, ?, ?, ?, ?)",
+		1, "default-pool", "default", "*", 0, false)
+
+	// Insert GSLB member
+	db.Writer.Exec("INSERT INTO gslb_members (pool_id, address, weight, enabled) VALUES (?, ?, ?, ?)",
+		1, "1.2.3.4", 50, true)
+
+	// Insert health check
+	db.Writer.Exec("INSERT INTO health_checks (policy_id, check_type, target, interval_sec, timeout_sec, healthy_threshold, unhealthy_threshold, enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+		1, "http", "http://example.com/health", 10, 5, 3, 2, true)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/api/sync/full", nil)
+
+	api.GetFull(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	require.NoError(t, err)
+
+	data, ok := response["data"].(map[string]interface{})
+	require.True(t, ok)
+
+	// Check all data fields are present
+	assert.Contains(t, data, "zones")
+	assert.Contains(t, data, "records")
+	assert.Contains(t, data, "upstream_servers")
+	assert.Contains(t, data, "gslb_policies")
+	assert.Contains(t, data, "gslb_pools")
+	assert.Contains(t, data, "gslb_members")
+	assert.Contains(t, data, "health_checks")
+
+	// Verify each has at least one entry
+	zones := data["zones"].([]interface{})
+	assert.GreaterOrEqual(t, len(zones), 1)
+
+	records := data["records"].([]interface{})
+	assert.GreaterOrEqual(t, len(records), 1)
+}
+
+func TestGetFull_WithClosedDB(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	api, db := setupSyncAPI(t)
+
+	// Close DB to trigger error paths
+	db.Writer.Close()
+	db.Reader.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/api/sync/full", nil)
+
+	api.GetFull(c)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestGetMetadata_WithClosedDB(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	api, db := setupSyncAPI(t)
+
+	db.Writer.Close()
+	db.Reader.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/api/sync/metadata", nil)
+
+	api.GetMetadata(c)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestGetChanges_WithClosedDB(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	api, db := setupSyncAPI(t)
+
+	db.Writer.Close()
+	db.Reader.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/api/sync/changes?since_version=0", nil)
+
+	api.GetChanges(c)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
 func TestSyncAPI_Integration(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, db := setupSyncAPI(t)
