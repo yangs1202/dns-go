@@ -223,6 +223,24 @@ func (s *RecordStorage) GetRecordsByNameAndZone(zoneID int64, name, recordType s
 	return result, nil
 }
 
+// DomainExistsInZone은 해당 Zone에 특정 도메인 이름의 레코드가 존재하는지 확인합니다 (타입 무관)
+func (s *RecordStorage) DomainExistsInZone(zoneID int64, name string) (bool, error) {
+	// L2 캐시에서 zone의 모든 레코드 조회
+	allRecords, err := s.GetRecordsByZone(zoneID)
+	if err != nil {
+		return false, err
+	}
+
+	// 메모리에서 name으로 필터링 (타입 무관, enabled만 체크)
+	for _, record := range allRecords {
+		if record.Name == name && record.Enabled {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
 // GetRecordsByName은 이름과 타입으로 Record를 조회합니다 (하위 호환성을 위해 유지)
 func (s *RecordStorage) GetRecordsByName(name, recordType string) ([]*model.Record, error) {
 	// zone_id를 모르는 경우 DB 직접 조회
