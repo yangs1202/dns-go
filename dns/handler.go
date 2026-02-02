@@ -518,11 +518,12 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 
 		// Zone은 있지만 Record가 없는 경우
 		if !zone.AllowFallback {
-			// Fallback 비활성화 → NXDOMAIN 반환
-			log.Printf("[DNS] Zone %s exists but no record for %s %s, returning NXDOMAIN (fallback disabled)", zone.Name, domain, qtype)
-			resp.Rcode = dns.RcodeNameError
+			// Fallback 비활성화 → NOERROR (빈 응답) 반환
+			// RFC 1035: 도메인은 존재하지만 해당 타입의 레코드가 없을 때는 NOERROR
+			log.Printf("[DNS] Zone %s exists but no record for %s %s, returning NOERROR (fallback disabled)", zone.Name, domain, qtype)
+			resp.Rcode = dns.RcodeSuccess
 			resp.Ns = []dns.RR{h.buildSOA(zoneName)}
-			metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeNameError]).Inc()
+			metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeSuccess]).Inc()
 			metrics.QueryDurationSeconds.WithLabelValues("zone").Observe(time.Since(start).Seconds())
 			w.WriteMsg(resp)
 			return
