@@ -80,6 +80,38 @@ func (a *SyncAPI) GetFull(c *gin.Context) {
 		return
 	}
 
+	gslbPolicies, err := a.syncVersion.GetAllGSLBPolicies()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "GSLB Policy 조회 실패: " + err.Error(),
+		})
+		return
+	}
+
+	gslbPools, err := a.syncVersion.GetAllGSLBPools()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "GSLB Pool 조회 실패: " + err.Error(),
+		})
+		return
+	}
+
+	gslbMembers, err := a.syncVersion.GetAllGSLBMembers()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "GSLB Member 조회 실패: " + err.Error(),
+		})
+		return
+	}
+
+	healthChecks, err := a.syncVersion.GetAllHealthChecks()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Health Check 조회 실패: " + err.Error(),
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"version":  version,
 		"checksum": checksum,
@@ -87,6 +119,10 @@ func (a *SyncAPI) GetFull(c *gin.Context) {
 			"zones":            zones,
 			"records":          records,
 			"upstream_servers": upstreams,
+			"gslb_policies":    gslbPolicies,
+			"gslb_pools":       gslbPools,
+			"gslb_members":     gslbMembers,
+			"health_checks":    healthChecks,
 		},
 	})
 }

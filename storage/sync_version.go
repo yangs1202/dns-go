@@ -86,6 +86,34 @@ func (s *SyncVersion) CalculateChecksum() (string, error) {
 	}
 	data["upstreams"] = upstreams
 
+	// GSLB Policies
+	gslbPolicies, err := s.GetAllGSLBPolicies()
+	if err != nil {
+		return "", err
+	}
+	data["gslb_policies"] = gslbPolicies
+
+	// GSLB Pools
+	gslbPools, err := s.GetAllGSLBPools()
+	if err != nil {
+		return "", err
+	}
+	data["gslb_pools"] = gslbPools
+
+	// GSLB Members
+	gslbMembers, err := s.GetAllGSLBMembers()
+	if err != nil {
+		return "", err
+	}
+	data["gslb_members"] = gslbMembers
+
+	// Health Checks
+	healthChecks, err := s.GetAllHealthChecks()
+	if err != nil {
+		return "", err
+	}
+	data["health_checks"] = healthChecks
+
 	// JSON 직렬화
 	jsonData, err := json.Marshal(data)
 	if err != nil {
@@ -266,4 +294,151 @@ func (s *SyncVersion) GetAllUpstreams() ([]map[string]interface{}, error) {
 	}
 
 	return upstreams, nil
+}
+
+// GetAllGSLBPolicies는 모든 GSLB Policy를 조회합니다
+func (s *SyncVersion) GetAllGSLBPolicies() ([]map[string]interface{}, error) {
+	rows, err := s.db.Reader.Query(`
+		SELECT id, name, domain, record_type, ttl, enabled, created_at
+		FROM gslb_policies
+		ORDER BY id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var policies []map[string]interface{}
+	for rows.Next() {
+		var id, ttl, enabled int
+		var name, domain, recordType string
+		var createdAt time.Time
+
+		err := rows.Scan(&id, &name, &domain, &recordType, &ttl, &enabled, &createdAt)
+		if err != nil {
+			continue
+		}
+
+		policies = append(policies, map[string]interface{}{
+			"id":          id,
+			"name":        name,
+			"domain":      domain,
+			"record_type": recordType,
+			"ttl":         ttl,
+			"enabled":     enabled,
+			"created_at":  createdAt,
+		})
+	}
+
+	return policies, nil
+}
+
+// GetAllGSLBPools는 모든 GSLB Pool을 조회합니다
+func (s *SyncVersion) GetAllGSLBPools() ([]map[string]interface{}, error) {
+	rows, err := s.db.Reader.Query(`
+		SELECT id, policy_id, name, match_type, match_value, priority, fallback_pool
+		FROM gslb_pools
+		ORDER BY id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var pools []map[string]interface{}
+	for rows.Next() {
+		var id, policyID, priority, fallbackPool int
+		var name, matchType, matchValue string
+
+		err := rows.Scan(&id, &policyID, &name, &matchType, &matchValue, &priority, &fallbackPool)
+		if err != nil {
+			continue
+		}
+
+		pools = append(pools, map[string]interface{}{
+			"id":            id,
+			"policy_id":     policyID,
+			"name":          name,
+			"match_type":    matchType,
+			"match_value":   matchValue,
+			"priority":      priority,
+			"fallback_pool": fallbackPool,
+		})
+	}
+
+	return pools, nil
+}
+
+// GetAllGSLBMembers는 모든 GSLB Member를 조회합니다
+func (s *SyncVersion) GetAllGSLBMembers() ([]map[string]interface{}, error) {
+	rows, err := s.db.Reader.Query(`
+		SELECT id, pool_id, address, weight, enabled
+		FROM gslb_members
+		ORDER BY id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var members []map[string]interface{}
+	for rows.Next() {
+		var id, poolID, weight, enabled int
+		var address string
+
+		err := rows.Scan(&id, &poolID, &address, &weight, &enabled)
+		if err != nil {
+			continue
+		}
+
+		members = append(members, map[string]interface{}{
+			"id":      id,
+			"pool_id": poolID,
+			"address": address,
+			"weight":  weight,
+			"enabled": enabled,
+		})
+	}
+
+	return members, nil
+}
+
+// GetAllHealthChecks는 모든 Health Check를 조회합니다
+func (s *SyncVersion) GetAllHealthChecks() ([]map[string]interface{}, error) {
+	rows, err := s.db.Reader.Query(`
+		SELECT id, policy_id, check_type, target, interval_sec, timeout_sec,
+		       healthy_threshold, unhealthy_threshold, enabled
+		FROM health_checks
+		ORDER BY id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var checks []map[string]interface{}
+	for rows.Next() {
+		var id, policyID, intervalSec, timeoutSec, healthyThreshold, unhealthyThreshold, enabled int
+		var checkType, target string
+
+		err := rows.Scan(&id, &policyID, &checkType, &target, &intervalSec, &timeoutSec,
+			&healthyThreshold, &unhealthyThreshold, &enabled)
+		if err != nil {
+			continue
+		}
+
+		checks = append(checks, map[string]interface{}{
+			"id":                   id,
+			"policy_id":            policyID,
+			"check_type":           checkType,
+			"target":               target,
+			"interval_sec":         intervalSec,
+			"timeout_sec":          timeoutSec,
+			"healthy_threshold":    healthyThreshold,
+			"unhealthy_threshold":  unhealthyThreshold,
+			"enabled":              enabled,
+		})
+	}
+
+	return checks, nil
 }

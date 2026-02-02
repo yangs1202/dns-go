@@ -99,6 +99,10 @@ func (w *Worker) fullSync() error {
 			Zones           []map[string]interface{} `json:"zones"`
 			Records         []map[string]interface{} `json:"records"`
 			UpstreamServers []map[string]interface{} `json:"upstream_servers"`
+			GSLBPolicies    []map[string]interface{} `json:"gslb_policies"`
+			GSLBPools       []map[string]interface{} `json:"gslb_pools"`
+			GSLBMembers     []map[string]interface{} `json:"gslb_members"`
+			HealthChecks    []map[string]interface{} `json:"health_checks"`
 		} `json:"data"`
 	}
 
@@ -124,6 +128,20 @@ func (w *Worker) fullSync() error {
 		return fmt.Errorf("Upstream 삭제 실패: %w", err)
 	}
 
+	// GSLB 관련 테이블 삭제 (역순으로 - Foreign Key 제약)
+	if _, err := tx.Exec("DELETE FROM health_checks"); err != nil {
+		return fmt.Errorf("Health Checks 삭제 실패: %w", err)
+	}
+	if _, err := tx.Exec("DELETE FROM gslb_members"); err != nil {
+		return fmt.Errorf("GSLB Members 삭제 실패: %w", err)
+	}
+	if _, err := tx.Exec("DELETE FROM gslb_pools"); err != nil {
+		return fmt.Errorf("GSLB Pools 삭제 실패: %w", err)
+	}
+	if _, err := tx.Exec("DELETE FROM gslb_policies"); err != nil {
+		return fmt.Errorf("GSLB Policies 삭제 실패: %w", err)
+	}
+
 	// Zones 삽입
 	for _, zone := range data.Data.Zones {
 		if err := w.insertZone(tx, zone); err != nil {
@@ -145,6 +163,34 @@ func (w *Worker) fullSync() error {
 		}
 	}
 
+	// GSLB Policies 삽입
+	for _, policy := range data.Data.GSLBPolicies {
+		if err := w.insertGSLBPolicy(tx, policy); err != nil {
+			return fmt.Errorf("GSLB Policy 삽입 실패: %w", err)
+		}
+	}
+
+	// GSLB Pools 삽입
+	for _, pool := range data.Data.GSLBPools {
+		if err := w.insertGSLBPool(tx, pool); err != nil {
+			return fmt.Errorf("GSLB Pool 삽입 실패: %w", err)
+		}
+	}
+
+	// GSLB Members 삽입
+	for _, member := range data.Data.GSLBMembers {
+		if err := w.insertGSLBMember(tx, member); err != nil {
+			return fmt.Errorf("GSLB Member 삽입 실패: %w", err)
+		}
+	}
+
+	// Health Checks 삽입
+	for _, check := range data.Data.HealthChecks {
+		if err := w.insertHealthCheck(tx, check); err != nil {
+			return fmt.Errorf("Health Check 삽입 실패: %w", err)
+		}
+	}
+
 	// Sync State 업데이트
 	_, err = tx.Exec(`
 		UPDATE sync_state
@@ -163,8 +209,9 @@ func (w *Worker) fullSync() error {
 		return fmt.Errorf("트랜잭션 커밋 실패: %w", err)
 	}
 
-	log.Printf("Full Sync 완료: Version=%d, Zones=%d, Records=%d, Upstreams=%d",
-		data.Version, len(data.Data.Zones), len(data.Data.Records), len(data.Data.UpstreamServers))
+	log.Printf("Full Sync 완료: Version=%d, Zones=%d, Records=%d, Upstreams=%d, GSLB Policies=%d, Pools=%d, Members=%d, HealthChecks=%d",
+		data.Version, len(data.Data.Zones), len(data.Data.Records), len(data.Data.UpstreamServers),
+		len(data.Data.GSLBPolicies), len(data.Data.GSLBPools), len(data.Data.GSLBMembers), len(data.Data.HealthChecks))
 
 	return nil
 }
@@ -276,6 +323,74 @@ func (w *Worker) insertUpstream(tx *sql.Tx, upstream map[string]interface{}) err
 		upstream["enabled"],
 		upstream["created_at"],
 		upstream["updated_at"],
+	)
+	return err
+}
+
+// insertGSLBPolicy는 GSLB Policy를 삽입합니다
+func (w *Worker) insertGSLBPolicy(tx *sql.Tx, policy map[string]interface{}) error {
+	_, err := tx.Exec(`
+		INSERT INTO gslb_policies (id, name, domain, record_type, ttl, enabled, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`,
+		policy["id"],
+		policy["name"],
+		policy["domain"],
+		policy["record_type"],
+		policy["ttl"],
+		policy["enabled"],
+		policy["created_at"],
+	)
+	return err
+}
+
+// insertGSLBPool은 GSLB Pool을 삽입합니다
+func (w *Worker) insertGSLBPool(tx *sql.Tx, pool map[string]interface{}) error {
+	_, err := tx.Exec(`
+		INSERT INTO gslb_pools (id, policy_id, name, match_type, match_value, priority, fallback_pool)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`,
+		pool["id"],
+		pool["policy_id"],
+		pool["name"],
+		pool["match_type"],
+		pool["match_value"],
+		pool["priority"],
+		pool["fallback_pool"],
+	)
+	return err
+}
+
+// insertGSLBMember는 GSLB Member를 삽입합니다
+func (w *Worker) insertGSLBMember(tx *sql.Tx, member map[string]interface{}) error {
+	_, err := tx.Exec(`
+		INSERT INTO gslb_members (id, pool_id, address, weight, enabled)
+		VALUES (?, ?, ?, ?, ?)
+	`,
+		member["id"],
+		member["pool_id"],
+		member["address"],
+		member["weight"],
+		member["enabled"],
+	)
+	return err
+}
+
+// insertHealthCheck는 Health Check를 삽입합니다
+func (w *Worker) insertHealthCheck(tx *sql.Tx, check map[string]interface{}) error {
+	_, err := tx.Exec(`
+		INSERT INTO health_checks (id, policy_id, check_type, target, interval_sec, timeout_sec, healthy_threshold, unhealthy_threshold, enabled)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		check["id"],
+		check["policy_id"],
+		check["check_type"],
+		check["target"],
+		check["interval_sec"],
+		check["timeout_sec"],
+		check["healthy_threshold"],
+		check["unhealthy_threshold"],
+		check["enabled"],
 	)
 	return err
 }
