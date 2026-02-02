@@ -558,8 +558,26 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 			return
 		}
 
-		// Fallback 허용 → Upstream으로 포워딩
-		log.Printf("[DNS] Zone %s exists but no record for %s %s, falling back to upstream", zone.Name, domain, qtype)
+		// Fallback 허용 → 도메인 존재 여부 먼저 확인
+		// RFC 4074: 도메인이 존재하면 (다른 타입 레코드가 있으면) NOERROR 반환
+		// 예: A 레코드만 있는 도메인에 AAAA 쿼리 → NOERROR (빈 응답)
+		domainExists, err := h.recordStorage.DomainExistsInZone(zone.ID, domain)
+		if err != nil {
+			log.Printf("[DNS] Failed to check domain existence: %v", err)
+		}
+		if domainExists {
+			log.Printf("[DNS] Domain %s exists in zone %s but no %s record, returning NOERROR (RFC 4074)", domain, zone.Name, qtype)
+			resp.Authoritative = true
+			resp.Rcode = dns.RcodeSuccess
+			resp.Ns = []dns.RR{h.buildSOA(zoneName)}
+			metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeSuccess]).Inc()
+			metrics.QueryDurationSeconds.WithLabelValues("zone").Observe(time.Since(start).Seconds())
+			w.WriteMsg(resp)
+			return
+		}
+
+		// 도메인 자체가 없으면 Upstream으로 포워딩
+		log.Printf("[DNS] Zone %s exists but domain %s not found, falling back to upstream", zone.Name, domain)
 	}
 
 	// 5. Zone 또는 Record가 없으면 업스트림 포워딩
