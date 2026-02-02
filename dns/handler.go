@@ -29,6 +29,7 @@ type Handler struct {
 	adblockResponse string
 	nsid            string // RFC 5001 NSID (Name Server Identifier)
 	version         string // CHAOS TXT version.bind 응답
+	negativeTTL     uint32 // NXDOMAIN 응답 TTL (SOA Minimum)
 }
 
 // NewHandler는 새로운 DNS 핸들러를 생성합니다
@@ -71,6 +72,7 @@ func NewHandler(
 		adblockResponse: adblockResponse,
 		nsid:            nsid,
 		version:         version,
+		negativeTTL:     uint32(negativeTTL),
 	}
 
 	// Prefetch 콜백 함수 설정
@@ -94,6 +96,24 @@ func (h *Handler) ClearCache() {
 	if h.recordStorage != nil {
 		h.recordStorage.ClearCache()
 		log.Println("DNS L2 Record 캐시 클리어 완료")
+	}
+}
+
+// buildSOA는 NXDOMAIN 응답용 기본 SOA 레코드를 생성합니다
+func (h *Handler) buildSOA(zoneName string) *dns.SOA {
+	if !strings.HasSuffix(zoneName, ".") {
+		zoneName = zoneName + "."
+	}
+
+	return &dns.SOA{
+		Hdr:     dns.RR_Header{Name: zoneName, Rrtype: dns.TypeSOA, Class: dns.ClassINET, Ttl: h.negativeTTL},
+		Ns:      "ns." + zoneName,
+		Mbox:    "admin." + zoneName,
+		Serial:  1,
+		Refresh: 3600,
+		Retry:   900,
+		Expire:  86400,
+		Minttl:  h.negativeTTL, // NXDOMAIN 캐싱 시간
 	}
 }
 
@@ -257,6 +277,8 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 		if entry.IsNegative {
 			// NXDOMAIN 캐시
 			resp.Rcode = dns.RcodeNameError
+			zoneName := h.extractDomain(domain)
+			resp.Ns = []dns.RR{h.buildSOA(zoneName)}
 		} else {
 			// 정상 응답 캐시
 			resp.Answer = entry.RRs
@@ -295,6 +317,8 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 			}
 			if strings.ToUpper(h.adblockResponse) == "NXDOMAIN" {
 				resp.Rcode = dns.RcodeNameError
+				zoneName := h.extractDomain(domain)
+				resp.Ns = []dns.RR{h.buildSOA(zoneName)}
 				h.cache.Set(domain, qtype, nil, 0, true)
 				metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeNameError]).Inc()
 				metrics.QueryDurationSeconds.WithLabelValues("adblock").Observe(time.Since(start).Seconds())
@@ -320,6 +344,8 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 				return
 			}
 			resp.Rcode = dns.RcodeNameError
+			zoneName := h.extractDomain(domain)
+			resp.Ns = []dns.RR{h.buildSOA(zoneName)}
 			h.cache.Set(domain, qtype, nil, 0, true)
 			metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeNameError]).Inc()
 			metrics.QueryDurationSeconds.WithLabelValues("adblock").Observe(time.Since(start).Seconds())
@@ -495,6 +521,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 			// Fallback 비활성화 → NXDOMAIN 반환
 			log.Printf("[DNS] Zone %s exists but no record for %s %s, returning NXDOMAIN (fallback disabled)", zone.Name, domain, qtype)
 			resp.Rcode = dns.RcodeNameError
+			resp.Ns = []dns.RR{h.buildSOA(zoneName)}
 			metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeNameError]).Inc()
 			metrics.QueryDurationSeconds.WithLabelValues("zone").Observe(time.Since(start).Seconds())
 			w.WriteMsg(resp)
@@ -522,6 +549,8 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 
 		// NXDOMAIN 캐시
 		resp.Rcode = dns.RcodeNameError
+		zoneName := h.extractDomain(domain)
+		resp.Ns = []dns.RR{h.buildSOA(zoneName)}
 		h.cache.Set(domain, qtype, nil, 0, true)
 		metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeNameError]).Inc()
 		metrics.QueryDurationSeconds.WithLabelValues("upstream").Observe(time.Since(start).Seconds())
