@@ -334,3 +334,38 @@ func (w *HealthCheckWorker) UpdateCheck(check *model.HealthCheck) {
 	time.Sleep(100 * time.Millisecond) // 기존 고루틴 종료 대기
 	w.AddCheck(check)
 }
+
+// Restart는 모든 헬스체크를 재시작합니다 (동기화 후 호출)
+func (w *HealthCheckWorker) Restart() {
+	log.Println("헬스체크 워커 재시작 중...")
+
+	// 모든 실행 중인 체크 종료
+	w.runners.Range(func(key, value interface{}) bool {
+		if stopCh, ok := value.(chan struct{}); ok {
+			close(stopCh)
+		}
+		return true
+	})
+
+	// 기존 고루틴 종료 대기
+	time.Sleep(500 * time.Millisecond)
+
+	// 모든 헬스체크 재시작
+	checks, err := w.storage.ListHealthChecks()
+	if err != nil {
+		log.Printf("헬스체크 목록 조회 실패: %v", err)
+		return
+	}
+
+	log.Printf("헬스체크 재시작: %d개 체크", len(checks))
+	for _, check := range checks {
+		if !check.Enabled {
+			continue
+		}
+		w.wg.Add(1)
+		go func(c *model.HealthCheck) {
+			defer w.wg.Done()
+			w.runCheckLoop(c)
+		}(check)
+	}
+}

@@ -123,6 +123,19 @@ func main() {
 	var syncWorker *sync.Worker
 	if cfg.Sync.Mode == "secondary" {
 		syncWorker = sync.NewWorker(cfg.Sync.PrimaryURL, db, cfg.Sync.Interval)
+
+		// 동기화 완료 시 콜백 설정 (헬스체크 재시작, 캐시 클리어)
+		syncWorker.SetSyncCompleteCallback(func() {
+			log.Println("동기화 완료: 헬스체크 재시작 및 캐시 클리어")
+
+			// 1. 헬스체크 워커 재시작
+			healthWorker.Restart()
+
+			// 2. DNS 캐시 전체 클리어
+			handler.ClearCache()
+			log.Println("DNS 캐시 클리어 완료")
+		})
+
 		syncWorker.Start()
 		defer syncWorker.Stop()
 		log.Printf("Secondary 모드: Primary=%s, Interval=%v", cfg.Sync.PrimaryURL, cfg.Sync.Interval)

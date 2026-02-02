@@ -11,13 +11,17 @@ import (
 	"time"
 )
 
+// SyncCallback은 동기화 완료 시 호출되는 콜백입니다
+type SyncCallback func()
+
 // Worker는 Secondary 서버의 동기화 워커입니다
 type Worker struct {
-	primaryURL string
-	db         *storage.Database
-	interval   time.Duration
-	stopChan   chan struct{}
-	httpClient *http.Client
+	primaryURL     string
+	db             *storage.Database
+	interval       time.Duration
+	stopChan       chan struct{}
+	httpClient     *http.Client
+	onSyncComplete SyncCallback // 동기화 완료 시 호출
 }
 
 // NewWorker는 Worker 인스턴스를 생성합니다
@@ -36,6 +40,11 @@ func NewWorker(primaryURL string, db *storage.Database, interval time.Duration) 
 			},
 		},
 	}
+}
+
+// SetSyncCompleteCallback은 동기화 완료 콜백을 설정합니다
+func (w *Worker) SetSyncCompleteCallback(callback SyncCallback) {
+	w.onSyncComplete = callback
 }
 
 // Start는 동기화 워커를 시작합니다
@@ -212,6 +221,11 @@ func (w *Worker) fullSync() error {
 	log.Printf("Full Sync 완료: Version=%d, Zones=%d, Records=%d, Upstreams=%d, GSLB Policies=%d, Pools=%d, Members=%d, HealthChecks=%d",
 		data.Version, len(data.Data.Zones), len(data.Data.Records), len(data.Data.UpstreamServers),
 		len(data.Data.GSLBPolicies), len(data.Data.GSLBPools), len(data.Data.GSLBMembers), len(data.Data.HealthChecks))
+
+	// 동기화 완료 콜백 호출 (헬스체크 재시작, 캐시 클리어)
+	if w.onSyncComplete != nil {
+		w.onSyncComplete()
+	}
 
 	return nil
 }

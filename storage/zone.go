@@ -72,6 +72,13 @@ func NewZoneStorage(db *Database) *ZoneStorage {
 	}
 }
 
+// ClearCache는 Zone 캐시를 클리어합니다
+func (s *ZoneStorage) ClearCache() {
+	if s.cache != nil {
+		s.cache.Invalidate()
+	}
+}
+
 // GetZone은 ID로 Zone을 조회합니다
 func (s *ZoneStorage) GetZone(id int64) (*model.Zone, error) {
 	query := `SELECT id, name, soa_mname, soa_rname, soa_serial, soa_refresh, soa_retry, soa_expire, soa_minimum,

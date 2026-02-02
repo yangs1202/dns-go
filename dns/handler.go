@@ -79,6 +79,24 @@ func NewHandler(
 	return handler, nil
 }
 
+// ClearCache는 모든 DNS 캐시를 클리어합니다 (동기화 시 호출)
+func (h *Handler) ClearCache() {
+	if h.cache != nil {
+		h.cache.Clear()
+		log.Println("DNS L1 캐시 클리어 완료")
+	}
+
+	// L2 캐시(Zone/Record Storage)도 클리어
+	if h.zoneStorage != nil {
+		h.zoneStorage.ClearCache()
+		log.Println("DNS L2 Zone 캐시 클리어 완료")
+	}
+	if h.recordStorage != nil {
+		h.recordStorage.ClearCache()
+		log.Println("DNS L2 Record 캐시 클리어 완료")
+	}
+}
+
 // handleCHAOS는 CHAOS 클래스 쿼리를 처리합니다
 func (h *Handler) handleCHAOS(w dns.ResponseWriter, req *dns.Msg, resp *dns.Msg) {
 	question := req.Question[0]

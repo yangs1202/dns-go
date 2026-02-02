@@ -80,6 +80,13 @@ func NewRecordStorage(db *Database) *RecordStorage {
 	}
 }
 
+// ClearCache는 Record 캐시를 클리어합니다
+func (s *RecordStorage) ClearCache() {
+	if s.cache != nil {
+		s.cache.InvalidateAll()
+	}
+}
+
 // GetRecord는 ID로 Record를 조회합니다
 func (s *RecordStorage) GetRecord(id int64) (*model.Record, error) {
 	query := `SELECT id, zone_id, name, type, content, ttl, priority, enabled, created_at, updated_at
