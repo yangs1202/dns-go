@@ -498,6 +498,18 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 			resp.Answer = answer.Answer
 			resp.Rcode = dns.RcodeSuccess
 
+			// RFC 1035: Authoritative 응답에는 AUTHORITY 섹션에 NS 레코드 추가
+			nsRecords, err := h.recordStorage.GetRecordsByNameAndZone(zone.ID, zoneName, "NS")
+			if err == nil && len(nsRecords) > 0 {
+				for _, nsRecord := range nsRecords {
+					if nsRecord.Enabled {
+						if nsRR := h.recordToRR(nsRecord); nsRR != nil {
+							resp.Ns = append(resp.Ns, nsRR)
+						}
+					}
+				}
+			}
+
 			// L1 캐시에 저장 (최소 TTL 사용)
 			minTTL := int64(300) // 기본값
 			if len(records) > 0 {
@@ -518,9 +530,26 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 
 		// Zone은 있지만 Record가 없는 경우
 		if !zone.AllowFallback {
-			// Fallback 비활성화 → NOERROR (빈 응답) 반환
-			// RFC 1035: 도메인은 존재하지만 해당 타입의 레코드가 없을 때는 NOERROR
-			log.Printf("[DNS] Zone %s exists but no record for %s %s, returning NOERROR (fallback disabled)", zone.Name, domain, qtype)
+			// Fallback 비활성화 (Authoritative) → 도메인 존재 여부 확인
+			// RFC 1035: 도메인이 존재하면 NOERROR, 존재하지 않으면 NXDOMAIN
+			domainExists, err := h.recordStorage.DomainExistsInZone(zone.ID, domain)
+			if err != nil {
+				log.Printf("[DNS] Failed to check domain existence: %v", err)
+			}
+
+			if !domainExists {
+				// 도메인 자체가 존재하지 않음 → NXDOMAIN
+				log.Printf("[DNS] Domain %s does not exist in zone %s (authoritative), returning NXDOMAIN", domain, zone.Name)
+				resp.Rcode = dns.RcodeNameError
+				resp.Ns = []dns.RR{h.buildSOA(zoneName)}
+				metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeNameError]).Inc()
+				metrics.QueryDurationSeconds.WithLabelValues("zone").Observe(time.Since(start).Seconds())
+				w.WriteMsg(resp)
+				return
+			}
+
+			// 도메인은 존재하지만 해당 타입의 레코드가 없음 → NOERROR (빈 응답)
+			log.Printf("[DNS] Domain %s exists but no %s record, returning NOERROR", domain, qtype)
 			resp.Rcode = dns.RcodeSuccess
 			resp.Ns = []dns.RR{h.buildSOA(zoneName)}
 			metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeSuccess]).Inc()
