@@ -81,15 +81,13 @@ func TestRFC1035_NoRecordType(t *testing.T) {
 			expectedCode: dns.RcodeSuccess, // NOERROR여야 함
 			description:  "RFC 1035: 도메인은 존재하지만 CNAME 레코드가 없으므로 NOERROR 반환",
 		},
-		// TODO: 현재는 Zone에 속한 모든 서브도메인을 "존재"로 취급함
-		// 개선 필요: 레코드가 하나도 없는 서브도메인은 NXDOMAIN 반환
-		// {
-		// 	name:         "존재하지 않는 도메인 조회",
-		// 	qname:        "nonexistent.example.com.",
-		// 	qtype:        dns.TypeA,
-		// 	expectedCode: dns.RcodeNameError, // NXDOMAIN이어야 함
-		// 	description:  "RFC 1035: 도메인 자체가 존재하지 않으므로 NXDOMAIN 반환",
-		// },
+		{
+			name:         "존재하지 않는 도메인 조회",
+			qname:        "nonexistent.example.com.",
+			qtype:        dns.TypeA,
+			expectedCode: dns.RcodeNameError, // NXDOMAIN이어야 함
+			description:  "RFC 1035: 도메인 자체가 존재하지 않으므로 NXDOMAIN 반환",
+		},
 	}
 
 	for _, tt := range tests {
@@ -189,14 +187,13 @@ func TestRFC1035_DomainExistenceVsRecordType(t *testing.T) {
 			expectedCode: dns.RcodeSuccess, // 이것이 핵심!
 			reason:       "도메인은 존재하지만 AAAA가 없으므로 NOERROR (빈 응답)",
 		},
-		// TODO: 개선 필요 - 현재는 Zone에 속한 모든 서브도메인을 "존재"로 취급
-		// {
-		// 	scenario:     "시나리오 3: 도메인 자체가 존재하지 않음",
-		// 	qname:        "notfound.test.org.",
-		// 	qtype:        dns.TypeA,
-		// 	expectedCode: dns.RcodeNameError,
-		// 	reason:       "도메인이 존재하지 않으므로 NXDOMAIN",
-		// },
+		{
+			scenario:     "시나리오 3: 도메인 자체가 존재하지 않음",
+			qname:        "notfound.test.org.",
+			qtype:        dns.TypeA,
+			expectedCode: dns.RcodeNameError,
+			reason:       "도메인이 존재하지 않으므로 NXDOMAIN",
+		},
 	}
 
 	for _, sc := range scenarios {

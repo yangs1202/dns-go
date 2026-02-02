@@ -53,9 +53,8 @@ func (e *Engine) Resolve(domain, qtype string, clientIP net.IP) ([]net.IP, uint3
 		if pool.FallbackPool {
 			fallback = pool
 		}
-		if e.matchPool(pool, clientIP) {
+		if matched == nil && e.matchPool(pool, clientIP) {
 			matched = pool
-			break
 		}
 	}
 	if matched == nil {
@@ -71,6 +70,21 @@ func (e *Engine) Resolve(domain, qtype string, clientIP net.IP) ([]net.IP, uint3
 	}
 
 	selected, allFailed := e.selectMembers(members)
+
+	// 매칭된 풀의 모든 멤버가 unhealthy이고 fallback 풀이 있으면 fallback 시도
+	if allFailed && fallback != nil && fallback.ID != matched.ID {
+		fallbackMembers, err := e.poolStorage.GetMembersByPool(fallback.ID)
+		if err == nil && len(fallbackMembers) > 0 {
+			fallbackSelected, fallbackAllFailed := e.selectMembers(fallbackMembers)
+			if len(fallbackSelected) > 0 && !fallbackAllFailed {
+				// fallback 풀에 healthy 멤버가 있으면 사용
+				selected = fallbackSelected
+				allFailed = fallbackAllFailed
+			}
+			// fallback 풀도 모두 unhealthy면 원래 풀의 멤버 유지
+		}
+	}
+
 	if len(selected) == 0 {
 		return nil, 0, nil
 	}
