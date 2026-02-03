@@ -29,6 +29,21 @@ func NewEngine(policyStorage *PolicyStorage, poolStorage *PoolStorage, geoip *Ge
 	}
 }
 
+// HasDomain은 GSLB에서 해당 도메인을 관리하고 있는지 확인합니다 (qtype 무관)
+func (e *Engine) HasDomain(domain string) bool {
+	if e == nil {
+		return false
+	}
+	// A 또는 AAAA 중 하나라도 policy가 있으면 GSLB 관리 도메인
+	for _, rt := range []string{"A", "AAAA"} {
+		policy, err := e.policyStorage.GetPolicyByDomain(domain, rt)
+		if err == nil && policy != nil {
+			return true
+		}
+	}
+	return false
+}
+
 func (e *Engine) Resolve(domain, qtype string, clientIP net.IP) ([]net.IP, uint32, error) {
 	if e == nil {
 		return nil, 0, nil

@@ -397,6 +397,19 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 				return
 			}
 		}
+
+		// GSLB 도메인이지만 해당 qtype에 맞는 레코드가 없는 경우 (예: A만 있고 AAAA 쿼리)
+		// RFC 4074: 도메인이 존재하면 NOERROR (빈 응답) 반환, NXDOMAIN 아님
+		if h.gslbEngine.HasDomain(domain) {
+			log.Printf("[DNS] GSLB domain %s exists but no %s record, returning NOERROR (RFC 4074)", domain, qtype)
+			resp.Rcode = dns.RcodeSuccess
+			zoneName := h.extractDomain(domain)
+			resp.Ns = []dns.RR{h.buildSOA(zoneName)}
+			metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeSuccess]).Inc()
+			metrics.QueryDurationSeconds.WithLabelValues("gslb").Observe(time.Since(start).Seconds())
+			w.WriteMsg(resp)
+			return
+		}
 	}
 
 	// 4. Zone 조회 (L2 캐시 활용)
