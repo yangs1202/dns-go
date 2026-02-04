@@ -231,6 +231,108 @@ func TestServeDNS_L2CacheHit(t *testing.T) {
 	}
 }
 
+// TestServeDNS_CNAMEChainMultiHop은 다단 CNAME 체인 해석을 테스트합니다.
+func TestServeDNS_CNAMEChainMultiHop(t *testing.T) {
+	handler, _, cleanup := setupTestHandler(t)
+	defer cleanup()
+
+	zone := &model.Zone{
+		Name:          "example.com.",
+		Enabled:       true,
+		AllowFallback: false,
+	}
+	zoneID, err := handler.zoneStorage.CreateZone(zone)
+	if err != nil {
+		t.Fatalf("Zone 생성 실패: %v", err)
+	}
+
+	records := []*model.Record{
+		{ZoneID: zoneID, Name: "noti.example.com.", Type: "CNAME", Content: "lb.example.com.", TTL: 300, Enabled: true},
+		{ZoneID: zoneID, Name: "lb.example.com.", Type: "CNAME", Content: "final.example.com.", TTL: 300, Enabled: true},
+		{ZoneID: zoneID, Name: "final.example.com.", Type: "A", Content: "192.0.2.77", TTL: 60, Enabled: true},
+	}
+	for _, record := range records {
+		if _, err := handler.recordStorage.CreateRecord(record); err != nil {
+			t.Fatalf("Record 생성 실패: %v", err)
+		}
+	}
+
+	req := new(dns.Msg)
+	req.SetQuestion("noti.example.com.", dns.TypeA)
+
+	w := newMockWriter("192.0.2.100")
+	handler.ServeDNS(w, req)
+
+	if w.msg == nil {
+		t.Fatal("응답이 없습니다")
+	}
+	if w.msg.Rcode != dns.RcodeSuccess {
+		t.Fatalf("예상 Rcode: %d, 실제: %d", dns.RcodeSuccess, w.msg.Rcode)
+	}
+	if len(w.msg.Answer) != 3 {
+		t.Fatalf("예상 Answer 수: 3 (CNAME, CNAME, A), 실제: %d", len(w.msg.Answer))
+	}
+
+	if _, ok := w.msg.Answer[0].(*dns.CNAME); !ok {
+		t.Fatalf("첫 번째 응답은 CNAME이어야 합니다: %T", w.msg.Answer[0])
+	}
+	if _, ok := w.msg.Answer[1].(*dns.CNAME); !ok {
+		t.Fatalf("두 번째 응답은 CNAME이어야 합니다: %T", w.msg.Answer[1])
+	}
+	a, ok := w.msg.Answer[2].(*dns.A)
+	if !ok {
+		t.Fatalf("세 번째 응답은 A여야 합니다: %T", w.msg.Answer[2])
+	}
+	if a.A.String() != "192.0.2.77" {
+		t.Fatalf("예상 IP: 192.0.2.77, 실제: %s", a.A.String())
+	}
+}
+
+// TestServeDNS_CNAMEChainLoop은 CNAME 순환 참조 시 무한 루프 없이 응답하는지 테스트합니다.
+func TestServeDNS_CNAMEChainLoop(t *testing.T) {
+	handler, _, cleanup := setupTestHandler(t)
+	defer cleanup()
+
+	zone := &model.Zone{
+		Name:          "example.com.",
+		Enabled:       true,
+		AllowFallback: false,
+	}
+	zoneID, err := handler.zoneStorage.CreateZone(zone)
+	if err != nil {
+		t.Fatalf("Zone 생성 실패: %v", err)
+	}
+
+	records := []*model.Record{
+		{ZoneID: zoneID, Name: "a.example.com.", Type: "CNAME", Content: "b.example.com.", TTL: 300, Enabled: true},
+		{ZoneID: zoneID, Name: "b.example.com.", Type: "CNAME", Content: "a.example.com.", TTL: 300, Enabled: true},
+	}
+	for _, record := range records {
+		if _, err := handler.recordStorage.CreateRecord(record); err != nil {
+			t.Fatalf("Record 생성 실패: %v", err)
+		}
+	}
+
+	req := new(dns.Msg)
+	req.SetQuestion("a.example.com.", dns.TypeA)
+
+	w := newMockWriter("192.0.2.100")
+	handler.ServeDNS(w, req)
+
+	if w.msg == nil {
+		t.Fatal("응답이 없습니다")
+	}
+	if w.msg.Rcode != dns.RcodeSuccess {
+		t.Fatalf("예상 Rcode: %d, 실제: %d", dns.RcodeSuccess, w.msg.Rcode)
+	}
+	if len(w.msg.Answer) == 0 {
+		t.Fatal("CNAME 응답이 없습니다")
+	}
+	if len(w.msg.Answer) > maxCNAMEChainDepth {
+		t.Fatalf("CNAME 체인 depth 제한 초과: %d", len(w.msg.Answer))
+	}
+}
+
 // TestServeDNS_UpstreamForwarding은 업스트림 포워딩을 테스트합니다
 func TestServeDNS_UpstreamForwarding(t *testing.T) {
 	t.Skip("실제 DNS 서버가 필요하므로 스킵")
@@ -373,9 +475,9 @@ func TestRecordToRR(t *testing.T) {
 	defer cleanup()
 
 	tests := []struct {
-		name     string
-		record   *model.Record
-		checkFn  func(t *testing.T, rr dns.RR)
+		name    string
+		record  *model.Record
+		checkFn func(t *testing.T, rr dns.RR)
 	}{
 		{
 			name: "A 레코드",
@@ -817,10 +919,10 @@ func TestServeDNS_AuthoritativeFlag(t *testing.T) {
 	)
 
 	tests := []struct {
-		name           string
-		domain         string
-		expectAA       bool
-		description    string
+		name        string
+		domain      string
+		expectAA    bool
+		description string
 	}{
 		{
 			name:        "Zone 응답 - AA=true",
@@ -992,11 +1094,11 @@ func TestServeDNS_CHAOS(t *testing.T) {
 	defer cleanup()
 
 	tests := []struct {
-		name           string
-		domain         string
-		expectAnswer   bool
-		expectText     string
-		description    string
+		name         string
+		domain       string
+		expectAnswer bool
+		expectText   string
+		description  string
 	}{
 		{
 			name:         "version.bind TXT",

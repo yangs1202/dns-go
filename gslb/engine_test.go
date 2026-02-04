@@ -1328,3 +1328,99 @@ func TestResolveCIDRWithFallback(t *testing.T) {
 		t.Fatalf("expected fallback pool IP 203.0.113.1, got %s", ips[0].String())
 	}
 }
+
+func TestHasDomain(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	policyStorage := NewPolicyStorage(db)
+	poolStorage := NewPoolStorage(db)
+
+	// A 타입 policy만 생성 (AAAA는 없음)
+	_, err := policyStorage.CreatePolicy(&model.GSLBPolicy{
+		Name:       "test",
+		Domain:     "lb.gslb.example.com.",
+		RecordType: "A",
+		TTL:        30,
+		Enabled:    true,
+	})
+	if err != nil {
+		t.Fatalf("create policy error: %v", err)
+	}
+
+	engine := NewEngine(policyStorage, poolStorage, nil, nil)
+
+	// A policy가 있는 도메인 → true
+	if !engine.HasDomain("lb.gslb.example.com.") {
+		t.Error("expected HasDomain to return true for domain with A policy")
+	}
+
+	// policy가 없는 도메인 → false
+	if engine.HasDomain("unknown.example.com.") {
+		t.Error("expected HasDomain to return false for unknown domain")
+	}
+
+	// nil engine → false
+	var nilEngine *Engine
+	if nilEngine.HasDomain("lb.gslb.example.com.") {
+		t.Error("expected HasDomain to return false for nil engine")
+	}
+}
+
+func TestResolveAAAA_NoIPv6_ReturnsEmpty(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	policyStorage := NewPolicyStorage(db)
+	poolStorage := NewPoolStorage(db)
+
+	// A 타입 policy만 생성 (IPv4 멤버만 존재)
+	policyID, err := policyStorage.CreatePolicy(&model.GSLBPolicy{
+		Name:       "test",
+		Domain:     "lb.gslb.example.com.",
+		RecordType: "A",
+		TTL:        30,
+		Enabled:    true,
+	})
+	if err != nil {
+		t.Fatalf("create policy error: %v", err)
+	}
+
+	poolID, err := poolStorage.CreatePool(&model.GSLBPool{
+		PolicyID:     policyID,
+		Name:         "default",
+		MatchType:    "default",
+		MatchValue:   "*",
+		Priority:     0,
+		FallbackPool: true,
+	})
+	if err != nil {
+		t.Fatalf("create pool error: %v", err)
+	}
+
+	_, err = poolStorage.CreateMember(&model.GSLBMember{
+		PoolID:  poolID,
+		Address: "10.96.50.21",
+		Weight:  100,
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("create member error: %v", err)
+	}
+
+	engine := NewEngine(policyStorage, poolStorage, nil, nil)
+
+	// AAAA 쿼리 → AAAA policy가 없으므로 빈 결과
+	ips, _, err := engine.Resolve("lb.gslb.example.com.", "AAAA", net.ParseIP("203.0.113.1"))
+	if err != nil {
+		t.Fatalf("resolve error: %v", err)
+	}
+	if len(ips) != 0 {
+		t.Fatalf("expected no IPs for AAAA query without AAAA policy, got %v", ips)
+	}
+
+	// 하지만 HasDomain은 true여야 함 (A policy가 존재하므로)
+	if !engine.HasDomain("lb.gslb.example.com.") {
+		t.Error("HasDomain should return true even when only A policy exists")
+	}
+}
