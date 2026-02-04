@@ -119,7 +119,7 @@ func TestNegativeCaching(t *testing.T) {
 		t.Error("Expected negative entry")
 	}
 
-	if entry.RRs != nil && len(entry.RRs) > 0 {
+	if len(entry.RRs) > 0 {
 		t.Error("Expected no RRs for negative entry")
 	}
 

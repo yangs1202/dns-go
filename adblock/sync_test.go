@@ -685,6 +685,6 @@ func BenchmarkSyncer_SyncSource(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		syncer.SyncSource(1)
+		_ = syncer.SyncSource(1)
 	}
 }

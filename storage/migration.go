@@ -195,11 +195,11 @@ func (db *Database) Migrate() error {
 			`ALTER TABLE health_checks_new RENAME TO health_checks`,
 		}
 		for _, migration := range healthCheckMigrations {
-			db.Writer.Exec(migration)
+			_, _ = db.Writer.Exec(migration)
 		}
 	}
 	// 남아있는 백업 테이블 정리
-	db.Writer.Exec(`DROP TABLE IF EXISTS health_checks_backup`)
+	_, _ = db.Writer.Exec(`DROP TABLE IF EXISTS health_checks_backup`)
 
 	for _, schema := range schemas {
 		if _, err := db.Writer.Exec(schema); err != nil {
@@ -209,7 +209,7 @@ func (db *Database) Migrate() error {
 
 	// 마이그레이션 실행 (실패해도 무시)
 	for _, migration := range migrations {
-		db.Writer.Exec(migration)
+		_, _ = db.Writer.Exec(migration)
 	}
 
 	return nil

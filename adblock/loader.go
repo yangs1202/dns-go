@@ -66,9 +66,7 @@ func (l *Loader) ParseRules(content string) []string {
 		if strings.Contains(line, "$") {
 			line = strings.Split(line, "$")[0]
 		}
-		if strings.HasPrefix(line, "||") {
-			line = strings.TrimPrefix(line, "||")
-		}
+		line = strings.TrimPrefix(line, "||")
 		line = strings.TrimSuffix(line, "^")
 		line = strings.TrimPrefix(line, "|")
 		line = strings.TrimPrefix(line, "@@")

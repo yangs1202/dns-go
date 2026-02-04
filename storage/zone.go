@@ -226,7 +226,7 @@ func (s *ZoneStorage) CreateZone(zone *model.Zone) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("트랜잭션 시작 실패: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	query := `INSERT INTO zones (name, soa_mname, soa_rname, soa_serial, soa_refresh, soa_retry, soa_expire, soa_minimum, enabled, allow_fallback)
 	          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -282,7 +282,7 @@ func (s *ZoneStorage) UpdateZone(zone *model.Zone) error {
 	if err != nil {
 		return fmt.Errorf("트랜잭션 시작 실패: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	query := `UPDATE zones
 	          SET name = ?, soa_mname = ?, soa_rname = ?, soa_serial = ?, soa_refresh = ?, soa_retry = ?,
@@ -345,7 +345,7 @@ func (s *ZoneStorage) DeleteZone(id int64) error {
 	if err != nil {
 		return fmt.Errorf("트랜잭션 시작 실패: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	result, err := tx.Exec("DELETE FROM zones WHERE id = ?", id)
 	if err != nil {

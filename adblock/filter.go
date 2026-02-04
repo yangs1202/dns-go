@@ -23,7 +23,7 @@ type Filter struct {
 
 func NewFilter(storage AdblockStorageInterface, enabled bool) *Filter {
 	f := &Filter{storage: storage, enabled: enabled}
-	f.Rebuild()
+	_ = f.Rebuild()
 	return f
 }
 

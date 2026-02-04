@@ -182,7 +182,7 @@ func TestGetChanges(t *testing.T) {
 			setup: func(db *storage.Database) {
 				zoneStorage := storage.NewZoneStorage(db)
 				zone := &model.Zone{Name: "example.com.", Enabled: true}
-				zoneStorage.CreateZone(zone)
+				_, _ = zoneStorage.CreateZone(zone)
 			},
 			wantStatus:     http.StatusOK,
 			wantHasChanges: true,
@@ -193,7 +193,7 @@ func TestGetChanges(t *testing.T) {
 			setup: func(db *storage.Database) {
 				zoneStorage := storage.NewZoneStorage(db)
 				zone := &model.Zone{Name: "example.com.", Enabled: true}
-				zoneStorage.CreateZone(zone)
+				_, _ = zoneStorage.CreateZone(zone)
 			},
 			wantStatus:     http.StatusOK,
 			wantHasChanges: false,
@@ -207,7 +207,7 @@ func TestGetChanges(t *testing.T) {
 				zone := &model.Zone{Name: "example.com.", Enabled: true}
 				zoneID, _ := zoneStorage.CreateZone(zone)
 				record := &model.Record{ZoneID: zoneID, Name: "www.example.com.", Type: "A", Content: "192.0.2.1", Enabled: true}
-				recordStorage.CreateRecord(record)
+				_, _ = recordStorage.CreateRecord(record)
 			},
 			wantStatus:     http.StatusOK,
 			wantHasChanges: true,
@@ -422,13 +422,13 @@ func TestSyncAPI_Integration(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w1.Code)
 
 	var metadata1 map[string]interface{}
-	json.Unmarshal(w1.Body.Bytes(), &metadata1)
+	_ = json.Unmarshal(w1.Body.Bytes(), &metadata1)
 	initialVersion := metadata1["version"]
 
 	// Step 2: Insert data
 	zoneStorage := storage.NewZoneStorage(db)
 	zone := &model.Zone{Name: "example.com.", Enabled: true}
-	zoneStorage.CreateZone(zone)
+	_, _ = zoneStorage.CreateZone(zone)
 
 	// Step 3: Get updated metadata
 	w2 := httptest.NewRecorder()
@@ -438,7 +438,7 @@ func TestSyncAPI_Integration(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w2.Code)
 
 	var metadata2 map[string]interface{}
-	json.Unmarshal(w2.Body.Bytes(), &metadata2)
+	_ = json.Unmarshal(w2.Body.Bytes(), &metadata2)
 	newVersion := metadata2["version"]
 
 	// Version should have increased
@@ -452,7 +452,7 @@ func TestSyncAPI_Integration(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w3.Code)
 
 	var fullData map[string]interface{}
-	json.Unmarshal(w3.Body.Bytes(), &fullData)
+	_ = json.Unmarshal(w3.Body.Bytes(), &fullData)
 
 	data := fullData["data"].(map[string]interface{})
 	zones := data["zones"].([]interface{})

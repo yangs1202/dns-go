@@ -279,7 +279,7 @@ func TestFilter_ConcurrentAccess(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		go func() {
 			for j := 0; j < 100; j++ {
-				filter.IsBlocked("example.com")
+				_, _ = filter.IsBlocked("example.com")
 			}
 			done <- true
 		}()
@@ -289,7 +289,7 @@ func TestFilter_ConcurrentAccess(t *testing.T) {
 		for i := 0; i < 10; i++ {
 			filter.SetEnabled(true)
 			filter.SetEnabled(false)
-			filter.Rebuild()
+			_ = filter.Rebuild()
 		}
 	}()
 
@@ -372,7 +372,7 @@ func BenchmarkFilter_IsBlocked(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		filter.IsBlocked("aa.example.com")
+		_, _ = filter.IsBlocked("aa.example.com")
 	}
 }
 

@@ -677,10 +677,10 @@ func TestGetAdblockStatus(t *testing.T) {
 		// Update source with LastSync set
 		src, _ := api.adblockStorage.GetAdblockSource(sourceID)
 		src.LastSync = sql.NullTime{Time: time.Now(), Valid: true}
-		api.adblockStorage.UpdateAdblockSource(src)
+		_ = api.adblockStorage.UpdateAdblockSource(src)
 
 		// Add blocked domains
-		api.adblockStorage.AddBlockedDomain(sourceID, "ads.example.com")
+		_ = api.adblockStorage.AddBlockedDomain(sourceID, "ads.example.com")
 
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)

@@ -200,6 +200,7 @@ func TestDatabaseConcurrentReads(t *testing.T) {
 
 	// 테스트 데이터 삽입
 	_, err = db.Writer.Exec("INSERT INTO cache_settings (id) VALUES (2) ON CONFLICT DO NOTHING")
+	require.NoError(t, err)
 
 	// 동시 읽기 테스트
 	done := make(chan bool, 4)
@@ -237,7 +238,7 @@ func TestDatabaseFileCreation(t *testing.T) {
 
 	// WAL 파일도 생성됨
 	walPath := dbPath + "-wal"
-	_, err = os.Stat(walPath)
+	_, _ = os.Stat(walPath)
 	// WAL 파일은 즉시 생성되지 않을 수 있음 (첫 쓰기 후)
 }
 

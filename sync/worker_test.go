@@ -103,7 +103,7 @@ func TestWorker_FullSync(t *testing.T) {
 					},
 				},
 			}
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 		}
 	}))
 	defer server.Close()
@@ -162,7 +162,7 @@ func TestWorker_IncrementalSync_NoChanges(t *testing.T) {
 				"version":  int64(10),
 				"checksum": "abc123",
 			}
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 		} else if r.URL.Path == "/api/sync/full" {
 			// Full Sync 데이터도 제공 (혹시 필요할 수 있음)
 			response := map[string]interface{}{
@@ -174,7 +174,7 @@ func TestWorker_IncrementalSync_NoChanges(t *testing.T) {
 					"upstream_servers": []map[string]interface{}{},
 				},
 			}
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 		}
 	}))
 	defer server.Close()
@@ -220,7 +220,7 @@ func TestWorker_IncrementalSync_WithChanges(t *testing.T) {
 				"version":  int64(10),
 				"checksum": "new456",
 			}
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 		} else if r.URL.Path == "/api/sync/full" {
 			fullSyncCallCount++
 			// Full Sync 데이터
@@ -233,7 +233,7 @@ func TestWorker_IncrementalSync_WithChanges(t *testing.T) {
 					"upstream_servers": []map[string]interface{}{},
 				},
 			}
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 		}
 	}))
 	defer server.Close()
@@ -275,7 +275,7 @@ func TestWorker_IncrementalSync_InitialState(t *testing.T) {
 					"upstream_servers": []map[string]interface{}{},
 				},
 			}
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 		}
 	}))
 	defer server.Close()
@@ -337,7 +337,7 @@ func TestWorker_FullSync_DataReplacement(t *testing.T) {
 					"upstream_servers": []map[string]interface{}{},
 				},
 			}
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 		}
 	}))
 	defer server.Close()
@@ -380,7 +380,7 @@ func TestWorker_FullSync_InvalidJSON(t *testing.T) {
 
 	// Mock Primary 서버 (잘못된 JSON)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("invalid json"))
+		_, _ = w.Write([]byte("invalid json"))
 	}))
 	defer server.Close()
 
@@ -400,7 +400,7 @@ func TestWorker_InsertZone(t *testing.T) {
 
 	tx, err := db.Writer.Begin()
 	require.NoError(t, err)
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	zoneData := map[string]interface{}{
 		"id":             1,
@@ -454,7 +454,7 @@ func TestWorker_InsertRecord(t *testing.T) {
 
 	tx, err := db.Writer.Begin()
 	require.NoError(t, err)
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	recordData := map[string]interface{}{
 		"id":         1,
@@ -490,7 +490,7 @@ func TestWorker_InsertUpstream(t *testing.T) {
 
 	tx, err := db.Writer.Begin()
 	require.NoError(t, err)
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	upstreamData := map[string]interface{}{
 		"id":         1,
@@ -531,7 +531,7 @@ func TestWorker_StartStop(t *testing.T) {
 				"upstream_servers": []map[string]interface{}{},
 			},
 		}
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 
@@ -568,7 +568,7 @@ func TestWorker_SetSyncCompleteCallback(t *testing.T) {
 					"upstream_servers": []map[string]interface{}{},
 				},
 			}
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 		}
 	}))
 	defer server.Close()
@@ -604,7 +604,7 @@ func TestWorker_SetSyncCompleteCallback_Nil(t *testing.T) {
 					"upstream_servers": []map[string]interface{}{},
 				},
 			}
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 		}
 	}))
 	defer server.Close()
@@ -699,7 +699,7 @@ func TestWorker_FullSync_WithGSLBData(t *testing.T) {
 					},
 				},
 			}
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 		}
 	}))
 	defer server.Close()
@@ -814,7 +814,7 @@ func TestWorker_FullSync_WithCallback(t *testing.T) {
 					},
 				},
 			}
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 		}
 	}))
 	defer server.Close()
@@ -842,7 +842,7 @@ func TestWorker_InsertGSLBPolicy(t *testing.T) {
 
 	tx, err := db.Writer.Begin()
 	require.NoError(t, err)
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	policyData := map[string]interface{}{
 		"id":          1,
@@ -883,7 +883,7 @@ func TestWorker_InsertGSLBPool(t *testing.T) {
 
 	tx, err := db.Writer.Begin()
 	require.NoError(t, err)
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	poolData := map[string]interface{}{
 		"id":            1,
@@ -926,7 +926,7 @@ func TestWorker_InsertGSLBMember(t *testing.T) {
 
 	tx, err := db.Writer.Begin()
 	require.NoError(t, err)
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	memberData := map[string]interface{}{
 		"id":      1,
@@ -963,7 +963,7 @@ func TestWorker_InsertHealthCheck(t *testing.T) {
 
 	tx, err := db.Writer.Begin()
 	require.NoError(t, err)
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	checkData := map[string]interface{}{
 		"id":                  1,
@@ -1061,7 +1061,7 @@ func TestWorker_IncrementalSync_MetadataInvalidJSON(t *testing.T) {
 	// Mock Primary 서버 (잘못된 JSON)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/sync/metadata" {
-			w.Write([]byte("not valid json"))
+			_, _ = w.Write([]byte("not valid json"))
 		}
 	}))
 	defer server.Close()
@@ -1143,7 +1143,7 @@ func TestWorker_FullSync_GSLBDataReplacement(t *testing.T) {
 					},
 				},
 			}
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 		}
 	}))
 	defer server.Close()
@@ -1210,7 +1210,7 @@ func TestWorker_IncrementalSync_VersionMismatchTriggersFullSync(t *testing.T) {
 				"version":  int64(7),
 				"checksum": "new-check",
 			}
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 		} else if r.URL.Path == "/api/sync/full" {
 			fullSyncCalled = true
 			response := map[string]interface{}{
@@ -1222,7 +1222,7 @@ func TestWorker_IncrementalSync_VersionMismatchTriggersFullSync(t *testing.T) {
 					"upstream_servers": []map[string]interface{}{},
 				},
 			}
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 		}
 	}))
 	defer server.Close()
@@ -1289,7 +1289,7 @@ func TestWorker_FullSync_ZoneInsertError(t *testing.T) {
 					"upstream_servers": []map[string]interface{}{},
 				},
 			}
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 		}
 	}))
 	defer server.Close()
@@ -1330,7 +1330,7 @@ func TestWorker_FullSync_RecordInsertError(t *testing.T) {
 					"upstream_servers": []map[string]interface{}{},
 				},
 			}
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 		}
 	}))
 	defer server.Close()
@@ -1379,7 +1379,7 @@ func TestWorker_FullSync_UpstreamInsertError(t *testing.T) {
 					},
 				},
 			}
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 		}
 	}))
 	defer server.Close()
@@ -1430,7 +1430,7 @@ func TestWorker_FullSync_GSLBPolicyInsertError(t *testing.T) {
 					"health_checks": []map[string]interface{}{},
 				},
 			}
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 		}
 	}))
 	defer server.Close()
@@ -1472,7 +1472,7 @@ func TestWorker_FullSync_GSLBPoolInsertError(t *testing.T) {
 					"health_checks": []map[string]interface{}{},
 				},
 			}
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 		}
 	}))
 	defer server.Close()
@@ -1512,7 +1512,7 @@ func TestWorker_FullSync_GSLBMemberInsertError(t *testing.T) {
 					"health_checks": []map[string]interface{}{},
 				},
 			}
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 		}
 	}))
 	defer server.Close()
@@ -1556,7 +1556,7 @@ func TestWorker_FullSync_HealthCheckInsertError(t *testing.T) {
 					},
 				},
 			}
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 		}
 	}))
 	defer server.Close()
@@ -1612,7 +1612,7 @@ func TestWorker_Start_IncrementalSyncError(t *testing.T) {
 					"upstream_servers": []map[string]interface{}{},
 				},
 			}
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 		} else if r.URL.Path == "/api/sync/metadata" {
 			w.WriteHeader(http.StatusInternalServerError)
 		}
@@ -1640,7 +1640,7 @@ func TestWorker_FullSync_ReadBodyError(t *testing.T) {
 			// Content-Length를 설정하고 일부만 전송하여 io.ReadAll 에러 유도
 			w.Header().Set("Content-Length", "99999")
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("{"))
+			_, _ = w.Write([]byte("{"))
 			// 연결을 강제 종료하기 위해 Hijack 사용
 			if hj, ok := w.(http.Hijacker); ok {
 				conn, _, _ := hj.Hijack()
@@ -1680,7 +1680,7 @@ func TestWorker_IncrementalSync_MetadataReadBodyError(t *testing.T) {
 		if r.URL.Path == "/api/sync/metadata" {
 			w.Header().Set("Content-Length", "99999")
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("{"))
+			_, _ = w.Write([]byte("{"))
 			if hj, ok := w.(http.Hijacker); ok {
 				conn, _, _ := hj.Hijack()
 				conn.Close()
@@ -1723,7 +1723,7 @@ func TestWorker_IncrementalSync_FullSyncViaMismatch_WithGSLBData(t *testing.T) {
 				"version":  int64(5),
 				"checksum": "new-gslb",
 			}
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 		} else if r.URL.Path == "/api/sync/full" {
 			response := map[string]interface{}{
 				"version":  int64(5),
@@ -1818,7 +1818,7 @@ func TestWorker_IncrementalSync_FullSyncViaMismatch_WithGSLBData(t *testing.T) {
 					},
 				},
 			}
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 		}
 	}))
 	defer server.Close()

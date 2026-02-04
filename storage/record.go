@@ -297,7 +297,7 @@ func (s *RecordStorage) CreateRecord(record *model.Record) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("트랜잭션 시작 실패: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	query := `INSERT INTO records (zone_id, name, type, content, ttl, priority, enabled)
 	          VALUES (?, ?, ?, ?, ?, ?, ?)`
@@ -345,7 +345,7 @@ func (s *RecordStorage) UpdateRecord(record *model.Record) error {
 	if err != nil {
 		return fmt.Errorf("트랜잭션 시작 실패: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	query := `UPDATE records
 	          SET zone_id = ?, name = ?, type = ?, content = ?, ttl = ?, priority = ?, enabled = ?,
@@ -409,7 +409,7 @@ func (s *RecordStorage) DeleteRecord(id int64) error {
 	if err != nil {
 		return fmt.Errorf("트랜잭션 시작 실패: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	result, err := tx.Exec("DELETE FROM records WHERE id = ?", id)
 	if err != nil {

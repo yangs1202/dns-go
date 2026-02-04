@@ -124,7 +124,7 @@ func (w *Worker) fullSync() error {
 	if err != nil {
 		return fmt.Errorf("트랜잭션 시작 실패: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// 기존 데이터 삭제 (역순으로 삭제 - Foreign Key 제약)
 	if _, err := tx.Exec("DELETE FROM records"); err != nil {
