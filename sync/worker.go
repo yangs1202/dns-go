@@ -107,7 +107,6 @@ func (w *Worker) fullSync() error {
 		Data     struct {
 			Zones           []map[string]interface{} `json:"zones"`
 			Records         []map[string]interface{} `json:"records"`
-			UpstreamServers []map[string]interface{} `json:"upstream_servers"`
 			GSLBPolicies    []map[string]interface{} `json:"gslb_policies"`
 			GSLBPools       []map[string]interface{} `json:"gslb_pools"`
 			GSLBMembers     []map[string]interface{} `json:"gslb_members"`
@@ -132,9 +131,6 @@ func (w *Worker) fullSync() error {
 	}
 	if _, err := tx.Exec("DELETE FROM zones"); err != nil {
 		return fmt.Errorf("Zones 삭제 실패: %w", err)
-	}
-	if _, err := tx.Exec("DELETE FROM upstream_servers"); err != nil {
-		return fmt.Errorf("Upstream 삭제 실패: %w", err)
 	}
 
 	// GSLB 관련 테이블 삭제 (역순으로 - Foreign Key 제약)
@@ -164,13 +160,7 @@ func (w *Worker) fullSync() error {
 			return fmt.Errorf("Record 삽입 실패: %w", err)
 		}
 	}
-
-	// Upstream Servers 삽입
-	for _, upstream := range data.Data.UpstreamServers {
-		if err := w.insertUpstream(tx, upstream); err != nil {
-			return fmt.Errorf("Upstream 삽입 실패: %w", err)
-		}
-	}
+	// Upstream은 Secondary별로 다를 수 있으므로 동기화하지 않음.
 
 	// GSLB Policies 삽입
 	for _, policy := range data.Data.GSLBPolicies {
@@ -218,8 +208,8 @@ func (w *Worker) fullSync() error {
 		return fmt.Errorf("트랜잭션 커밋 실패: %w", err)
 	}
 
-	log.Printf("Full Sync 완료: Version=%d, Zones=%d, Records=%d, Upstreams=%d, GSLB Policies=%d, Pools=%d, Members=%d, HealthChecks=%d",
-		data.Version, len(data.Data.Zones), len(data.Data.Records), len(data.Data.UpstreamServers),
+	log.Printf("Full Sync 완료: Version=%d, Zones=%d, Records=%d, GSLB Policies=%d, Pools=%d, Members=%d, HealthChecks=%d",
+		data.Version, len(data.Data.Zones), len(data.Data.Records),
 		len(data.Data.GSLBPolicies), len(data.Data.GSLBPools), len(data.Data.GSLBMembers), len(data.Data.HealthChecks))
 
 	// 동기화 완료 콜백 호출 (헬스체크 재시작, 캐시 클리어)

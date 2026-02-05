@@ -39,6 +39,16 @@ func TestWorker_FullSync(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 
+	upstreamStorage := storage.NewUpstreamStorage(db)
+	_, err := upstreamStorage.CreateUpstreamServer(&model.UpstreamServer{
+		Name:     "Local DNS",
+		Address:  "1.1.1.1:53",
+		Protocol: "udp",
+		Priority: 10,
+		Enabled:  true,
+	})
+	require.NoError(t, err)
+
 	// Mock Primary 서버
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/sync/full" {
@@ -77,18 +87,6 @@ func TestWorker_FullSync(t *testing.T) {
 							"updated_at": "2026-01-31T12:00:00Z",
 						},
 					},
-					"upstream_servers": []map[string]interface{}{
-						{
-							"id":         1,
-							"name":       "Google DNS",
-							"address":    "8.8.8.8:53",
-							"protocol":   "udp",
-							"priority":   10,
-							"enabled":    1,
-							"created_at": "2026-01-31T12:00:00Z",
-							"updated_at": "2026-01-31T12:00:00Z",
-						},
-					},
 				},
 			}
 			json.NewEncoder(w).Encode(response)
@@ -120,11 +118,11 @@ func TestWorker_FullSync(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "www.example.com.", recordName)
 
-	// Upstream 확인
+	// Upstream 확인 (Slave에서는 동기화하지 않음)
 	var upstreamName string
 	err = db.Writer.QueryRow("SELECT name FROM upstream_servers WHERE id = 1").Scan(&upstreamName)
 	require.NoError(t, err)
-	assert.Equal(t, "Google DNS", upstreamName)
+	assert.Equal(t, "Local DNS", upstreamName)
 }
 
 func TestWorker_IncrementalSync_NoChanges(t *testing.T) {
@@ -154,9 +152,8 @@ func TestWorker_IncrementalSync_NoChanges(t *testing.T) {
 				"version":  int64(10),
 				"checksum": "abc123",
 				"data": map[string]interface{}{
-					"zones":            []map[string]interface{}{},
-					"records":          []map[string]interface{}{},
-					"upstream_servers": []map[string]interface{}{},
+					"zones":   []map[string]interface{}{},
+					"records": []map[string]interface{}{},
 				},
 			}
 			json.NewEncoder(w).Encode(response)
@@ -208,9 +205,8 @@ func TestWorker_IncrementalSync_WithChanges(t *testing.T) {
 				"version":  int64(10),
 				"checksum": "new456",
 				"data": map[string]interface{}{
-					"zones":            []map[string]interface{}{},
-					"records":          []map[string]interface{}{},
-					"upstream_servers": []map[string]interface{}{},
+					"zones":   []map[string]interface{}{},
+					"records": []map[string]interface{}{},
 				},
 			}
 			json.NewEncoder(w).Encode(response)
@@ -249,9 +245,8 @@ func TestWorker_IncrementalSync_InitialState(t *testing.T) {
 				"version":  int64(1),
 				"checksum": "init",
 				"data": map[string]interface{}{
-					"zones":            []map[string]interface{}{},
-					"records":          []map[string]interface{}{},
-					"upstream_servers": []map[string]interface{}{},
+					"zones":   []map[string]interface{}{},
+					"records": []map[string]interface{}{},
 				},
 			}
 			json.NewEncoder(w).Encode(response)
@@ -312,8 +307,7 @@ func TestWorker_FullSync_DataReplacement(t *testing.T) {
 							"updated_at":     "2026-01-31T12:00:00Z",
 						},
 					},
-					"records":          []map[string]interface{}{},
-					"upstream_servers": []map[string]interface{}{},
+					"records": []map[string]interface{}{},
 				},
 			}
 			json.NewEncoder(w).Encode(response)
@@ -505,9 +499,8 @@ func TestWorker_StartStop(t *testing.T) {
 			"version":  int64(1),
 			"checksum": "test",
 			"data": map[string]interface{}{
-				"zones":            []map[string]interface{}{},
-				"records":          []map[string]interface{}{},
-				"upstream_servers": []map[string]interface{}{},
+				"zones":   []map[string]interface{}{},
+				"records": []map[string]interface{}{},
 			},
 		}
 		json.NewEncoder(w).Encode(response)
