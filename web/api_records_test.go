@@ -481,6 +481,281 @@ func TestUpdateRecord(t *testing.T) {
 	}
 }
 
+func TestValidateRecordContent(t *testing.T) {
+	tests := []struct {
+		name       string
+		recordType string
+		content    string
+		wantError  bool
+	}{
+		// A records
+		{name: "Valid A record", recordType: "A", content: "192.0.2.1", wantError: false},
+		{name: "Invalid A record - IPv6", recordType: "A", content: "2001:db8::1", wantError: true},
+		{name: "Invalid A record - text", recordType: "A", content: "not-an-ip", wantError: true},
+
+		// AAAA records
+		{name: "Valid AAAA record", recordType: "AAAA", content: "2001:db8::1", wantError: false},
+		{name: "Invalid AAAA record - IPv4", recordType: "AAAA", content: "192.0.2.1", wantError: true},
+		{name: "Invalid AAAA record - text", recordType: "AAAA", content: "not-an-ip", wantError: true},
+
+		// CNAME records
+		{name: "Valid CNAME", recordType: "CNAME", content: "www.example.com", wantError: false},
+		{name: "Valid CNAME with dot", recordType: "CNAME", content: "www.example.com.", wantError: false},
+		{name: "Invalid CNAME empty", recordType: "CNAME", content: "", wantError: true},
+		{name: "Invalid CNAME with space", recordType: "CNAME", content: "bad name.com", wantError: true},
+
+		// NS records
+		{name: "Valid NS", recordType: "NS", content: "ns1.example.com", wantError: false},
+		{name: "Invalid NS empty", recordType: "NS", content: ".", wantError: true},
+
+		// PTR records
+		{name: "Valid PTR", recordType: "PTR", content: "host.example.com", wantError: false},
+
+		// MX records
+		{name: "Valid MX", recordType: "MX", content: "mail.example.com", wantError: false},
+		{name: "Invalid MX empty", recordType: "MX", content: "", wantError: true},
+		{name: "Invalid MX with space", recordType: "MX", content: "bad mail.com", wantError: true},
+
+		// TXT records (no specific validation)
+		{name: "Valid TXT", recordType: "TXT", content: "v=spf1 include:example.com ~all", wantError: false},
+
+		// SRV records (no specific validation)
+		{name: "Valid SRV", recordType: "SRV", content: "10 5 443 server.example.com", wantError: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := validateRecordContent(tt.recordType, tt.content)
+			if tt.wantError {
+				assert.NotEmpty(t, result)
+			} else {
+				assert.Empty(t, result)
+			}
+		})
+	}
+}
+
+func TestCreateRecord_ContentValidation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name       string
+		body       recordRequest
+		wantStatus int
+	}{
+		{
+			name:       "Invalid A content (IPv6)",
+			body:       recordRequest{Name: "test.example.com", Type: "A", Content: "2001:db8::1"},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "Invalid AAAA content (IPv4)",
+			body:       recordRequest{Name: "test.example.com", Type: "AAAA", Content: "192.0.2.1"},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "Invalid record type",
+			body:       recordRequest{Name: "test.example.com", Type: "INVALID", Content: "test"},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "Invalid CNAME content",
+			body:       recordRequest{Name: "test.example.com", Type: "CNAME", Content: "bad name"},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "Invalid MX content",
+			body:       recordRequest{Name: "test.example.com", Type: "MX", Content: "bad name"},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "Negative TTL",
+			body:       recordRequest{Name: "test.example.com", Type: "A", Content: "192.0.2.1", TTL: -1},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "Negative priority",
+			body:       recordRequest{Name: "test.example.com", Type: "A", Content: "192.0.2.1", Priority: -1},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "Zone not found",
+			body:       recordRequest{Name: "test.example.com", Type: "A", Content: "192.0.2.1"},
+			wantStatus: http.StatusNotFound,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			api, db := setupTestAPI(t)
+
+			// Only create zone for content validation tests, not for "Zone not found"
+			var zoneID int64 = 9999
+			if tt.name != "Zone not found" {
+				zoneID = storage.InsertTestZone(t, db, "example.com.")
+			}
+
+			body, _ := json.Marshal(tt.body)
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest("POST", "/api/zones/1/records", bytes.NewReader(body))
+			c.Request.Header.Set("Content-Type", "application/json")
+			c.Params = gin.Params{gin.Param{Key: "id", Value: fmt.Sprintf("%d", zoneID)}}
+
+			api.createRecord(c)
+
+			assert.Equal(t, tt.wantStatus, w.Code)
+		})
+	}
+}
+
+func TestUpdateRecord_ContentValidation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name       string
+		body       recordRequest
+		wantStatus int
+	}{
+		{
+			name:       "Invalid A content",
+			body:       recordRequest{Name: "test.example.com", Type: "A", Content: "not-ip"},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "Invalid type",
+			body:       recordRequest{Name: "test.example.com", Type: "INVALID", Content: "test"},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "Missing type",
+			body:       recordRequest{Name: "test.example.com", Content: "test"},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "Missing content",
+			body:       recordRequest{Name: "test.example.com", Type: "A"},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "Negative TTL",
+			body:       recordRequest{Name: "test.example.com", Type: "A", Content: "1.2.3.4", TTL: -1},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "Negative priority",
+			body:       recordRequest{Name: "test.example.com", Type: "A", Content: "1.2.3.4", Priority: -1},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "Valid update with enabled",
+			body:       recordRequest{Name: "test.example.com", Type: "A", Content: "1.2.3.4", Enabled: boolPtr(false)},
+			wantStatus: http.StatusOK,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			api, db := setupTestAPI(t)
+			zoneID := storage.InsertTestZone(t, db, "example.com.")
+			recordID := storage.InsertTestRecord(t, db, zoneID, "test.example.com.", "A", "192.0.2.1")
+
+			body, _ := json.Marshal(tt.body)
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest("PUT", "/api/records/1", bytes.NewReader(body))
+			c.Request.Header.Set("Content-Type", "application/json")
+			c.Params = gin.Params{gin.Param{Key: "id", Value: fmt.Sprintf("%d", recordID)}}
+
+			api.updateRecord(c)
+
+			assert.Equal(t, tt.wantStatus, w.Code)
+		})
+	}
+}
+
+func TestListAllRecords_DBError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	api, db := setupTestAPI(t)
+	db.Reader.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/api/records", nil)
+
+	api.listAllRecords(c)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestListRecords_DBError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	api, db := setupTestAPI(t)
+	db.Reader.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = gin.Params{gin.Param{Key: "id", Value: "1"}}
+
+	api.listRecords(c)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestCreateRecord_DBError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	api, db := setupTestAPI(t)
+	zoneID := storage.InsertTestZone(t, db, "example.com.")
+	db.Writer.Close()
+
+	body, _ := json.Marshal(recordRequest{Name: "www.example.com", Type: "A", Content: "1.2.3.4"})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/zones/1/records", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{gin.Param{Key: "id", Value: fmt.Sprintf("%d", zoneID)}}
+
+	api.createRecord(c)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestDeleteRecord_DBError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	api, db := setupTestAPI(t)
+	zoneID := storage.InsertTestZone(t, db, "example.com.")
+	recordID := storage.InsertTestRecord(t, db, zoneID, "www.example.com.", "A", "1.2.3.4")
+	db.Writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("DELETE", "/api/records/1", nil)
+	c.Params = gin.Params{gin.Param{Key: "id", Value: fmt.Sprintf("%d", recordID)}}
+
+	api.deleteRecord(c)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestUpdateRecord_DBError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	api, db := setupTestAPI(t)
+	zoneID := storage.InsertTestZone(t, db, "example.com.")
+	recordID := storage.InsertTestRecord(t, db, zoneID, "www.example.com.", "A", "1.2.3.4")
+	db.Writer.Close()
+
+	body, _ := json.Marshal(recordRequest{Name: "www.example.com", Type: "A", Content: "5.6.7.8"})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PUT", "/api/records/1", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{gin.Param{Key: "id", Value: fmt.Sprintf("%d", recordID)}}
+
+	api.updateRecord(c)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
 func TestDeleteRecord(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

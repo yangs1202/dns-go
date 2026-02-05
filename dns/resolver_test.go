@@ -64,7 +64,7 @@ func startTestDNSServer(t *testing.T, network string, address string) *dns.Serve
 			m.Answer = append(m.Answer, rr)
 		}
 
-		w.WriteMsg(m)
+		_ = w.WriteMsg(m)
 	})
 
 	go func() {
@@ -88,7 +88,7 @@ func TestForward_UDP(t *testing.T) {
 
 	// 테스트 DNS 서버 시작
 	testServer := startTestDNSServer(t, "udp", "127.0.0.1:15353")
-	defer testServer.Shutdown()
+	defer func() { _ = testServer.Shutdown() }()
 
 	// 업스트림 서버 생성
 	createTestServer(t, upstreamStorage, "Test UDP", "127.0.0.1:15353", "udp", 1, true)
@@ -118,7 +118,7 @@ func TestForward_TCP(t *testing.T) {
 
 	// 테스트 DNS 서버 시작 (TCP)
 	testServer := startTestDNSServer(t, "tcp", "127.0.0.1:15354")
-	defer testServer.Shutdown()
+	defer func() { _ = testServer.Shutdown() }()
 
 	// 업스트림 서버 생성
 	createTestServer(t, upstreamStorage, "Test TCP", "127.0.0.1:15354", "tcp", 1, true)
@@ -147,11 +147,11 @@ func TestForward_Priority(t *testing.T) {
 
 	// 테스트 DNS 서버 시작 (우선순위 높은 서버)
 	testServer1 := startTestDNSServer(t, "udp", "127.0.0.1:15355")
-	defer testServer1.Shutdown()
+	defer func() { _ = testServer1.Shutdown() }()
 
 	// 테스트 DNS 서버 시작 (우선순위 낮은 서버)
 	testServer2 := startTestDNSServer(t, "udp", "127.0.0.1:15356")
-	defer testServer2.Shutdown()
+	defer func() { _ = testServer2.Shutdown() }()
 
 	// 업스트림 서버 생성 (우선순위가 낮은 것이 먼저)
 	createTestServer(t, upstreamStorage, "Low Priority", "127.0.0.1:15356", "udp", 10, true)
@@ -181,7 +181,7 @@ func TestForward_Fallback(t *testing.T) {
 
 	// 테스트 DNS 서버 시작 (두 번째 서버만)
 	testServer := startTestDNSServer(t, "udp", "127.0.0.1:15358")
-	defer testServer.Shutdown()
+	defer func() { _ = testServer.Shutdown() }()
 
 	// 업스트림 서버 생성
 	createTestServer(t, upstreamStorage, "Failing Server", "127.0.0.1:15357", "udp", 1, true)  // 존재하지 않는 서버
@@ -261,7 +261,7 @@ func TestForwardToServer_UDP(t *testing.T) {
 
 	// 테스트 DNS 서버 시작
 	testServer := startTestDNSServer(t, "udp", "127.0.0.1:15361")
-	defer testServer.Shutdown()
+	defer func() { _ = testServer.Shutdown() }()
 
 	// Resolver 생성
 	resolver := NewResolver(upstreamStorage, 2*time.Second)
@@ -294,7 +294,7 @@ func TestForwardToServer_TCP(t *testing.T) {
 
 	// 테스트 DNS 서버 시작
 	testServer := startTestDNSServer(t, "tcp", "127.0.0.1:15362")
-	defer testServer.Shutdown()
+	defer func() { _ = testServer.Shutdown() }()
 
 	// Resolver 생성
 	resolver := NewResolver(upstreamStorage, 2*time.Second)
@@ -354,7 +354,7 @@ func TestForward_DisabledServersNotUsed(t *testing.T) {
 
 	// 테스트 DNS 서버 시작
 	testServer := startTestDNSServer(t, "udp", "127.0.0.1:15363")
-	defer testServer.Shutdown()
+	defer func() { _ = testServer.Shutdown() }()
 
 	// 업스트림 서버 생성
 	createTestServer(t, upstreamStorage, "Disabled Server", "127.0.0.1:15364", "udp", 1, false) // 비활성화

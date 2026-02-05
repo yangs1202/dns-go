@@ -3,6 +3,7 @@ package dns
 import (
 	"dns-go/model"
 	"dns-go/storage"
+	"fmt"
 	"net"
 	"os"
 	"testing"
@@ -1066,11 +1067,13 @@ func TestServeDNS_NSID(t *testing.T) {
 			}
 
 			nsidFound := false
+			// RFC 5001: NSID는 hex 인코딩된 바이트 시퀀스로 전달됨
+			expectedNSID := fmt.Sprintf("%x", "test-server")
 			for _, option := range opt.Option {
 				if nsid, ok := option.(*dns.EDNS0_NSID); ok {
 					nsidFound = true
-					if nsid.Nsid != "test-server" {
-						t.Errorf("NSID 값 예상: test-server, 실제: %s", nsid.Nsid)
+					if nsid.Nsid != expectedNSID {
+						t.Errorf("NSID 값 예상: %s, 실제: %s", expectedNSID, nsid.Nsid)
 					}
 				}
 			}

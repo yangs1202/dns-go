@@ -285,25 +285,30 @@ func (c *DNSCache) cleanupExpired() {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		c.mu.Lock()
-		expiredKeys := make([]string, 0)
-
-		for key, item := range c.items {
-			if item.entry.IsExpired() {
-				expiredKeys = append(expiredKeys, key)
-			}
-		}
-
-		for _, key := range expiredKeys {
-			c.entries.Delete(key)
-			delete(c.items, key)
-			atomic.AddUint64(&c.stats.Size, ^uint64(0)) // Decrement
-		}
-		if len(expiredKeys) > 0 {
-			metrics.CacheSize.Set(float64(atomic.LoadUint64(&c.stats.Size)))
-		}
-		c.mu.Unlock()
+		c.removeExpired()
 	}
+}
+
+// removeExpired removes all expired entries from the cache
+func (c *DNSCache) removeExpired() {
+	c.mu.Lock()
+	expiredKeys := make([]string, 0)
+
+	for key, item := range c.items {
+		if item.entry.IsExpired() {
+			expiredKeys = append(expiredKeys, key)
+		}
+	}
+
+	for _, key := range expiredKeys {
+		c.entries.Delete(key)
+		delete(c.items, key)
+		atomic.AddUint64(&c.stats.Size, ^uint64(0)) // Decrement
+	}
+	if len(expiredKeys) > 0 {
+		metrics.CacheSize.Set(float64(atomic.LoadUint64(&c.stats.Size)))
+	}
+	c.mu.Unlock()
 }
 
 // makeKey creates a cache key from domain and query type

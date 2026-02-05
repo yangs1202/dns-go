@@ -497,6 +497,100 @@ func TestNewZoneCache(t *testing.T) {
 	assert.True(t, cache.expiry.IsZero())
 }
 
+// === Error path tests (using closed DB) ===
+
+func TestGetZone_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewZoneStorage(db)
+	db.Reader.Close()
+
+	_, err := storage.GetZone(1)
+	assert.Error(t, err)
+}
+
+func TestGetZoneByName_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewZoneStorage(db)
+	db.Reader.Close()
+
+	_, err := storage.GetZoneByName("example.com.")
+	assert.Error(t, err)
+}
+
+func TestListZones_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewZoneStorage(db)
+	db.Reader.Close()
+
+	_, err := storage.ListZones()
+	assert.Error(t, err)
+}
+
+func TestCreateZone_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewZoneStorage(db)
+	db.Writer.Close()
+
+	zone := &model.Zone{Name: "test.com.", Enabled: true}
+	_, err := storage.CreateZone(zone)
+	assert.Error(t, err)
+}
+
+func TestUpdateZone_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewZoneStorage(db)
+	db.Writer.Close()
+
+	zone := &model.Zone{ID: 1, Name: "test.com.", Enabled: true}
+	err := storage.UpdateZone(zone)
+	assert.Error(t, err)
+}
+
+func TestDeleteZone_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewZoneStorage(db)
+	db.Writer.Close()
+
+	err := storage.DeleteZone(1)
+	assert.Error(t, err)
+}
+
+// TestZoneStorage_ClearCache는 Zone 캐시 클리어 테스트입니다
+func TestZoneStorage_ClearCache(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewZoneStorage(db)
+
+	// Zone 생성 및 캐시 업데이트
+	insertTestZone(t, db, "example.com.")
+	_, err := storage.ListZones()
+	require.NoError(t, err)
+
+	// 캐시 히트 확인
+	zone, ok := storage.cache.Get("example.com.")
+	assert.True(t, ok)
+	assert.NotNil(t, zone)
+
+	// ClearCache 호출
+	storage.ClearCache()
+
+	// 캐시 미스 확인
+	zone, ok = storage.cache.Get("example.com.")
+	assert.False(t, ok)
+	assert.Nil(t, zone)
+}
+
+// TestZoneStorage_ClearCache_NilCache는 nil 캐시에서도 안전한지 테스트합니다
+func TestZoneStorage_ClearCache_NilCache(t *testing.T) {
+	db := setupTestDB(t)
+	storage := &ZoneStorage{
+		db:    db,
+		cache: nil,
+	}
+
+	// Should not panic
+	storage.ClearCache()
+}
+
 // TestCreateZone_VersionIncrement는 Zone 생성 시 버전 증가를 테스트합니다
 func TestCreateZone_VersionIncrement(t *testing.T) {
 	db := setupTestDB(t)

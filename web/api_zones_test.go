@@ -542,6 +542,70 @@ func TestDeleteZone(t *testing.T) {
 	}
 }
 
+func TestListZones_DBError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	api, db := setupTestAPI(t)
+	db.Reader.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/api/zones", nil)
+
+	api.listZones(c)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestCreateZone_DBError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	api, db := setupTestAPI(t)
+	db.Writer.Close()
+
+	body, _ := json.Marshal(zoneRequest{Name: "example.com"})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("POST", "/api/zones", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	api.createZone(c)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestDeleteZone_DBError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	api, db := setupTestAPI(t)
+	zoneID := storage.InsertTestZone(t, db, "example.com.")
+	db.Writer.Close()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("DELETE", "/api/zones/1", nil)
+	c.Params = gin.Params{gin.Param{Key: "id", Value: fmt.Sprintf("%d", zoneID)}}
+
+	api.deleteZone(c)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+func TestUpdateZone_DBError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	api, db := setupTestAPI(t)
+	zoneID := storage.InsertTestZone(t, db, "example.com.")
+	db.Writer.Close()
+
+	body, _ := json.Marshal(zoneRequest{Name: "updated.com", SOAMname: "ns1.updated.com"})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("PUT", "/api/zones/1", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{gin.Param{Key: "id", Value: fmt.Sprintf("%d", zoneID)}}
+
+	api.updateZone(c)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
 // Helper function
 func boolPtr(b bool) *bool {
 	return &b

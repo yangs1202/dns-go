@@ -86,17 +86,24 @@ func (e *Engine) Resolve(domain, qtype string, clientIP net.IP) ([]net.IP, uint3
 
 	selected, allFailed := e.selectMembers(members)
 
-	// 매칭된 풀의 모든 멤버가 unhealthy이고 fallback 풀이 있으면 fallback 시도
-	if allFailed && fallback != nil && fallback.ID != matched.ID {
+	// 매칭된 풀에 활성 멤버가 없거나(빈 풀/모두 disabled), 모든 멤버가 unhealthy이면 fallback 시도
+	emptyPool := len(selected) == 0 && !allFailed
+	if (allFailed || emptyPool) && fallback != nil && fallback.ID != matched.ID {
 		fallbackMembers, err := e.poolStorage.GetMembersByPool(fallback.ID)
 		if err == nil && len(fallbackMembers) > 0 {
 			fallbackSelected, fallbackAllFailed := e.selectMembers(fallbackMembers)
-			if len(fallbackSelected) > 0 && !fallbackAllFailed {
-				// fallback 풀에 healthy 멤버가 있으면 사용
-				selected = fallbackSelected
-				allFailed = fallbackAllFailed
+			if len(fallbackSelected) > 0 {
+				if !fallbackAllFailed {
+					// fallback 풀에 healthy 멤버가 있으면 사용
+					selected = fallbackSelected
+					allFailed = false
+				} else if emptyPool {
+					// 원래 풀이 비어있으면 fallback 풀의 전체 멤버라도 사용
+					selected = fallbackSelected
+					allFailed = true
+				}
+				// 원래 풀에 멤버가 있고 fallback도 모두 unhealthy면 원래 풀 유지
 			}
-			// fallback 풀도 모두 unhealthy면 원래 풀의 멤버 유지
 		}
 	}
 

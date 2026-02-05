@@ -710,6 +710,261 @@ func TestDeleteRecord_VersionIncrement(t *testing.T) {
 	assert.Equal(t, version+1, newVersion, "Record 삭제 시 버전이 증가해야 함")
 }
 
+// TestDomainExistsInZone은 특정 Zone에 도메인이 존재하는지 확인하는 테스트입니다
+func TestDomainExistsInZone(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewRecordStorage(db)
+
+	// Zone 생성
+	zoneID := insertTestZone(t, db, "example.com.")
+
+	// enabled=1인 Record 삽입
+	_, err := db.Writer.Exec(`INSERT INTO records (zone_id, name, type, content, enabled)
+	                          VALUES (?, ?, ?, ?, ?)`, zoneID, "www.example.com.", "A", "192.0.2.1", 1)
+	require.NoError(t, err)
+
+	// enabled=0인 Record 삽입
+	_, err = db.Writer.Exec(`INSERT INTO records (zone_id, name, type, content, enabled)
+	                          VALUES (?, ?, ?, ?, ?)`, zoneID, "disabled.example.com.", "A", "192.0.2.2", 0)
+	require.NoError(t, err)
+
+	// enabled된 도메인 존재 확인
+	exists, err := storage.DomainExistsInZone(zoneID, "www.example.com.")
+	require.NoError(t, err)
+	assert.True(t, exists)
+
+	// disabled된 도메인은 존재하지 않음
+	exists, err = storage.DomainExistsInZone(zoneID, "disabled.example.com.")
+	require.NoError(t, err)
+	assert.False(t, exists)
+
+	// 존재하지 않는 도메인
+	exists, err = storage.DomainExistsInZone(zoneID, "notfound.example.com.")
+	require.NoError(t, err)
+	assert.False(t, exists)
+
+	// 존재하지 않는 Zone
+	exists, err = storage.DomainExistsInZone(9999, "www.example.com.")
+	require.NoError(t, err)
+	assert.False(t, exists)
+}
+
+// TestGetRecordsByNameAndZone은 zone_id, 이름, 타입으로 Record를 조회하는 테스트입니다
+func TestGetRecordsByNameAndZone(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewRecordStorage(db)
+
+	// Zone 생성
+	zoneID := insertTestZone(t, db, "example.com.")
+
+	// enabled=1인 Record 삽입
+	_, err := db.Writer.Exec(`INSERT INTO records (zone_id, name, type, content, priority, enabled)
+	                          VALUES (?, ?, ?, ?, ?, ?)`, zoneID, "www.example.com.", "A", "192.0.2.1", 10, 1)
+	require.NoError(t, err)
+
+	_, err = db.Writer.Exec(`INSERT INTO records (zone_id, name, type, content, priority, enabled)
+	                          VALUES (?, ?, ?, ?, ?, ?)`, zoneID, "www.example.com.", "A", "192.0.2.2", 20, 1)
+	require.NoError(t, err)
+
+	// 같은 이름이지만 다른 타입
+	_, err = db.Writer.Exec(`INSERT INTO records (zone_id, name, type, content, enabled)
+	                          VALUES (?, ?, ?, ?, ?)`, zoneID, "www.example.com.", "AAAA", "2001:db8::1", 1)
+	require.NoError(t, err)
+
+	// disabled Record
+	_, err = db.Writer.Exec(`INSERT INTO records (zone_id, name, type, content, enabled)
+	                          VALUES (?, ?, ?, ?, ?)`, zoneID, "www.example.com.", "A", "192.0.2.3", 0)
+	require.NoError(t, err)
+
+	// name과 type으로 조회 (enabled만)
+	records, err := storage.GetRecordsByNameAndZone(zoneID, "www.example.com.", "A")
+	require.NoError(t, err)
+	require.Len(t, records, 2)
+
+	// AAAA 타입 조회
+	records, err = storage.GetRecordsByNameAndZone(zoneID, "www.example.com.", "AAAA")
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	assert.Equal(t, "2001:db8::1", records[0].Content)
+
+	// 존재하지 않는 이름
+	records, err = storage.GetRecordsByNameAndZone(zoneID, "notfound.example.com.", "A")
+	require.NoError(t, err)
+	assert.Empty(t, records)
+
+	// 존재하지 않는 타입
+	records, err = storage.GetRecordsByNameAndZone(zoneID, "www.example.com.", "MX")
+	require.NoError(t, err)
+	assert.Empty(t, records)
+}
+
+// TestListAllRecords는 모든 Record를 조회하는 테스트입니다
+func TestListAllRecords(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewRecordStorage(db)
+
+	// 빈 목록
+	records, err := storage.ListAllRecords()
+	require.NoError(t, err)
+	assert.Empty(t, records)
+
+	// 여러 Zone에 Record 삽입
+	zoneID1 := insertTestZone(t, db, "example1.com.")
+	zoneID2 := insertTestZone(t, db, "example2.com.")
+
+	insertTestRecord(t, db, zoneID1, "www.example1.com.", "A", "192.0.2.1")
+	insertTestRecord(t, db, zoneID1, "mail.example1.com.", "A", "192.0.2.2")
+	insertTestRecord(t, db, zoneID2, "www.example2.com.", "A", "192.0.2.3")
+
+	// 모든 Record 조회
+	records, err = storage.ListAllRecords()
+	require.NoError(t, err)
+	require.Len(t, records, 3)
+
+	// zone_id, name, type 순 정렬 확인
+	assert.Equal(t, zoneID1, records[0].ZoneID)
+	assert.Equal(t, zoneID1, records[1].ZoneID)
+	assert.Equal(t, zoneID2, records[2].ZoneID)
+}
+
+// TestRecordStorage_ClearCache는 Record 캐시 클리어 테스트입니다
+func TestRecordStorage_ClearCache(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewRecordStorage(db)
+
+	// Zone과 Record 생성
+	zoneID := insertTestZone(t, db, "example.com.")
+	insertTestRecord(t, db, zoneID, "www.example.com.", "A", "192.0.2.1")
+
+	// 캐시 업데이트
+	records, err := storage.GetRecordsByZone(zoneID)
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+
+	// 캐시 히트 확인
+	_, ok := storage.cache.Get(zoneID)
+	assert.True(t, ok)
+
+	// ClearCache 호출
+	storage.ClearCache()
+
+	// 캐시 미스 확인
+	_, ok = storage.cache.Get(zoneID)
+	assert.False(t, ok)
+}
+
+// TestRecordStorage_ClearCache_NilCache는 nil 캐시에서도 안전한지 테스트합니다
+func TestRecordStorage_ClearCache_NilCache(t *testing.T) {
+	db := setupTestDB(t)
+	storage := &RecordStorage{
+		db:    db,
+		cache: nil,
+	}
+
+	// Should not panic
+	storage.ClearCache()
+}
+
+// === Error path tests (using closed DB) ===
+
+func TestGetRecord_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewRecordStorage(db)
+	db.Reader.Close()
+
+	_, err := storage.GetRecord(1)
+	assert.Error(t, err)
+}
+
+func TestGetRecordsByZone_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewRecordStorage(db)
+	db.Reader.Close()
+
+	_, err := storage.GetRecordsByZone(1)
+	assert.Error(t, err)
+}
+
+func TestListAllRecords_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewRecordStorage(db)
+	db.Reader.Close()
+
+	_, err := storage.ListAllRecords()
+	assert.Error(t, err)
+}
+
+func TestGetRecordsByName_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewRecordStorage(db)
+	db.Reader.Close()
+
+	_, err := storage.GetRecordsByName("www.example.com.", "A")
+	assert.Error(t, err)
+}
+
+func TestGetRecordsByNameAndZone_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewRecordStorage(db)
+	db.Reader.Close()
+
+	_, err := storage.GetRecordsByNameAndZone(1, "www.example.com.", "A")
+	assert.Error(t, err)
+}
+
+func TestDomainExistsInZone_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewRecordStorage(db)
+	db.Reader.Close()
+
+	_, err := storage.DomainExistsInZone(1, "www.example.com.")
+	assert.Error(t, err)
+}
+
+func TestCreateRecord_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewRecordStorage(db)
+	db.Writer.Close()
+
+	record := &model.Record{ZoneID: 1, Name: "test.com.", Type: "A", Content: "1.2.3.4", Enabled: true}
+	_, err := storage.CreateRecord(record)
+	assert.Error(t, err)
+}
+
+func TestUpdateRecord_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewRecordStorage(db)
+	db.Writer.Close()
+
+	record := &model.Record{ID: 1, ZoneID: 1, Name: "test.com.", Type: "A", Content: "1.2.3.4", Enabled: true}
+	err := storage.UpdateRecord(record)
+	assert.Error(t, err)
+}
+
+func TestDeleteRecord_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewRecordStorage(db)
+
+	// Create Zone and Record first
+	zoneID := insertTestZone(t, db, "example.com.")
+	recordID := insertTestRecord(t, db, zoneID, "www.example.com.", "A", "192.0.2.1")
+
+	// Close writer to trigger error during delete
+	db.Writer.Close()
+
+	err := storage.DeleteRecord(recordID)
+	assert.Error(t, err)
+}
+
+func TestDeleteRecord_ReadError(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewRecordStorage(db)
+	db.Reader.Close()
+
+	err := storage.DeleteRecord(1)
+	assert.Error(t, err)
+}
+
 // TestCreateRecord_TransactionRollback는 트랜잭션 롤백 테스트입니다
 func TestCreateRecord_TransactionRollback(t *testing.T) {
 	db := setupTestDB(t)

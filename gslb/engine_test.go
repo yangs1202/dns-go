@@ -317,6 +317,513 @@ func TestResolveInvalidMemberIP(t *testing.T) {
 	}
 }
 
+func TestMatchPoolGeoCountryNilGeoIP(t *testing.T) {
+	// When geoip is nil, geo_country should return false
+	engine := &Engine{geoip: nil}
+	pool := &model.GSLBPool{
+		MatchType:  "geo_country",
+		MatchValue: "KR",
+	}
+	result := engine.matchPool(pool, net.ParseIP("8.8.8.8"))
+	if result {
+		t.Fatalf("geo_country should return false when geoip is nil")
+	}
+}
+
+func TestMatchPoolGeoContinentNilGeoIP(t *testing.T) {
+	// When geoip is nil, geo_continent should return false
+	engine := &Engine{geoip: nil}
+	pool := &model.GSLBPool{
+		MatchType:  "geo_continent",
+		MatchValue: "AS",
+	}
+	result := engine.matchPool(pool, net.ParseIP("8.8.8.8"))
+	if result {
+		t.Fatalf("geo_continent should return false when geoip is nil")
+	}
+}
+
+func TestMatchPoolGeoCountryNilClientIP(t *testing.T) {
+	// When clientIP is nil, geo_country should return false
+	engine := &Engine{geoip: &GeoIPResolver{reader: nil}}
+	pool := &model.GSLBPool{
+		MatchType:  "geo_country",
+		MatchValue: "KR",
+	}
+	result := engine.matchPool(pool, nil)
+	if result {
+		t.Fatalf("geo_country should return false when clientIP is nil")
+	}
+}
+
+func TestMatchPoolGeoContinentNilClientIP(t *testing.T) {
+	// When clientIP is nil, geo_continent should return false
+	engine := &Engine{geoip: &GeoIPResolver{reader: nil}}
+	pool := &model.GSLBPool{
+		MatchType:  "geo_continent",
+		MatchValue: "AS",
+	}
+	result := engine.matchPool(pool, nil)
+	if result {
+		t.Fatalf("geo_continent should return false when clientIP is nil")
+	}
+}
+
+func TestMatchPoolGeoCountryResolverError(t *testing.T) {
+	// GeoIP resolver with nil reader returns error on Country()
+	// This exercises the error branch in geo_country
+	engine := &Engine{geoip: &GeoIPResolver{reader: nil}}
+	pool := &model.GSLBPool{
+		MatchType:  "geo_country",
+		MatchValue: "KR",
+	}
+	result := engine.matchPool(pool, net.ParseIP("8.8.8.8"))
+	if result {
+		t.Fatalf("geo_country should return false when geoip.Country returns error")
+	}
+}
+
+func TestMatchPoolGeoContinentResolverError(t *testing.T) {
+	// GeoIP resolver with nil reader returns error on Country()
+	// This exercises the error branch in geo_continent
+	engine := &Engine{geoip: &GeoIPResolver{reader: nil}}
+	pool := &model.GSLBPool{
+		MatchType:  "geo_continent",
+		MatchValue: "AS",
+	}
+	result := engine.matchPool(pool, net.ParseIP("8.8.8.8"))
+	if result {
+		t.Fatalf("geo_continent should return false when geoip.Country returns error")
+	}
+}
+
+func TestMatchPoolNilPool(t *testing.T) {
+	engine := &Engine{}
+	result := engine.matchPool(nil, net.ParseIP("8.8.8.8"))
+	if result {
+		t.Fatalf("matchPool should return false for nil pool")
+	}
+}
+
+func TestMatchPoolCIDRNilClientIP(t *testing.T) {
+	engine := &Engine{}
+	pool := &model.GSLBPool{
+		MatchType:  "cidr",
+		MatchValue: "10.0.0.0/8",
+	}
+	result := engine.matchPool(pool, nil)
+	if result {
+		t.Fatalf("cidr should return false for nil clientIP")
+	}
+}
+
+func TestResolveGeoCountryFallbackIntegration(t *testing.T) {
+	// Integration test: geo_country pool with nil geoip should fall through to fallback
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	policyStorage := NewPolicyStorage(db)
+	poolStorage := NewPoolStorage(db)
+
+	policyID, err := policyStorage.CreatePolicy(&model.GSLBPolicy{
+		Name:       "geo-test",
+		Domain:     "geo.example.com.",
+		RecordType: "A",
+		TTL:        30,
+		Enabled:    true,
+	})
+	if err != nil {
+		t.Fatalf("create policy error: %v", err)
+	}
+
+	// geo_country pool (won't match because geoip is nil)
+	geoPoolID, err := poolStorage.CreatePool(&model.GSLBPool{
+		PolicyID:     policyID,
+		Name:         "korea-pool",
+		MatchType:    "geo_country",
+		MatchValue:   "KR",
+		Priority:     0,
+		FallbackPool: false,
+	})
+	if err != nil {
+		t.Fatalf("create geo pool error: %v", err)
+	}
+
+	_, err = poolStorage.CreateMember(&model.GSLBMember{
+		PoolID:  geoPoolID,
+		Address: "10.0.0.1",
+		Weight:  100,
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("create geo member error: %v", err)
+	}
+
+	// Fallback pool
+	fallbackPoolID, err := poolStorage.CreatePool(&model.GSLBPool{
+		PolicyID:     policyID,
+		Name:         "fallback",
+		MatchType:    "default",
+		MatchValue:   "*",
+		Priority:     100,
+		FallbackPool: true,
+	})
+	if err != nil {
+		t.Fatalf("create fallback pool error: %v", err)
+	}
+
+	_, err = poolStorage.CreateMember(&model.GSLBMember{
+		PoolID:  fallbackPoolID,
+		Address: "192.0.2.100",
+		Weight:  100,
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("create fallback member error: %v", err)
+	}
+
+	// nil geoip -> geo_country can't match -> fallback
+	engine := NewEngine(policyStorage, poolStorage, nil, nil)
+	ips, _, err := engine.Resolve("geo.example.com.", "A", net.ParseIP("203.0.113.1"))
+	if err != nil {
+		t.Fatalf("resolve error: %v", err)
+	}
+	if len(ips) != 1 || ips[0].String() != "192.0.2.100" {
+		t.Fatalf("expected fallback ip 192.0.2.100, got %v", ips)
+	}
+}
+
+func TestResolveGeoContinentFallbackIntegration(t *testing.T) {
+	// Integration test: geo_continent pool with nil geoip should fall through to fallback
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	policyStorage := NewPolicyStorage(db)
+	poolStorage := NewPoolStorage(db)
+
+	policyID, err := policyStorage.CreatePolicy(&model.GSLBPolicy{
+		Name:       "geocont-test",
+		Domain:     "geocont.example.com.",
+		RecordType: "A",
+		TTL:        30,
+		Enabled:    true,
+	})
+	if err != nil {
+		t.Fatalf("create policy error: %v", err)
+	}
+
+	// geo_continent pool
+	geoPoolID, err := poolStorage.CreatePool(&model.GSLBPool{
+		PolicyID:     policyID,
+		Name:         "asia-pool",
+		MatchType:    "geo_continent",
+		MatchValue:   "AS",
+		Priority:     0,
+		FallbackPool: false,
+	})
+	if err != nil {
+		t.Fatalf("create geo pool error: %v", err)
+	}
+
+	_, err = poolStorage.CreateMember(&model.GSLBMember{
+		PoolID:  geoPoolID,
+		Address: "10.0.0.2",
+		Weight:  100,
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("create geo member error: %v", err)
+	}
+
+	// Fallback pool
+	fallbackPoolID, err := poolStorage.CreatePool(&model.GSLBPool{
+		PolicyID:     policyID,
+		Name:         "fallback",
+		MatchType:    "default",
+		MatchValue:   "*",
+		Priority:     100,
+		FallbackPool: true,
+	})
+	if err != nil {
+		t.Fatalf("create fallback pool error: %v", err)
+	}
+
+	_, err = poolStorage.CreateMember(&model.GSLBMember{
+		PoolID:  fallbackPoolID,
+		Address: "192.0.2.200",
+		Weight:  100,
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("create fallback member error: %v", err)
+	}
+
+	// nil geoip -> geo_continent can't match -> fallback
+	engine := NewEngine(policyStorage, poolStorage, nil, nil)
+	ips, _, err := engine.Resolve("geocont.example.com.", "A", net.ParseIP("203.0.113.1"))
+	if err != nil {
+		t.Fatalf("resolve error: %v", err)
+	}
+	if len(ips) != 1 || ips[0].String() != "192.0.2.200" {
+		t.Fatalf("expected fallback ip 192.0.2.200, got %v", ips)
+	}
+}
+
+func TestResolveNoMatchNoFallback(t *testing.T) {
+	// When no pool matches and there's no fallback, should return nil
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	policyStorage := NewPolicyStorage(db)
+	poolStorage := NewPoolStorage(db)
+
+	policyID, err := policyStorage.CreatePolicy(&model.GSLBPolicy{
+		Name:       "nomatch",
+		Domain:     "nomatch.example.com.",
+		RecordType: "A",
+		TTL:        30,
+		Enabled:    true,
+	})
+	if err != nil {
+		t.Fatalf("create policy error: %v", err)
+	}
+
+	// CIDR pool that won't match the client IP, and NOT marked as fallback
+	poolID, err := poolStorage.CreatePool(&model.GSLBPool{
+		PolicyID:     policyID,
+		Name:         "specific-cidr",
+		MatchType:    "cidr",
+		MatchValue:   "172.16.0.0/12",
+		Priority:     0,
+		FallbackPool: false,
+	})
+	if err != nil {
+		t.Fatalf("create pool error: %v", err)
+	}
+
+	_, err = poolStorage.CreateMember(&model.GSLBMember{
+		PoolID:  poolID,
+		Address: "172.16.0.1",
+		Weight:  100,
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("create member error: %v", err)
+	}
+
+	engine := NewEngine(policyStorage, poolStorage, nil, nil)
+	// Client IP 8.8.8.8 doesn't match 172.16.0.0/12, and there's no fallback
+	ips, _, err := engine.Resolve("nomatch.example.com.", "A", net.ParseIP("8.8.8.8"))
+	if err != nil {
+		t.Fatalf("resolve error: %v", err)
+	}
+	if len(ips) != 0 {
+		t.Fatalf("expected no ips when no match and no fallback, got %v", ips)
+	}
+}
+
+func TestResolveWeightedSelectEdgeCases(t *testing.T) {
+	// Test the weightedSelect function's edge cases
+	engine := &Engine{healthStatus: &sync.Map{}}
+
+	// Test with empty members
+	result := engine.weightedSelect(nil)
+	if result != nil {
+		t.Fatalf("expected nil for empty members, got %v", result)
+	}
+
+	result = engine.weightedSelect([]*model.GSLBMember{})
+	if result != nil {
+		t.Fatalf("expected nil for empty slice, got %v", result)
+	}
+
+	// Test with all zero-weight members
+	members := []*model.GSLBMember{
+		{ID: 1, Address: "10.0.0.1", Weight: 0, Enabled: true},
+		{ID: 2, Address: "10.0.0.2", Weight: 0, Enabled: true},
+	}
+	result = engine.weightedSelect(members)
+	if result == nil {
+		t.Fatalf("expected non-nil for zero-weight members (should return first)")
+	}
+	if result.Address != "10.0.0.1" {
+		t.Fatalf("expected first member for zero-weight, got %s", result.Address)
+	}
+
+	// Test with negative weight members (treated as 0)
+	members2 := []*model.GSLBMember{
+		{ID: 1, Address: "10.0.0.1", Weight: -10, Enabled: true},
+		{ID: 2, Address: "10.0.0.2", Weight: -5, Enabled: true},
+	}
+	result = engine.weightedSelect(members2)
+	if result == nil {
+		t.Fatalf("expected non-nil for negative-weight members")
+	}
+
+	// Test with mixed positive and zero/negative weights
+	// This covers lines 224-225 (skip negative weights in the selection loop)
+	members3 := []*model.GSLBMember{
+		{ID: 1, Address: "10.0.0.1", Weight: -10, Enabled: true},
+		{ID: 2, Address: "10.0.0.2", Weight: 0, Enabled: true},
+		{ID: 3, Address: "10.0.0.3", Weight: 100, Enabled: true},
+	}
+	result = engine.weightedSelect(members3)
+	if result == nil {
+		t.Fatalf("expected non-nil for mixed-weight members")
+	}
+	// The only member with positive weight is 10.0.0.3
+	if result.Address != "10.0.0.3" {
+		t.Fatalf("expected member with positive weight, got %s", result.Address)
+	}
+}
+
+func TestMatchPoolGeoCountryWithResolverIntegration(t *testing.T) {
+	// Test with non-nil GeoIPResolver that has nil reader
+	// This exercises the geo_country code path where geoip is non-nil but returns error
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	policyStorage := NewPolicyStorage(db)
+	poolStorage := NewPoolStorage(db)
+
+	policyID, err := policyStorage.CreatePolicy(&model.GSLBPolicy{
+		Name:       "geo-err",
+		Domain:     "geoerr.example.com.",
+		RecordType: "A",
+		TTL:        30,
+		Enabled:    true,
+	})
+	if err != nil {
+		t.Fatalf("create policy error: %v", err)
+	}
+
+	geoPoolID, err := poolStorage.CreatePool(&model.GSLBPool{
+		PolicyID:     policyID,
+		Name:         "geo-pool",
+		MatchType:    "geo_country",
+		MatchValue:   "US",
+		Priority:     0,
+		FallbackPool: false,
+	})
+	if err != nil {
+		t.Fatalf("create pool error: %v", err)
+	}
+	_, err = poolStorage.CreateMember(&model.GSLBMember{
+		PoolID:  geoPoolID,
+		Address: "10.0.0.1",
+		Weight:  100,
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("create member error: %v", err)
+	}
+
+	fallbackPoolID, err := poolStorage.CreatePool(&model.GSLBPool{
+		PolicyID:     policyID,
+		Name:         "fb",
+		MatchType:    "default",
+		MatchValue:   "*",
+		Priority:     100,
+		FallbackPool: true,
+	})
+	if err != nil {
+		t.Fatalf("create fallback pool error: %v", err)
+	}
+	_, err = poolStorage.CreateMember(&model.GSLBMember{
+		PoolID:  fallbackPoolID,
+		Address: "192.0.2.1",
+		Weight:  100,
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("create fallback member error: %v", err)
+	}
+
+	// Use GeoIPResolver with nil reader - Country() will return error
+	geoip := &GeoIPResolver{reader: nil}
+	engine := NewEngine(policyStorage, poolStorage, geoip, nil)
+
+	ips, _, err := engine.Resolve("geoerr.example.com.", "A", net.ParseIP("8.8.8.8"))
+	if err != nil {
+		t.Fatalf("resolve error: %v", err)
+	}
+	if len(ips) != 1 || ips[0].String() != "192.0.2.1" {
+		t.Fatalf("expected fallback ip due to geo error, got %v", ips)
+	}
+}
+
+func TestMatchPoolGeoContinentWithResolverIntegration(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	policyStorage := NewPolicyStorage(db)
+	poolStorage := NewPoolStorage(db)
+
+	policyID, err := policyStorage.CreatePolicy(&model.GSLBPolicy{
+		Name:       "geocont-err",
+		Domain:     "geoconterr.example.com.",
+		RecordType: "A",
+		TTL:        30,
+		Enabled:    true,
+	})
+	if err != nil {
+		t.Fatalf("create policy error: %v", err)
+	}
+
+	geoPoolID, err := poolStorage.CreatePool(&model.GSLBPool{
+		PolicyID:     policyID,
+		Name:         "geo-pool",
+		MatchType:    "geo_continent",
+		MatchValue:   "EU",
+		Priority:     0,
+		FallbackPool: false,
+	})
+	if err != nil {
+		t.Fatalf("create pool error: %v", err)
+	}
+	_, err = poolStorage.CreateMember(&model.GSLBMember{
+		PoolID:  geoPoolID,
+		Address: "10.0.0.2",
+		Weight:  100,
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("create member error: %v", err)
+	}
+
+	fallbackPoolID, err := poolStorage.CreatePool(&model.GSLBPool{
+		PolicyID:     policyID,
+		Name:         "fb",
+		MatchType:    "default",
+		MatchValue:   "*",
+		Priority:     100,
+		FallbackPool: true,
+	})
+	if err != nil {
+		t.Fatalf("create fallback pool error: %v", err)
+	}
+	_, err = poolStorage.CreateMember(&model.GSLBMember{
+		PoolID:  fallbackPoolID,
+		Address: "192.0.2.2",
+		Weight:  100,
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("create fallback member error: %v", err)
+	}
+
+	geoip := &GeoIPResolver{reader: nil}
+	engine := NewEngine(policyStorage, poolStorage, geoip, nil)
+
+	ips, _, err := engine.Resolve("geoconterr.example.com.", "A", net.ParseIP("8.8.8.8"))
+	if err != nil {
+		t.Fatalf("resolve error: %v", err)
+	}
+	if len(ips) != 1 || ips[0].String() != "192.0.2.2" {
+		t.Fatalf("expected fallback ip due to geo error, got %v", ips)
+	}
+}
+
 func TestResolveZeroWeightMembers(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()

@@ -465,6 +465,64 @@ func TestNewUpstreamCache(t *testing.T) {
 	assert.Empty(t, cache.servers)
 }
 
+// === Error path tests (using closed DB) ===
+
+func TestGetUpstreamServer_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewUpstreamStorage(db)
+	db.Reader.Close()
+
+	_, err := storage.GetUpstreamServer(1)
+	assert.Error(t, err)
+}
+
+func TestListUpstreamServers_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewUpstreamStorage(db)
+	db.Reader.Close()
+
+	_, err := storage.ListUpstreamServers()
+	assert.Error(t, err)
+}
+
+func TestListEnabledUpstreamServers_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewUpstreamStorage(db)
+	db.Reader.Close()
+
+	_, err := storage.ListEnabledUpstreamServers()
+	assert.Error(t, err)
+}
+
+func TestCreateUpstreamServer_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewUpstreamStorage(db)
+	db.Writer.Close()
+
+	server := &model.UpstreamServer{Name: "Test", Address: "1.2.3.4:53", Protocol: "udp", Enabled: true}
+	_, err := storage.CreateUpstreamServer(server)
+	assert.Error(t, err)
+}
+
+func TestUpdateUpstreamServer_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewUpstreamStorage(db)
+	db.Writer.Close()
+
+	server := &model.UpstreamServer{ID: 1, Name: "Test", Address: "1.2.3.4:53", Protocol: "udp", Enabled: true}
+	err := storage.UpdateUpstreamServer(server)
+	assert.Error(t, err)
+}
+
+func TestDeleteUpstreamServer_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewUpstreamStorage(db)
+	db.Writer.Close()
+
+	err := storage.DeleteUpstreamServer(1)
+	assert.Error(t, err)
+}
+
 // 헬퍼 함수: 테스트 UpstreamServer 삽입 (활성화)
 func insertTestUpstreamServer(t *testing.T, db *Database, name, address, protocol string, priority int64) int64 {
 	return insertTestUpstreamServerWithEnabled(t, db, name, address, protocol, priority, true)

@@ -118,7 +118,7 @@ func TestServer_StopWithTimeout(t *testing.T) {
 
 	// Start server
 	go func() {
-		server.Start()
+		_ = server.Start()
 	}()
 
 	time.Sleep(100 * time.Millisecond)
@@ -146,7 +146,7 @@ func TestServer_Integration(t *testing.T) {
 
 	// Start server
 	go func() {
-		server.Start()
+		_ = server.Start()
 	}()
 
 	time.Sleep(100 * time.Millisecond)

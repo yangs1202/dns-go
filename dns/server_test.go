@@ -39,7 +39,7 @@ func (h *MockHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		}
 	}
 
-	w.WriteMsg(m)
+	_ = w.WriteMsg(m)
 }
 
 func TestNewServer(t *testing.T) {
@@ -96,7 +96,7 @@ func TestServerUDP(t *testing.T) {
 
 	err := server.Start()
 	require.NoError(t, err)
-	defer server.Stop()
+	defer func() { _ = server.Stop() }()
 
 	time.Sleep(200 * time.Millisecond)
 
@@ -122,7 +122,7 @@ func TestServerTCP(t *testing.T) {
 
 	err := server.Start()
 	require.NoError(t, err)
-	defer server.Stop()
+	defer func() { _ = server.Stop() }()
 
 	time.Sleep(200 * time.Millisecond)
 
@@ -156,7 +156,7 @@ func TestServerBothProtocols(t *testing.T) {
 
 	err := server.Start()
 	require.NoError(t, err)
-	defer server.Stop()
+	defer func() { _ = server.Stop() }()
 
 	time.Sleep(200 * time.Millisecond)
 
@@ -195,7 +195,7 @@ func TestQueryFunction(t *testing.T) {
 
 	err := server.Start()
 	require.NoError(t, err)
-	defer server.Stop()
+	defer func() { _ = server.Stop() }()
 
 	time.Sleep(200 * time.Millisecond)
 
@@ -347,7 +347,7 @@ func TestMultipleQueries(t *testing.T) {
 
 	err := server.Start()
 	require.NoError(t, err)
-	defer server.Stop()
+	defer func() { _ = server.Stop() }()
 
 	time.Sleep(200 * time.Millisecond)
 
@@ -372,7 +372,7 @@ func TestDifferentQueryTypes(t *testing.T) {
 
 	err := server.Start()
 	require.NoError(t, err)
-	defer server.Stop()
+	defer func() { _ = server.Stop() }()
 
 	time.Sleep(200 * time.Millisecond)
 
@@ -402,14 +402,14 @@ func TestServerRecursionDesired(t *testing.T) {
 		rdFlag = r.RecursionDesired
 		m := new(dns.Msg)
 		m.SetReply(r)
-		w.WriteMsg(m)
+		_ = w.WriteMsg(m)
 	})
 
 	server := NewServer(cfg, customHandler)
 
 	err := server.Start()
 	require.NoError(t, err)
-	defer server.Stop()
+	defer func() { _ = server.Stop() }()
 
 	time.Sleep(200 * time.Millisecond)
 

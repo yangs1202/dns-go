@@ -265,6 +265,474 @@ func TestSyncVersion_GetAllUpstreams(t *testing.T) {
 	assert.Equal(t, "Google DNS", upstreams[0]["name"])
 }
 
+func TestSyncVersion_GetAllGSLBPolicies_Empty(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	sv := NewSyncVersion(db)
+
+	policies, err := sv.GetAllGSLBPolicies()
+	require.NoError(t, err)
+	assert.Empty(t, policies)
+}
+
+func TestSyncVersion_GetAllGSLBPolicies_WithData(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	sv := NewSyncVersion(db)
+
+	// Insert GSLB policy
+	_, err := db.Writer.Exec(`INSERT INTO gslb_policies (name, domain, record_type, ttl, enabled)
+		VALUES (?, ?, ?, ?, ?)`, "policy1", "app.example.com.", "A", 60, 1)
+	require.NoError(t, err)
+
+	_, err = db.Writer.Exec(`INSERT INTO gslb_policies (name, domain, record_type, ttl, enabled)
+		VALUES (?, ?, ?, ?, ?)`, "policy2", "api.example.com.", "AAAA", 120, 0)
+	require.NoError(t, err)
+
+	policies, err := sv.GetAllGSLBPolicies()
+	require.NoError(t, err)
+	require.Len(t, policies, 2)
+
+	assert.Equal(t, "policy1", policies[0]["name"])
+	assert.Equal(t, "app.example.com.", policies[0]["domain"])
+	assert.Equal(t, "A", policies[0]["record_type"])
+	assert.Equal(t, 60, policies[0]["ttl"])
+	assert.Equal(t, 1, policies[0]["enabled"])
+
+	assert.Equal(t, "policy2", policies[1]["name"])
+	assert.Equal(t, "api.example.com.", policies[1]["domain"])
+}
+
+func TestSyncVersion_GetAllGSLBPools_Empty(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	sv := NewSyncVersion(db)
+
+	pools, err := sv.GetAllGSLBPools()
+	require.NoError(t, err)
+	assert.Empty(t, pools)
+}
+
+func TestSyncVersion_GetAllGSLBPools_WithData(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	sv := NewSyncVersion(db)
+
+	// Insert policy first (foreign key)
+	result, err := db.Writer.Exec(`INSERT INTO gslb_policies (name, domain, record_type, ttl, enabled)
+		VALUES (?, ?, ?, ?, ?)`, "policy1", "app.example.com.", "A", 60, 1)
+	require.NoError(t, err)
+	policyID, err := result.LastInsertId()
+	require.NoError(t, err)
+
+	// Insert pools
+	_, err = db.Writer.Exec(`INSERT INTO gslb_pools (policy_id, name, match_type, match_value, priority, fallback_pool)
+		VALUES (?, ?, ?, ?, ?, ?)`, policyID, "pool-us", "geo", "US", 10, 0)
+	require.NoError(t, err)
+
+	_, err = db.Writer.Exec(`INSERT INTO gslb_pools (policy_id, name, match_type, match_value, priority, fallback_pool)
+		VALUES (?, ?, ?, ?, ?, ?)`, policyID, "pool-eu", "geo", "EU", 20, 1)
+	require.NoError(t, err)
+
+	pools, err := sv.GetAllGSLBPools()
+	require.NoError(t, err)
+	require.Len(t, pools, 2)
+
+	assert.Equal(t, "pool-us", pools[0]["name"])
+	assert.Equal(t, "geo", pools[0]["match_type"])
+	assert.Equal(t, "US", pools[0]["match_value"])
+	assert.Equal(t, 10, pools[0]["priority"])
+	assert.Equal(t, 0, pools[0]["fallback_pool"])
+
+	assert.Equal(t, "pool-eu", pools[1]["name"])
+	assert.Equal(t, 1, pools[1]["fallback_pool"])
+}
+
+func TestSyncVersion_GetAllGSLBMembers_Empty(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	sv := NewSyncVersion(db)
+
+	members, err := sv.GetAllGSLBMembers()
+	require.NoError(t, err)
+	assert.Empty(t, members)
+}
+
+func TestSyncVersion_GetAllGSLBMembers_WithData(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	sv := NewSyncVersion(db)
+
+	// Insert policy and pool first (foreign keys)
+	policyResult, err := db.Writer.Exec(`INSERT INTO gslb_policies (name, domain, record_type, ttl, enabled)
+		VALUES (?, ?, ?, ?, ?)`, "policy1", "app.example.com.", "A", 60, 1)
+	require.NoError(t, err)
+	policyID, err := policyResult.LastInsertId()
+	require.NoError(t, err)
+
+	poolResult, err := db.Writer.Exec(`INSERT INTO gslb_pools (policy_id, name, match_type, match_value, priority, fallback_pool)
+		VALUES (?, ?, ?, ?, ?, ?)`, policyID, "pool-us", "geo", "US", 10, 0)
+	require.NoError(t, err)
+	poolID, err := poolResult.LastInsertId()
+	require.NoError(t, err)
+
+	// Insert members
+	_, err = db.Writer.Exec(`INSERT INTO gslb_members (pool_id, address, weight, enabled)
+		VALUES (?, ?, ?, ?)`, poolID, "10.0.1.1", 100, 1)
+	require.NoError(t, err)
+
+	_, err = db.Writer.Exec(`INSERT INTO gslb_members (pool_id, address, weight, enabled)
+		VALUES (?, ?, ?, ?)`, poolID, "10.0.1.2", 50, 0)
+	require.NoError(t, err)
+
+	members, err := sv.GetAllGSLBMembers()
+	require.NoError(t, err)
+	require.Len(t, members, 2)
+
+	assert.Equal(t, "10.0.1.1", members[0]["address"])
+	assert.Equal(t, 100, members[0]["weight"])
+	assert.Equal(t, 1, members[0]["enabled"])
+
+	assert.Equal(t, "10.0.1.2", members[1]["address"])
+	assert.Equal(t, 50, members[1]["weight"])
+	assert.Equal(t, 0, members[1]["enabled"])
+}
+
+func TestSyncVersion_GetAllHealthChecks_Empty(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	sv := NewSyncVersion(db)
+
+	checks, err := sv.GetAllHealthChecks()
+	require.NoError(t, err)
+	assert.Empty(t, checks)
+}
+
+func TestSyncVersion_GetAllHealthChecks_WithData(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	sv := NewSyncVersion(db)
+
+	// Insert policy (foreign key)
+	policyResult, err := db.Writer.Exec(`INSERT INTO gslb_policies (name, domain, record_type, ttl, enabled)
+		VALUES (?, ?, ?, ?, ?)`, "policy1", "app.example.com.", "A", 60, 1)
+	require.NoError(t, err)
+	policyID, err := policyResult.LastInsertId()
+	require.NoError(t, err)
+
+	// Insert health checks
+	_, err = db.Writer.Exec(`INSERT INTO health_checks (policy_id, check_type, target, interval_sec, timeout_sec, healthy_threshold, unhealthy_threshold, enabled)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, policyID, "http", "http://10.0.1.1/health", 30, 5, 3, 2, 1)
+	require.NoError(t, err)
+
+	_, err = db.Writer.Exec(`INSERT INTO health_checks (policy_id, check_type, target, interval_sec, timeout_sec, healthy_threshold, unhealthy_threshold, enabled)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, policyID, "tcp", "10.0.1.2:80", 60, 10, 2, 3, 0)
+	require.NoError(t, err)
+
+	checks, err := sv.GetAllHealthChecks()
+	require.NoError(t, err)
+	require.Len(t, checks, 2)
+
+	assert.Equal(t, "http", checks[0]["check_type"])
+	assert.Equal(t, "http://10.0.1.1/health", checks[0]["target"])
+	assert.Equal(t, 30, checks[0]["interval_sec"])
+	assert.Equal(t, 5, checks[0]["timeout_sec"])
+	assert.Equal(t, 3, checks[0]["healthy_threshold"])
+	assert.Equal(t, 2, checks[0]["unhealthy_threshold"])
+	assert.Equal(t, 1, checks[0]["enabled"])
+
+	assert.Equal(t, "tcp", checks[1]["check_type"])
+	assert.Equal(t, "10.0.1.2:80", checks[1]["target"])
+	assert.Equal(t, 0, checks[1]["enabled"])
+}
+
+func TestSyncVersion_CalculateChecksum_WithGSLBData(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	sv := NewSyncVersion(db)
+
+	// Calculate checksum with empty GSLB data
+	checksum1, err := sv.CalculateChecksum()
+	require.NoError(t, err)
+	assert.NotEmpty(t, checksum1)
+
+	// Add GSLB policy
+	_, err = db.Writer.Exec(`INSERT INTO gslb_policies (name, domain, record_type, ttl, enabled)
+		VALUES (?, ?, ?, ?, ?)`, "policy1", "app.example.com.", "A", 60, 1)
+	require.NoError(t, err)
+
+	// Checksum should change after adding GSLB data
+	checksum2, err := sv.CalculateChecksum()
+	require.NoError(t, err)
+	assert.NotEmpty(t, checksum2)
+	assert.NotEqual(t, checksum1, checksum2, "Checksum should change after adding GSLB policy")
+}
+
+// TestSyncVersion_CalculateChecksum_FullGSLBData tests checksum with all GSLB tables populated
+func TestSyncVersion_CalculateChecksum_FullGSLBData(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	sv := NewSyncVersion(db)
+	zoneStorage := NewZoneStorage(db)
+	recordStorage := NewRecordStorage(db)
+	upstreamStorage := NewUpstreamStorage(db)
+
+	// Add Zone
+	zone := &model.Zone{
+		Name: "app.example.com.", SOAMname: "ns1.app.example.com.", SOARname: "admin.app.example.com.",
+		SOASerial: 1, SOARefresh: 3600, SOARetry: 900, SOAExpire: 86400, SOAMinimum: 300, Enabled: true,
+	}
+	zoneID, err := zoneStorage.CreateZone(zone)
+	require.NoError(t, err)
+
+	// Add Record
+	record := &model.Record{
+		ZoneID: zoneID, Name: "www.app.example.com.", Type: "A", Content: "10.0.0.1",
+		TTL: 300, Priority: 0, Enabled: true,
+	}
+	_, err = recordStorage.CreateRecord(record)
+	require.NoError(t, err)
+
+	// Add Upstream
+	upstream := &model.UpstreamServer{Name: "DNS1", Address: "8.8.8.8:53", Protocol: "udp", Priority: 10, Enabled: true}
+	_, err = upstreamStorage.CreateUpstreamServer(upstream)
+	require.NoError(t, err)
+
+	// Add GSLB policy
+	policyResult, err := db.Writer.Exec(`INSERT INTO gslb_policies (name, domain, record_type, ttl, enabled)
+		VALUES (?, ?, ?, ?, ?)`, "policy1", "app.example.com.", "A", 60, 1)
+	require.NoError(t, err)
+	policyID, err := policyResult.LastInsertId()
+	require.NoError(t, err)
+
+	// Add GSLB pool
+	poolResult, err := db.Writer.Exec(`INSERT INTO gslb_pools (policy_id, name, match_type, match_value, priority, fallback_pool)
+		VALUES (?, ?, ?, ?, ?, ?)`, policyID, "pool-us", "geo", "US", 10, 0)
+	require.NoError(t, err)
+	poolID, err := poolResult.LastInsertId()
+	require.NoError(t, err)
+
+	// Add GSLB member
+	_, err = db.Writer.Exec(`INSERT INTO gslb_members (pool_id, address, weight, enabled)
+		VALUES (?, ?, ?, ?)`, poolID, "10.0.1.1", 100, 1)
+	require.NoError(t, err)
+
+	// Add health check
+	_, err = db.Writer.Exec(`INSERT INTO health_checks (policy_id, check_type, target, interval_sec, timeout_sec, healthy_threshold, unhealthy_threshold, enabled)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, policyID, "http", "http://10.0.1.1/health", 30, 5, 3, 2, 1)
+	require.NoError(t, err)
+
+	// Calculate checksum with all data populated
+	checksum, err := sv.CalculateChecksum()
+	require.NoError(t, err)
+	assert.NotEmpty(t, checksum)
+	assert.Len(t, checksum, 64) // SHA256 hex string is 64 chars
+
+	// Same data should produce same checksum
+	checksum2, err := sv.CalculateChecksum()
+	require.NoError(t, err)
+	assert.Equal(t, checksum, checksum2)
+
+	// UpdateChecksum should work with full data
+	err = sv.UpdateChecksum()
+	require.NoError(t, err)
+
+	stored, err := sv.GetChecksum()
+	require.NoError(t, err)
+	assert.Equal(t, checksum, stored)
+}
+
+// === Error path tests - targeted CalculateChecksum sub-errors ===
+
+func TestSyncVersion_CalculateChecksum_GSLBPoliciesError(t *testing.T) {
+	db := setupTestDB(t)
+	sv := NewSyncVersion(db)
+
+	// Drop gslb_policies table to cause error at that specific point
+	_, err := db.Writer.Exec("DROP TABLE health_checks")
+	require.NoError(t, err)
+	_, err = db.Writer.Exec("DROP TABLE gslb_members")
+	require.NoError(t, err)
+	_, err = db.Writer.Exec("DROP TABLE gslb_pools")
+	require.NoError(t, err)
+	_, err = db.Writer.Exec("DROP TABLE gslb_policies")
+	require.NoError(t, err)
+
+	_, err = sv.CalculateChecksum()
+	assert.Error(t, err)
+}
+
+func TestSyncVersion_CalculateChecksum_GSLBPoolsError(t *testing.T) {
+	db := setupTestDB(t)
+	sv := NewSyncVersion(db)
+
+	// Drop gslb_pools to trigger error after policies succeed
+	_, err := db.Writer.Exec("DROP TABLE health_checks")
+	require.NoError(t, err)
+	_, err = db.Writer.Exec("DROP TABLE gslb_members")
+	require.NoError(t, err)
+	_, err = db.Writer.Exec("DROP TABLE gslb_pools")
+	require.NoError(t, err)
+
+	_, err = sv.CalculateChecksum()
+	assert.Error(t, err)
+}
+
+func TestSyncVersion_CalculateChecksum_GSLBMembersError(t *testing.T) {
+	db := setupTestDB(t)
+	sv := NewSyncVersion(db)
+
+	// Drop gslb_members to trigger error after pools succeed
+	_, err := db.Writer.Exec("DROP TABLE health_checks")
+	require.NoError(t, err)
+	_, err = db.Writer.Exec("DROP TABLE gslb_members")
+	require.NoError(t, err)
+
+	_, err = sv.CalculateChecksum()
+	assert.Error(t, err)
+}
+
+func TestSyncVersion_CalculateChecksum_HealthChecksError(t *testing.T) {
+	db := setupTestDB(t)
+	sv := NewSyncVersion(db)
+
+	// Drop health_checks to trigger error after members succeed
+	_, err := db.Writer.Exec("DROP TABLE health_checks")
+	require.NoError(t, err)
+
+	_, err = sv.CalculateChecksum()
+	assert.Error(t, err)
+}
+
+// === Error path tests (using closed DB) ===
+
+func TestSyncVersion_GetVersion_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	sv := NewSyncVersion(db)
+	db.Reader.Close()
+
+	_, err := sv.GetVersion()
+	assert.Error(t, err)
+}
+
+func TestSyncVersion_GetChecksum_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	sv := NewSyncVersion(db)
+	db.Reader.Close()
+
+	_, err := sv.GetChecksum()
+	assert.Error(t, err)
+}
+
+func TestSyncVersion_GetSyncState_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	sv := NewSyncVersion(db)
+	db.Reader.Close()
+
+	_, err := sv.GetSyncState()
+	assert.Error(t, err)
+}
+
+func TestSyncVersion_IncrementVersion_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	sv := NewSyncVersion(db)
+	db.Writer.Close()
+
+	err := sv.IncrementVersion(nil)
+	assert.Error(t, err)
+}
+
+func TestSyncVersion_CalculateChecksum_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	sv := NewSyncVersion(db)
+	db.Reader.Close()
+
+	_, err := sv.CalculateChecksum()
+	assert.Error(t, err)
+}
+
+func TestSyncVersion_UpdateChecksum_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	sv := NewSyncVersion(db)
+	db.Reader.Close()
+
+	err := sv.UpdateChecksum()
+	assert.Error(t, err)
+}
+
+func TestSyncVersion_GetAllZones_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	sv := NewSyncVersion(db)
+	db.Reader.Close()
+
+	_, err := sv.GetAllZones()
+	assert.Error(t, err)
+}
+
+func TestSyncVersion_GetAllRecords_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	sv := NewSyncVersion(db)
+	db.Reader.Close()
+
+	_, err := sv.GetAllRecords()
+	assert.Error(t, err)
+}
+
+func TestSyncVersion_GetAllUpstreams_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	sv := NewSyncVersion(db)
+	db.Reader.Close()
+
+	_, err := sv.GetAllUpstreams()
+	assert.Error(t, err)
+}
+
+func TestSyncVersion_GetAllGSLBPolicies_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	sv := NewSyncVersion(db)
+	db.Reader.Close()
+
+	_, err := sv.GetAllGSLBPolicies()
+	assert.Error(t, err)
+}
+
+func TestSyncVersion_GetAllGSLBPools_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	sv := NewSyncVersion(db)
+	db.Reader.Close()
+
+	_, err := sv.GetAllGSLBPools()
+	assert.Error(t, err)
+}
+
+func TestSyncVersion_GetAllGSLBMembers_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	sv := NewSyncVersion(db)
+	db.Reader.Close()
+
+	_, err := sv.GetAllGSLBMembers()
+	assert.Error(t, err)
+}
+
+func TestSyncVersion_GetAllHealthChecks_DBError(t *testing.T) {
+	db := setupTestDB(t)
+	sv := NewSyncVersion(db)
+	db.Reader.Close()
+
+	_, err := sv.GetAllHealthChecks()
+	assert.Error(t, err)
+}
+
 func TestSyncVersion_IncrementVersionWithTransaction(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()

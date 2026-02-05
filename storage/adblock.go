@@ -229,7 +229,7 @@ func (s *AdblockStorage) AddBlockedDomainsBatch(sourceID int64, domains []string
 	if err != nil {
 		return fmt.Errorf("트랜잭션 시작 실패: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	stmt, err := tx.Prepare(`INSERT OR IGNORE INTO adblock_domains (domain, source_id) VALUES (?, ?)`)
 	if err != nil {
