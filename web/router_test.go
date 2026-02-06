@@ -18,7 +18,7 @@ func TestNewRouter(t *testing.T) {
 	syncVersion := storage.NewSyncVersion(db)
 	syncAPI := NewSyncAPI(syncVersion)
 
-	router := NewRouter(api, syncAPI)
+	router := NewRouter(api, syncAPI, nil)
 
 	assert.NotNil(t, router)
 }
@@ -28,7 +28,7 @@ func TestNewRouter_WithoutSyncAPI(t *testing.T) {
 	api, _ := setupTestAPI(t)
 
 	// syncAPI can be nil
-	router := NewRouter(api, nil)
+	router := NewRouter(api, nil, nil)
 
 	assert.NotNil(t, router)
 }
@@ -36,7 +36,7 @@ func TestNewRouter_WithoutSyncAPI(t *testing.T) {
 func TestRouter_ZoneEndpoints(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, db := setupTestAPI(t)
-	router := NewRouter(api, nil)
+	router := NewRouter(api, nil, nil)
 
 	tests := []struct {
 		name   string
@@ -78,7 +78,7 @@ func TestRouter_ZoneEndpoints(t *testing.T) {
 func TestRouter_RecordEndpoints(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, _ := setupTestAPI(t)
-	router := NewRouter(api, nil)
+	router := NewRouter(api, nil, nil)
 
 	tests := []struct {
 		name   string
@@ -139,7 +139,7 @@ func TestRouter_SyncEndpoints(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			router := NewRouter(api, tt.syncAPI)
+			router := NewRouter(api, tt.syncAPI, nil)
 
 			req := httptest.NewRequest("GET", tt.path, nil)
 			w := httptest.NewRecorder()
@@ -158,7 +158,7 @@ func TestRouter_SyncEndpoints(t *testing.T) {
 func TestRouter_MiddlewareChain(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, _ := setupTestAPI(t)
-	router := NewRouter(api, nil)
+	router := NewRouter(api, nil, nil)
 
 	req := httptest.NewRequest("GET", "/api/zones", nil)
 	req.Header.Set("Origin", "http://example.com")
@@ -173,7 +173,7 @@ func TestRouter_MiddlewareChain(t *testing.T) {
 func TestRouter_NotFoundRoute(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, _ := setupTestAPI(t)
-	router := NewRouter(api, nil)
+	router := NewRouter(api, nil, nil)
 
 	req := httptest.NewRequest("GET", "/api/nonexistent", nil)
 	w := httptest.NewRecorder()

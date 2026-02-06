@@ -158,7 +158,10 @@ func main() {
 		log.Println("Read-Only 모드 활성화 (Write API 차단)")
 	}
 
-	webServer := web.NewServer(cfg.Web.Listen, cfg.Web.Port, api, syncAPI)
+	// 서버 정보 API 초기화
+	serverInfoAPI := web.NewServerInfoAPI(cfg, db)
+
+	webServer := web.NewServer(cfg.Web.Listen, cfg.Web.Port, api, syncAPI, serverInfoAPI)
 
 	go func() {
 		if err := webServer.Start(); err != nil {

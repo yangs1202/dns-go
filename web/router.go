@@ -7,7 +7,7 @@ import (
 	_ "dns-go/metrics" // init()으로 메트릭 등록
 )
 
-func NewRouter(api *API, syncAPI *SyncAPI) *gin.Engine {
+func NewRouter(api *API, syncAPI *SyncAPI, serverInfoAPI *ServerInfoAPI) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(requestLogger())
@@ -24,6 +24,11 @@ func NewRouter(api *API, syncAPI *SyncAPI) *gin.Engine {
 
 	apiGroup := router.Group("/api")
 	{
+		// 서버 정보
+		if serverInfoAPI != nil {
+			apiGroup.GET("/server/info", serverInfoAPI.GetServerInfo)
+		}
+
 		apiGroup.GET("/zones", api.listZones)
 		apiGroup.GET("/zones/:id", api.getZone)
 		apiGroup.POST("/zones", api.createZone)

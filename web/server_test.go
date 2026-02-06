@@ -21,7 +21,7 @@ func TestNewServer(t *testing.T) {
 	syncVersion := storage.NewSyncVersion(db)
 	syncAPI := NewSyncAPI(syncVersion)
 
-	server := NewServer("127.0.0.1", 8080, api, syncAPI)
+	server := NewServer("127.0.0.1", 8080, api, syncAPI, nil)
 
 	assert.NotNil(t, server)
 	assert.Equal(t, "127.0.0.1:8080", server.addr)
@@ -33,7 +33,7 @@ func TestNewServer_WithoutSyncAPI(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, _ := setupTestAPI(t)
 
-	server := NewServer("0.0.0.0", 9090, api, nil)
+	server := NewServer("0.0.0.0", 9090, api, nil, nil)
 
 	assert.NotNil(t, server)
 	assert.Equal(t, "0.0.0.0:9090", server.addr)
@@ -67,7 +67,7 @@ func TestServer_Addr(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("%s:%d", tt.listen, tt.port), func(t *testing.T) {
-			server := NewServer(tt.listen, tt.port, api, nil)
+			server := NewServer(tt.listen, tt.port, api, nil, nil)
 			assert.Equal(t, tt.wantAddr, server.Addr())
 		})
 	}
@@ -78,7 +78,7 @@ func TestServer_StartAndStop(t *testing.T) {
 	api, _ := setupTestAPI(t)
 
 	// Use a random available port
-	server := NewServer("127.0.0.1", 0, api, nil)
+	server := NewServer("127.0.0.1", 0, api, nil, nil)
 
 	// Start server in background
 	errCh := make(chan error, 1)
@@ -114,7 +114,7 @@ func TestServer_StopWithTimeout(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, _ := setupTestAPI(t)
 
-	server := NewServer("127.0.0.1", 0, api, nil)
+	server := NewServer("127.0.0.1", 0, api, nil, nil)
 
 	// Start server
 	go func() {
@@ -142,7 +142,7 @@ func TestServer_Integration(t *testing.T) {
 	api, db := setupTestAPI(t)
 	storage.InsertTestZone(t, db, "example.com.")
 
-	server := NewServer("127.0.0.1", 0, api, nil)
+	server := NewServer("127.0.0.1", 0, api, nil, nil)
 
 	// Start server
 	go func() {
@@ -175,7 +175,7 @@ func TestServer_HTTPServer_Configuration(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, _ := setupTestAPI(t)
 
-	server := NewServer("127.0.0.1", 8080, api, nil)
+	server := NewServer("127.0.0.1", 8080, api, nil, nil)
 
 	assert.NotNil(t, server.http)
 	assert.Equal(t, "127.0.0.1:8080", server.http.Addr)
@@ -187,7 +187,7 @@ func TestServer_Stop_WithoutStart(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, _ := setupTestAPI(t)
 
-	server := NewServer("127.0.0.1", 8080, api, nil)
+	server := NewServer("127.0.0.1", 8080, api, nil, nil)
 
 	// Stopping a server that wasn't started should work gracefully
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
