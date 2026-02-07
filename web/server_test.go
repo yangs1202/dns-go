@@ -162,11 +162,11 @@ func TestServer_Integration(t *testing.T) {
 	resp, err := client.Get(fmt.Sprintf("http://%s/api/zones", actualAddr))
 
 	// Stop server first
-	defer server.Stop()
+	defer func() { _ = server.Stop() }()
 
 	// Only check if we got a response (might fail if port is 0 and not yet assigned)
 	if err == nil {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 	}
 }

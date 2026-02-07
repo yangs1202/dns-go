@@ -118,7 +118,7 @@ func (s *PolicyStorage) ListPolicies() ([]*model.GSLBPolicy, error) {
 	if err != nil {
 		return nil, fmt.Errorf("정책 목록 조회 실패: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var policies []*model.GSLBPolicy
 	for rows.Next() {

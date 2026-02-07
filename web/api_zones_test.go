@@ -129,8 +129,8 @@ func TestToZoneResponse(t *testing.T) {
 	resp := toZoneResponse(zone)
 
 	assert.Equal(t, zone.ID, resp.ID)
-	assert.Equal(t, "example.com", resp.Name) // Dot removed
-	assert.Equal(t, "ns1.example.com", resp.SOAMname) // Dot removed
+	assert.Equal(t, "example.com", resp.Name)           // Dot removed
+	assert.Equal(t, "ns1.example.com", resp.SOAMname)   // Dot removed
 	assert.Equal(t, "admin.example.com", resp.SOARname) // Dot removed
 	assert.Equal(t, zone.SOASerial, resp.SOASerial)
 	assert.Equal(t, zone.Enabled, resp.Enabled)
@@ -493,8 +493,8 @@ func TestDeleteZone(t *testing.T) {
 			wantError:  true,
 		},
 		{
-			name:   "Read-only mode",
-			zoneID: "1",
+			name:     "Read-only mode",
+			zoneID:   "1",
 			readOnly: true,
 			setup: func(api *API, db *storage.Database) int64 {
 				return storage.InsertTestZone(t, db, "example.com.")
@@ -545,7 +545,7 @@ func TestDeleteZone(t *testing.T) {
 func TestListZones_DBError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, db := setupTestAPI(t)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -559,7 +559,7 @@ func TestListZones_DBError(t *testing.T) {
 func TestCreateZone_DBError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, db := setupTestAPI(t)
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	body, _ := json.Marshal(zoneRequest{Name: "example.com"})
 	w := httptest.NewRecorder()
@@ -576,7 +576,7 @@ func TestDeleteZone_DBError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, db := setupTestAPI(t)
 	zoneID := storage.InsertTestZone(t, db, "example.com.")
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -592,7 +592,7 @@ func TestUpdateZone_DBError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, db := setupTestAPI(t)
 	zoneID := storage.InsertTestZone(t, db, "example.com.")
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	body, _ := json.Marshal(zoneRequest{Name: "updated.com", SOAMname: "ns1.updated.com"})
 	w := httptest.NewRecorder()

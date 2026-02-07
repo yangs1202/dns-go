@@ -16,7 +16,7 @@ func SetupTestDB(t *testing.T) *Database {
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
-		db.Close()
+		_ = db.Close()
 	})
 
 	return db

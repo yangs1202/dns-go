@@ -470,7 +470,7 @@ func TestNewUpstreamCache(t *testing.T) {
 func TestGetUpstreamServer_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewUpstreamStorage(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := storage.GetUpstreamServer(1)
 	assert.Error(t, err)
@@ -479,7 +479,7 @@ func TestGetUpstreamServer_DBError(t *testing.T) {
 func TestListUpstreamServers_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewUpstreamStorage(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := storage.ListUpstreamServers()
 	assert.Error(t, err)
@@ -488,7 +488,7 @@ func TestListUpstreamServers_DBError(t *testing.T) {
 func TestListEnabledUpstreamServers_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewUpstreamStorage(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := storage.ListEnabledUpstreamServers()
 	assert.Error(t, err)
@@ -497,7 +497,7 @@ func TestListEnabledUpstreamServers_DBError(t *testing.T) {
 func TestCreateUpstreamServer_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewUpstreamStorage(db)
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	server := &model.UpstreamServer{Name: "Test", Address: "1.2.3.4:53", Protocol: "udp", Enabled: true}
 	_, err := storage.CreateUpstreamServer(server)
@@ -507,7 +507,7 @@ func TestCreateUpstreamServer_DBError(t *testing.T) {
 func TestUpdateUpstreamServer_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewUpstreamStorage(db)
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	server := &model.UpstreamServer{ID: 1, Name: "Test", Address: "1.2.3.4:53", Protocol: "udp", Enabled: true}
 	err := storage.UpdateUpstreamServer(server)
@@ -517,7 +517,7 @@ func TestUpdateUpstreamServer_DBError(t *testing.T) {
 func TestDeleteUpstreamServer_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewUpstreamStorage(db)
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	err := storage.DeleteUpstreamServer(1)
 	assert.Error(t, err)

@@ -241,7 +241,7 @@ func TestUpdateRecord(t *testing.T) {
 
 	err = storage.UpdateRecord(nonExistent)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "Record를 찾을 수 없습니다")
+	assert.Contains(t, err.Error(), "record를 찾을 수 없습니다")
 }
 
 // TestDeleteRecord는 Record 삭제 테스트입니다 (캐시 무효화)
@@ -274,7 +274,7 @@ func TestDeleteRecord(t *testing.T) {
 	// 존재하지 않는 Record 삭제
 	err = storage.DeleteRecord(9999)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "Record를 찾을 수 없습니다")
+	assert.Contains(t, err.Error(), "record를 찾을 수 없습니다")
 }
 
 // TestRecordCache_TTL은 캐시 TTL 만료 테스트입니다
@@ -870,7 +870,7 @@ func TestRecordStorage_ClearCache_NilCache(t *testing.T) {
 func TestGetRecord_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewRecordStorage(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := storage.GetRecord(1)
 	assert.Error(t, err)
@@ -879,7 +879,7 @@ func TestGetRecord_DBError(t *testing.T) {
 func TestGetRecordsByZone_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewRecordStorage(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := storage.GetRecordsByZone(1)
 	assert.Error(t, err)
@@ -888,7 +888,7 @@ func TestGetRecordsByZone_DBError(t *testing.T) {
 func TestListAllRecords_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewRecordStorage(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := storage.ListAllRecords()
 	assert.Error(t, err)
@@ -897,7 +897,7 @@ func TestListAllRecords_DBError(t *testing.T) {
 func TestGetRecordsByName_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewRecordStorage(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := storage.GetRecordsByName("www.example.com.", "A")
 	assert.Error(t, err)
@@ -906,7 +906,7 @@ func TestGetRecordsByName_DBError(t *testing.T) {
 func TestGetRecordsByNameAndZone_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewRecordStorage(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := storage.GetRecordsByNameAndZone(1, "www.example.com.", "A")
 	assert.Error(t, err)
@@ -915,7 +915,7 @@ func TestGetRecordsByNameAndZone_DBError(t *testing.T) {
 func TestDomainExistsInZone_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewRecordStorage(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := storage.DomainExistsInZone(1, "www.example.com.")
 	assert.Error(t, err)
@@ -924,7 +924,7 @@ func TestDomainExistsInZone_DBError(t *testing.T) {
 func TestCreateRecord_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewRecordStorage(db)
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	record := &model.Record{ZoneID: 1, Name: "test.com.", Type: "A", Content: "1.2.3.4", Enabled: true}
 	_, err := storage.CreateRecord(record)
@@ -934,7 +934,7 @@ func TestCreateRecord_DBError(t *testing.T) {
 func TestUpdateRecord_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewRecordStorage(db)
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	record := &model.Record{ID: 1, ZoneID: 1, Name: "test.com.", Type: "A", Content: "1.2.3.4", Enabled: true}
 	err := storage.UpdateRecord(record)
@@ -950,7 +950,7 @@ func TestDeleteRecord_DBError(t *testing.T) {
 	recordID := insertTestRecord(t, db, zoneID, "www.example.com.", "A", "192.0.2.1")
 
 	// Close writer to trigger error during delete
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	err := storage.DeleteRecord(recordID)
 	assert.Error(t, err)
@@ -959,7 +959,7 @@ func TestDeleteRecord_DBError(t *testing.T) {
 func TestDeleteRecord_ReadError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewRecordStorage(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	err := storage.DeleteRecord(1)
 	assert.Error(t, err)

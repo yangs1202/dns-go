@@ -19,7 +19,7 @@ func InitDB() {
 	if err != nil {
 		log.Fatalf("데이터베이스 연결 실패: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	log.Println("데이터베이스 초기화 시작...")
 

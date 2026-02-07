@@ -84,10 +84,10 @@ func TestGetFull(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	tests := []struct {
-		name           string
-		setup          func(db *storage.Database)
-		wantStatus     int
-		wantZoneCount  int
+		name            string
+		setup           func(db *storage.Database)
+		wantStatus      int
+		wantZoneCount   int
 		wantRecordCount int
 	}{
 		{
@@ -163,10 +163,10 @@ func TestGetChanges(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	tests := []struct {
-		name          string
-		sinceVersion  string
-		setup         func(db *storage.Database)
-		wantStatus    int
+		name           string
+		sinceVersion   string
+		setup          func(db *storage.Database)
+		wantStatus     int
 		wantHasChanges bool
 	}{
 		{
@@ -310,24 +310,29 @@ func TestGetFull_WithAllData(t *testing.T) {
 	storage.InsertTestRecord(t, db, zoneID, "www.example.com.", "A", "192.0.2.1")
 
 	// Insert upstream
-	db.Writer.Exec("INSERT INTO upstream_servers (name, address, protocol, priority, enabled) VALUES (?, ?, ?, ?, ?)",
+	_, err := db.Writer.Exec("INSERT INTO upstream_servers (name, address, protocol, priority, enabled) VALUES (?, ?, ?, ?, ?)",
 		"Google DNS", "8.8.8.8:53", "udp", 0, true)
+	require.NoError(t, err)
 
 	// Insert GSLB policy
-	db.Writer.Exec("INSERT INTO gslb_policies (name, domain, record_type, ttl, enabled) VALUES (?, ?, ?, ?, ?)",
+	_, err = db.Writer.Exec("INSERT INTO gslb_policies (name, domain, record_type, ttl, enabled) VALUES (?, ?, ?, ?, ?)",
 		"test-policy", "gslb.example.com.", "A", 30, true)
+	require.NoError(t, err)
 
 	// Insert GSLB pool
-	db.Writer.Exec("INSERT INTO gslb_pools (policy_id, name, match_type, match_value, priority, fallback_pool) VALUES (?, ?, ?, ?, ?, ?)",
+	_, err = db.Writer.Exec("INSERT INTO gslb_pools (policy_id, name, match_type, match_value, priority, fallback_pool) VALUES (?, ?, ?, ?, ?, ?)",
 		1, "default-pool", "default", "*", 0, false)
+	require.NoError(t, err)
 
 	// Insert GSLB member
-	db.Writer.Exec("INSERT INTO gslb_members (pool_id, address, weight, enabled) VALUES (?, ?, ?, ?)",
+	_, err = db.Writer.Exec("INSERT INTO gslb_members (pool_id, address, weight, enabled) VALUES (?, ?, ?, ?)",
 		1, "1.2.3.4", 50, true)
+	require.NoError(t, err)
 
 	// Insert health check
-	db.Writer.Exec("INSERT INTO health_checks (policy_id, check_type, target, interval_sec, timeout_sec, healthy_threshold, unhealthy_threshold, enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+	_, err = db.Writer.Exec("INSERT INTO health_checks (policy_id, check_type, target, interval_sec, timeout_sec, healthy_threshold, unhealthy_threshold, enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
 		1, "http", "http://example.com/health", 10, 5, 3, 2, true)
+	require.NoError(t, err)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -338,7 +343,7 @@ func TestGetFull_WithAllData(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var response map[string]interface{}
-	err := json.Unmarshal(w.Body.Bytes(), &response)
+	err = json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 
 	data, ok := response["data"].(map[string]interface{})
@@ -366,8 +371,8 @@ func TestGetFull_WithClosedDB(t *testing.T) {
 	api, db := setupSyncAPI(t)
 
 	// Close DB to trigger error paths
-	db.Writer.Close()
-	db.Reader.Close()
+	_ = db.Writer.Close()
+	_ = db.Reader.Close()
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -382,8 +387,8 @@ func TestGetMetadata_WithClosedDB(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, db := setupSyncAPI(t)
 
-	db.Writer.Close()
-	db.Reader.Close()
+	_ = db.Writer.Close()
+	_ = db.Reader.Close()
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -398,8 +403,8 @@ func TestGetChanges_WithClosedDB(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, db := setupSyncAPI(t)
 
-	db.Writer.Close()
-	db.Reader.Close()
+	_ = db.Writer.Close()
+	_ = db.Reader.Close()
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)

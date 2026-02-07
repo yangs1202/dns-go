@@ -33,7 +33,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("데이터베이스 연결 실패: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	log.Printf("데이터베이스 연결 성공: %s", cfg.Database.Path)
 
@@ -58,7 +58,7 @@ func main() {
 			log.Printf("GeoIP DB 로드 실패 (GeoIP 비활성): %v", err)
 			geoipResolver = nil
 		} else {
-			defer geoipResolver.Close()
+			defer func() { _ = geoipResolver.Close() }()
 			log.Println("GeoIP 리졸버 초기화 완료")
 		}
 	}

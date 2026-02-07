@@ -111,7 +111,7 @@ func (s *UpstreamStorage) ListUpstreamServers() ([]*model.UpstreamServer, error)
 	if err != nil {
 		return nil, fmt.Errorf("UpstreamServer 목록 조회 실패: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var servers []*model.UpstreamServer
 	for rows.Next() {
@@ -164,7 +164,7 @@ func (s *UpstreamStorage) ListEnabledUpstreamServers() ([]*model.UpstreamServer,
 	if err != nil {
 		return nil, fmt.Errorf("활성화된 UpstreamServer 목록 조회 실패: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var servers []*model.UpstreamServer
 	for rows.Next() {

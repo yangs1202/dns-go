@@ -111,9 +111,9 @@ func (m *mockSyncStorage) IsBlocked(domain string) (bool, error) {
 }
 
 type mockSyncLoader struct {
-	rules        []string
-	lastModified string
-	downloadErr  error
+	rules         []string
+	lastModified  string
+	downloadErr   error
 	downloadCalls int32
 }
 
@@ -476,7 +476,7 @@ func TestSyncer_WithRealHTTPServer(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Last-Modified", lastModified)
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(content))
+		_, _ = w.Write([]byte(content))
 	}))
 	defer server.Close()
 
@@ -526,7 +526,7 @@ func TestSyncer_WithRealStorage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	adblockStorage := storage.NewAdblockStorage(db)
 

@@ -427,7 +427,7 @@ func TestTestUpstream(t *testing.T) {
 func TestListUpstreams_DBError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, db := setupUpstreamTestAPI(t)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -441,7 +441,7 @@ func TestListUpstreams_DBError(t *testing.T) {
 func TestCreateUpstream_DBError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, db := setupUpstreamTestAPI(t)
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	body, _ := json.Marshal(upstreamRequest{Name: "Test", Address: "8.8.8.8:53"})
 	w := httptest.NewRecorder()
@@ -458,7 +458,7 @@ func TestDeleteUpstream_DBError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, db := setupUpstreamTestAPI(t)
 	id := createTestUpstream(api, "Test", "8.8.8.8:53", "udp")
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)

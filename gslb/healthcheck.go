@@ -70,7 +70,7 @@ func (s *HealthCheckStorage) ListHealthChecks() ([]*model.HealthCheck, error) {
 	if err != nil {
 		return nil, fmt.Errorf("헬스체크 목록 조회 실패: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var checks []*model.HealthCheck
 	for rows.Next() {

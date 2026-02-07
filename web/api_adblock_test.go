@@ -300,9 +300,9 @@ func TestUpdateAdblockSource(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 		},
 		{
-			name:  "Invalid JSON",
-			body:  "invalid",
-			setup: func(api *API) int64 { return createTestAdblockSource(api, "t", "https://a.com/b.txt") },
+			name:       "Invalid JSON",
+			body:       "invalid",
+			setup:      func(api *API) int64 { return createTestAdblockSource(api, "t", "https://a.com/b.txt") },
 			wantStatus: http.StatusBadRequest,
 		},
 		{
@@ -556,7 +556,7 @@ func TestGetAdblockStats(t *testing.T) {
 func TestListAdblockSources_DBError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, db := setupAdblockTestAPI(t)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -570,7 +570,7 @@ func TestListAdblockSources_DBError(t *testing.T) {
 func TestCreateAdblockSource_DBError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, db := setupAdblockTestAPI(t)
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	body, _ := json.Marshal(adblockSourceRequest{Name: "Test", URL: "https://example.com/list.txt"})
 	w := httptest.NewRecorder()
@@ -587,7 +587,7 @@ func TestDeleteAdblockSource_DBError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, db := setupAdblockTestAPI(t)
 	sourceID := createTestAdblockSource(api, "Test", "https://example.com/list.txt")
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -602,7 +602,7 @@ func TestDeleteAdblockSource_DBError(t *testing.T) {
 func TestGetAdblockStats_DBError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, db := setupAdblockTestAPI(t)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -616,7 +616,7 @@ func TestGetAdblockStats_DBError(t *testing.T) {
 func TestGetAdblockStatus_DBError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, db := setupAdblockTestAPI(t)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)

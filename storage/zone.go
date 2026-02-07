@@ -107,7 +107,7 @@ func (s *ZoneStorage) GetZone(id int64) (*model.Zone, error) {
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("Zone 조회 실패: %w", err)
+		return nil, fmt.Errorf("zone 조회 실패: %w", err)
 	}
 
 	return &zone, nil
@@ -147,7 +147,7 @@ func (s *ZoneStorage) GetZoneByName(name string) (*model.Zone, error) {
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("Zone 조회 실패: %w", err)
+		return nil, fmt.Errorf("zone 조회 실패: %w", err)
 	}
 
 	// L2 캐시에 저장
@@ -164,9 +164,9 @@ func (s *ZoneStorage) ListZones() ([]*model.Zone, error) {
 
 	rows, err := s.db.Reader.Query(query)
 	if err != nil {
-		return nil, fmt.Errorf("Zone 목록 조회 실패: %w", err)
+		return nil, fmt.Errorf("zone 목록 조회 실패: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var zones []*model.Zone
 	for rows.Next() {
@@ -187,13 +187,13 @@ func (s *ZoneStorage) ListZones() ([]*model.Zone, error) {
 			&zone.UpdatedAt,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("Zone 스캔 실패: %w", err)
+			return nil, fmt.Errorf("zone 스캔 실패: %w", err)
 		}
 		zones = append(zones, &zone)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("Zone 행 반복 실패: %w", err)
+		return nil, fmt.Errorf("zone 행 반복 실패: %w", err)
 	}
 
 	// 캐시 업데이트
@@ -245,12 +245,12 @@ func (s *ZoneStorage) CreateZone(zone *model.Zone) (int64, error) {
 	)
 
 	if err != nil {
-		return 0, fmt.Errorf("Zone 생성 실패: %w", err)
+		return 0, fmt.Errorf("zone 생성 실패: %w", err)
 	}
 
 	id, err := result.LastInsertId()
 	if err != nil {
-		return 0, fmt.Errorf("Zone ID 조회 실패: %w", err)
+		return 0, fmt.Errorf("zone ID 조회 실패: %w", err)
 	}
 
 	// 동기화 버전 증가
@@ -304,7 +304,7 @@ func (s *ZoneStorage) UpdateZone(zone *model.Zone) error {
 	)
 
 	if err != nil {
-		return fmt.Errorf("Zone 업데이트 실패: %w", err)
+		return fmt.Errorf("zone 업데이트 실패: %w", err)
 	}
 
 	rows, err := result.RowsAffected()
@@ -313,7 +313,7 @@ func (s *ZoneStorage) UpdateZone(zone *model.Zone) error {
 	}
 
 	if rows == 0 {
-		return fmt.Errorf("Zone을 찾을 수 없습니다")
+		return fmt.Errorf("zone을 찾을 수 없습니다")
 	}
 
 	// 동기화 버전 증가
@@ -349,7 +349,7 @@ func (s *ZoneStorage) DeleteZone(id int64) error {
 
 	result, err := tx.Exec("DELETE FROM zones WHERE id = ?", id)
 	if err != nil {
-		return fmt.Errorf("Zone 삭제 실패: %w", err)
+		return fmt.Errorf("zone 삭제 실패: %w", err)
 	}
 
 	rows, err := result.RowsAffected()
@@ -358,7 +358,7 @@ func (s *ZoneStorage) DeleteZone(id int64) error {
 	}
 
 	if rows == 0 {
-		return fmt.Errorf("Zone을 찾을 수 없습니다")
+		return fmt.Errorf("zone을 찾을 수 없습니다")
 	}
 
 	// 동기화 버전 증가

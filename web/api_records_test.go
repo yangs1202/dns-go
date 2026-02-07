@@ -677,7 +677,7 @@ func TestUpdateRecord_ContentValidation(t *testing.T) {
 func TestListAllRecords_DBError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, db := setupTestAPI(t)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -691,7 +691,7 @@ func TestListAllRecords_DBError(t *testing.T) {
 func TestListRecords_DBError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, db := setupTestAPI(t)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -706,7 +706,7 @@ func TestCreateRecord_DBError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, db := setupTestAPI(t)
 	zoneID := storage.InsertTestZone(t, db, "example.com.")
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	body, _ := json.Marshal(recordRequest{Name: "www.example.com", Type: "A", Content: "1.2.3.4"})
 	w := httptest.NewRecorder()
@@ -725,7 +725,7 @@ func TestDeleteRecord_DBError(t *testing.T) {
 	api, db := setupTestAPI(t)
 	zoneID := storage.InsertTestZone(t, db, "example.com.")
 	recordID := storage.InsertTestRecord(t, db, zoneID, "www.example.com.", "A", "1.2.3.4")
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -742,7 +742,7 @@ func TestUpdateRecord_DBError(t *testing.T) {
 	api, db := setupTestAPI(t)
 	zoneID := storage.InsertTestZone(t, db, "example.com.")
 	recordID := storage.InsertTestRecord(t, db, zoneID, "www.example.com.", "A", "1.2.3.4")
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	body, _ := json.Marshal(recordRequest{Name: "www.example.com", Type: "A", Content: "5.6.7.8"})
 	w := httptest.NewRecorder()

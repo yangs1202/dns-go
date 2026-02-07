@@ -378,11 +378,12 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 				if ip == nil {
 					continue
 				}
-				if qtype == "A" {
+				switch qtype {
+				case "A":
 					if ip4 := ip.To4(); ip4 != nil {
 						answers = append(answers, &dns.A{Hdr: dns.RR_Header{Name: domain, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: ttl}, A: ip4})
 					}
-				} else if qtype == "AAAA" {
+				case "AAAA":
 					if ip.To4() == nil {
 						answers = append(answers, &dns.AAAA{Hdr: dns.RR_Header{Name: domain, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: ttl}, AAAA: ip})
 					}
@@ -689,7 +690,8 @@ func (h *Handler) resolveTargetRecords(zoneID int64, target, qtype string, clien
 				if ip == nil {
 					continue
 				}
-				if qtype == "A" {
+				switch qtype {
+				case "A":
 					if ip4 := ip.To4(); ip4 != nil {
 						records = append(records, &model.Record{
 							Name:    target,
@@ -699,7 +701,7 @@ func (h *Handler) resolveTargetRecords(zoneID int64, target, qtype string, clien
 							Enabled: true,
 						})
 					}
-				} else if qtype == "AAAA" {
+				case "AAAA":
 					if ip.To4() == nil {
 						records = append(records, &model.Record{
 							Name:    target,

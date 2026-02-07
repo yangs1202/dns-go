@@ -211,7 +211,7 @@ func (s *RecordStorage) GetRecord(id int64) (*model.Record, error) {
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("Record 조회 실패: %w", err)
+		return nil, fmt.Errorf("record 조회 실패: %w", err)
 	}
 
 	return &record, nil
@@ -230,9 +230,9 @@ func (s *RecordStorage) GetRecordsByZone(zoneID int64) ([]*model.Record, error) 
 
 	rows, err := s.db.Reader.Query(query, zoneID)
 	if err != nil {
-		return nil, fmt.Errorf("Record 목록 조회 실패: %w", err)
+		return nil, fmt.Errorf("record 목록 조회 실패: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var records []*model.Record
 	for rows.Next() {
@@ -250,13 +250,13 @@ func (s *RecordStorage) GetRecordsByZone(zoneID int64) ([]*model.Record, error) 
 			&record.UpdatedAt,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("Record 스캔 실패: %w", err)
+			return nil, fmt.Errorf("record 스캔 실패: %w", err)
 		}
 		records = append(records, &record)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("Record 행 반복 실패: %w", err)
+		return nil, fmt.Errorf("record 행 반복 실패: %w", err)
 	}
 
 	// 캐시 업데이트
@@ -272,9 +272,9 @@ func (s *RecordStorage) ListAllRecords() ([]*model.Record, error) {
 
 	rows, err := s.db.Reader.Query(query)
 	if err != nil {
-		return nil, fmt.Errorf("Record 목록 조회 실패: %w", err)
+		return nil, fmt.Errorf("record 목록 조회 실패: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var records []*model.Record
 	for rows.Next() {
@@ -292,13 +292,13 @@ func (s *RecordStorage) ListAllRecords() ([]*model.Record, error) {
 			&record.UpdatedAt,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("Record 스캔 실패: %w", err)
+			return nil, fmt.Errorf("record 스캔 실패: %w", err)
 		}
 		records = append(records, &record)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("Record 행 반복 실패: %w", err)
+		return nil, fmt.Errorf("record 행 반복 실패: %w", err)
 	}
 
 	return records, nil
@@ -365,9 +365,9 @@ func (s *RecordStorage) GetRecordsByName(name, recordType string) ([]*model.Reco
 
 	rows, err := s.db.Reader.Query(query, name, recordType)
 	if err != nil {
-		return nil, fmt.Errorf("Record 조회 실패: %w", err)
+		return nil, fmt.Errorf("record 조회 실패: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var records []*model.Record
 	for rows.Next() {
@@ -385,13 +385,13 @@ func (s *RecordStorage) GetRecordsByName(name, recordType string) ([]*model.Reco
 			&record.UpdatedAt,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("Record 스캔 실패: %w", err)
+			return nil, fmt.Errorf("record 스캔 실패: %w", err)
 		}
 		records = append(records, &record)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("Record 행 반복 실패: %w", err)
+		return nil, fmt.Errorf("record 행 반복 실패: %w", err)
 	}
 
 	return records, nil
@@ -428,12 +428,12 @@ func (s *RecordStorage) CreateRecord(record *model.Record) (int64, error) {
 	)
 
 	if err != nil {
-		return 0, fmt.Errorf("Record 생성 실패: %w", err)
+		return 0, fmt.Errorf("record 생성 실패: %w", err)
 	}
 
 	id, err := result.LastInsertId()
 	if err != nil {
-		return 0, fmt.Errorf("Record ID 조회 실패: %w", err)
+		return 0, fmt.Errorf("record ID 조회 실패: %w", err)
 	}
 
 	// 동기화 버전 증가
@@ -479,7 +479,7 @@ func (s *RecordStorage) UpdateRecord(record *model.Record) error {
 	)
 
 	if err != nil {
-		return fmt.Errorf("Record 업데이트 실패: %w", err)
+		return fmt.Errorf("record 업데이트 실패: %w", err)
 	}
 
 	rows, err := result.RowsAffected()
@@ -488,7 +488,7 @@ func (s *RecordStorage) UpdateRecord(record *model.Record) error {
 	}
 
 	if rows == 0 {
-		return fmt.Errorf("Record를 찾을 수 없습니다")
+		return fmt.Errorf("record를 찾을 수 없습니다")
 	}
 
 	// 동기화 버전 증가
@@ -516,7 +516,7 @@ func (s *RecordStorage) DeleteRecord(id int64) error {
 		return err
 	}
 	if record == nil {
-		return fmt.Errorf("Record를 찾을 수 없습니다")
+		return fmt.Errorf("record를 찾을 수 없습니다")
 	}
 
 	// 트랜잭션 시작
@@ -528,7 +528,7 @@ func (s *RecordStorage) DeleteRecord(id int64) error {
 
 	result, err := tx.Exec("DELETE FROM records WHERE id = ?", id)
 	if err != nil {
-		return fmt.Errorf("Record 삭제 실패: %w", err)
+		return fmt.Errorf("record 삭제 실패: %w", err)
 	}
 
 	rows, err := result.RowsAffected()
@@ -537,7 +537,7 @@ func (s *RecordStorage) DeleteRecord(id int64) error {
 	}
 
 	if rows == 0 {
-		return fmt.Errorf("Record를 찾을 수 없습니다")
+		return fmt.Errorf("record를 찾을 수 없습니다")
 	}
 
 	// 동기화 버전 증가

@@ -88,12 +88,12 @@ func (w *Worker) fullSync() error {
 	// Primary에서 전체 데이터 가져오기
 	resp, err := w.httpClient.Get(w.primaryURL + "/api/sync/full")
 	if err != nil {
-		return fmt.Errorf("Primary 연결 실패: %w", err)
+		return fmt.Errorf("primary 연결 실패: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Primary 응답 오류: %d", resp.StatusCode)
+		return fmt.Errorf("primary 응답 오류: %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -105,17 +105,17 @@ func (w *Worker) fullSync() error {
 		Version  int64  `json:"version"`
 		Checksum string `json:"checksum"`
 		Data     struct {
-			Zones           []map[string]interface{} `json:"zones"`
-			Records         []map[string]interface{} `json:"records"`
-			GSLBPolicies    []map[string]interface{} `json:"gslb_policies"`
-			GSLBPools       []map[string]interface{} `json:"gslb_pools"`
-			GSLBMembers     []map[string]interface{} `json:"gslb_members"`
-			HealthChecks    []map[string]interface{} `json:"health_checks"`
+			Zones        []map[string]interface{} `json:"zones"`
+			Records      []map[string]interface{} `json:"records"`
+			GSLBPolicies []map[string]interface{} `json:"gslb_policies"`
+			GSLBPools    []map[string]interface{} `json:"gslb_pools"`
+			GSLBMembers  []map[string]interface{} `json:"gslb_members"`
+			HealthChecks []map[string]interface{} `json:"health_checks"`
 		} `json:"data"`
 	}
 
 	if err := json.Unmarshal(body, &data); err != nil {
-		return fmt.Errorf("JSON 파싱 실패: %w", err)
+		return fmt.Errorf("json 파싱 실패: %w", err)
 	}
 
 	// 트랜잭션으로 전체 교체
@@ -127,37 +127,37 @@ func (w *Worker) fullSync() error {
 
 	// 기존 데이터 삭제 (역순으로 삭제 - Foreign Key 제약)
 	if _, err := tx.Exec("DELETE FROM records"); err != nil {
-		return fmt.Errorf("Records 삭제 실패: %w", err)
+		return fmt.Errorf("records 삭제 실패: %w", err)
 	}
 	if _, err := tx.Exec("DELETE FROM zones"); err != nil {
-		return fmt.Errorf("Zones 삭제 실패: %w", err)
+		return fmt.Errorf("zones 삭제 실패: %w", err)
 	}
 
 	// GSLB 관련 테이블 삭제 (역순으로 - Foreign Key 제약)
 	if _, err := tx.Exec("DELETE FROM health_checks"); err != nil {
-		return fmt.Errorf("Health Checks 삭제 실패: %w", err)
+		return fmt.Errorf("health checks 삭제 실패: %w", err)
 	}
 	if _, err := tx.Exec("DELETE FROM gslb_members"); err != nil {
-		return fmt.Errorf("GSLB Members 삭제 실패: %w", err)
+		return fmt.Errorf("gslb members 삭제 실패: %w", err)
 	}
 	if _, err := tx.Exec("DELETE FROM gslb_pools"); err != nil {
-		return fmt.Errorf("GSLB Pools 삭제 실패: %w", err)
+		return fmt.Errorf("gslb pools 삭제 실패: %w", err)
 	}
 	if _, err := tx.Exec("DELETE FROM gslb_policies"); err != nil {
-		return fmt.Errorf("GSLB Policies 삭제 실패: %w", err)
+		return fmt.Errorf("gslb policies 삭제 실패: %w", err)
 	}
 
 	// Zones 삽입
 	for _, zone := range data.Data.Zones {
 		if err := w.insertZone(tx, zone); err != nil {
-			return fmt.Errorf("Zone 삽입 실패: %w", err)
+			return fmt.Errorf("zone 삽입 실패: %w", err)
 		}
 	}
 
 	// Records 삽입
 	for _, record := range data.Data.Records {
 		if err := w.insertRecord(tx, record); err != nil {
-			return fmt.Errorf("Record 삽입 실패: %w", err)
+			return fmt.Errorf("record 삽입 실패: %w", err)
 		}
 	}
 	// Upstream은 Secondary별로 다를 수 있으므로 동기화하지 않음.
@@ -165,28 +165,28 @@ func (w *Worker) fullSync() error {
 	// GSLB Policies 삽입
 	for _, policy := range data.Data.GSLBPolicies {
 		if err := w.insertGSLBPolicy(tx, policy); err != nil {
-			return fmt.Errorf("GSLB Policy 삽입 실패: %w", err)
+			return fmt.Errorf("gslb policy 삽입 실패: %w", err)
 		}
 	}
 
 	// GSLB Pools 삽입
 	for _, pool := range data.Data.GSLBPools {
 		if err := w.insertGSLBPool(tx, pool); err != nil {
-			return fmt.Errorf("GSLB Pool 삽입 실패: %w", err)
+			return fmt.Errorf("gslb pool 삽입 실패: %w", err)
 		}
 	}
 
 	// GSLB Members 삽입
 	for _, member := range data.Data.GSLBMembers {
 		if err := w.insertGSLBMember(tx, member); err != nil {
-			return fmt.Errorf("GSLB Member 삽입 실패: %w", err)
+			return fmt.Errorf("gslb member 삽입 실패: %w", err)
 		}
 	}
 
 	// Health Checks 삽입
 	for _, check := range data.Data.HealthChecks {
 		if err := w.insertHealthCheck(tx, check); err != nil {
-			return fmt.Errorf("Health Check 삽입 실패: %w", err)
+			return fmt.Errorf("health check 삽입 실패: %w", err)
 		}
 	}
 
@@ -200,7 +200,7 @@ func (w *Worker) fullSync() error {
 		WHERE id = 1
 	`, data.Version, data.Checksum)
 	if err != nil {
-		return fmt.Errorf("Sync State 업데이트 실패: %w", err)
+		return fmt.Errorf("sync state 업데이트 실패: %w", err)
 	}
 
 	// 트랜잭션 커밋
@@ -238,12 +238,12 @@ func (w *Worker) incrementalSync() error {
 	// Primary Metadata 조회
 	resp, err := w.httpClient.Get(w.primaryURL + "/api/sync/metadata")
 	if err != nil {
-		return fmt.Errorf("Primary 연결 실패: %w", err)
+		return fmt.Errorf("primary 연결 실패: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Primary 응답 오류: %d", resp.StatusCode)
+		return fmt.Errorf("primary 응답 오류: %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -257,7 +257,7 @@ func (w *Worker) incrementalSync() error {
 	}
 
 	if err := json.Unmarshal(body, &metadata); err != nil {
-		return fmt.Errorf("JSON 파싱 실패: %w", err)
+		return fmt.Errorf("json 파싱 실패: %w", err)
 	}
 
 	// 버전이 같으면 스킵

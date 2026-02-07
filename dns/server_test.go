@@ -393,13 +393,16 @@ func TestServerRecursionDesired(t *testing.T) {
 		TCP:    false,
 	}
 
-	rdFlag := false
+	rdCh := make(chan bool, 1)
 	handler := &MockHandler{}
 	handler.response = nil
 
 	// RD 플래그 확인용 핸들러
 	customHandler := dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
-		rdFlag = r.RecursionDesired
+		select {
+		case rdCh <- r.RecursionDesired:
+		default:
+		}
 		m := new(dns.Msg)
 		m.SetReply(r)
 		_ = w.WriteMsg(m)
@@ -416,5 +419,10 @@ func TestServerRecursionDesired(t *testing.T) {
 	_, err = Query("127.0.0.1:15362", "example.com", "A")
 	require.NoError(t, err)
 
-	assert.True(t, rdFlag, "RecursionDesired 플래그가 설정되어야 합니다")
+	select {
+	case rdFlag := <-rdCh:
+		assert.True(t, rdFlag, "RecursionDesired 플래그가 설정되어야 합니다")
+	case <-time.After(1 * time.Second):
+		t.Fatal("RD 플래그를 수신하지 못했습니다")
+	}
 }
