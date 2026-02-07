@@ -275,7 +275,7 @@ func TestCacheSettingsEdgeCases(t *testing.T) {
 
 func TestGetCacheSettings_DBError(t *testing.T) {
 	db := setupTestDB(t)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := db.GetCacheSettings()
 	assert.Error(t, err)
@@ -283,7 +283,7 @@ func TestGetCacheSettings_DBError(t *testing.T) {
 
 func TestUpdateCacheSettings_DBError(t *testing.T) {
 	db := setupTestDB(t)
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	settings := &model.CacheSettings{
 		Enabled:         true,

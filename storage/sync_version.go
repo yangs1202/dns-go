@@ -179,7 +179,7 @@ func (s *SyncVersion) GetAllZones() ([]map[string]interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var zones []map[string]interface{}
 	for rows.Next() {
@@ -225,7 +225,7 @@ func (s *SyncVersion) GetAllRecords() ([]map[string]interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var records []map[string]interface{}
 	for rows.Next() {
@@ -267,7 +267,7 @@ func (s *SyncVersion) GetAllUpstreams() ([]map[string]interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var upstreams []map[string]interface{}
 	for rows.Next() {
@@ -306,7 +306,7 @@ func (s *SyncVersion) GetAllGSLBPolicies() ([]map[string]interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var policies []map[string]interface{}
 	for rows.Next() {
@@ -343,7 +343,7 @@ func (s *SyncVersion) GetAllGSLBPools() ([]map[string]interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var pools []map[string]interface{}
 	for rows.Next() {
@@ -379,7 +379,7 @@ func (s *SyncVersion) GetAllGSLBMembers() ([]map[string]interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var members []map[string]interface{}
 	for rows.Next() {
@@ -414,7 +414,7 @@ func (s *SyncVersion) GetAllHealthChecks() ([]map[string]interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var checks []map[string]interface{}
 	for rows.Next() {
@@ -428,15 +428,15 @@ func (s *SyncVersion) GetAllHealthChecks() ([]map[string]interface{}, error) {
 		}
 
 		checks = append(checks, map[string]interface{}{
-			"id":                   id,
-			"policy_id":            policyID,
-			"check_type":           checkType,
-			"target":               target,
-			"interval_sec":         intervalSec,
-			"timeout_sec":          timeoutSec,
-			"healthy_threshold":    healthyThreshold,
-			"unhealthy_threshold":  unhealthyThreshold,
-			"enabled":              enabled,
+			"id":                  id,
+			"policy_id":           policyID,
+			"check_type":          checkType,
+			"target":              target,
+			"interval_sec":        intervalSec,
+			"timeout_sec":         timeoutSec,
+			"healthy_threshold":   healthyThreshold,
+			"unhealthy_threshold": unhealthyThreshold,
+			"enabled":             enabled,
 		})
 	}
 

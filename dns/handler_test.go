@@ -16,7 +16,7 @@ import (
 func setupTestHandler(t *testing.T) (*Handler, *storage.Database, func()) {
 	// 임시 데이터베이스 생성
 	dbPath := "/tmp/test_handler_" + t.Name() + ".db"
-	os.Remove(dbPath)
+	_ = os.Remove(dbPath)
 
 	db, err := storage.NewDatabase(dbPath)
 	if err != nil {
@@ -40,8 +40,8 @@ func setupTestHandler(t *testing.T) (*Handler, *storage.Database, func()) {
 
 	// Cleanup 함수
 	cleanup := func() {
-		db.Close()
-		os.Remove(dbPath)
+		_ = db.Close()
+		_ = os.Remove(dbPath)
 	}
 
 	return handler, db, cleanup
@@ -1080,16 +1080,22 @@ func TestServeDNS_AuthoritativeFlag(t *testing.T) {
 	)
 	zid, _ := zoneID.LastInsertId()
 
-	db.Writer.Exec(
+	_, err := db.Writer.Exec(
 		"INSERT INTO records (zone_id, name, type, content, ttl) VALUES (?, ?, ?, ?, ?)",
 		zid, "www.example.com.", "A", "192.0.2.1", 300,
 	)
+	if err != nil {
+		t.Fatalf("record insert failed: %v", err)
+	}
 
 	// Upstream 서버 추가 (포워딩 테스트용)
-	db.Writer.Exec(
+	_, err = db.Writer.Exec(
 		"INSERT INTO upstream_servers (name, address, protocol, priority, enabled) VALUES (?, ?, ?, ?, ?)",
 		"Test DNS", "8.8.8.8:53", "udp", 1, 1,
 	)
+	if err != nil {
+		t.Fatalf("upstream insert failed: %v", err)
+	}
 
 	tests := []struct {
 		name        string
@@ -1132,10 +1138,13 @@ func TestServeDNS_RecursionDesired(t *testing.T) {
 	defer cleanup()
 
 	// Upstream 서버 추가
-	db.Writer.Exec(
+	_, err := db.Writer.Exec(
 		"INSERT INTO upstream_servers (name, address, protocol, priority, enabled) VALUES (?, ?, ?, ?, ?)",
 		"Test DNS", "8.8.8.8:53", "udp", 1, 1,
 	)
+	if err != nil {
+		t.Fatalf("upstream insert failed: %v", err)
+	}
 
 	tests := []struct {
 		name        string
@@ -1194,10 +1203,13 @@ func TestServeDNS_NSID(t *testing.T) {
 	)
 	zid, _ := zoneID.LastInsertId()
 
-	db.Writer.Exec(
+	_, err := db.Writer.Exec(
 		"INSERT INTO records (zone_id, name, type, content, ttl) VALUES (?, ?, ?, ?, ?)",
 		zid, "www.example.com.", "A", "192.0.2.1", 300,
 	)
+	if err != nil {
+		t.Fatalf("record insert failed: %v", err)
+	}
 
 	tests := []struct {
 		name        string
@@ -1358,10 +1370,13 @@ func TestServeDNS_EDNS0Support(t *testing.T) {
 	)
 	zid, _ := zoneID.LastInsertId()
 
-	db.Writer.Exec(
+	_, err := db.Writer.Exec(
 		"INSERT INTO records (zone_id, name, type, content, ttl) VALUES (?, ?, ?, ?, ?)",
 		zid, "www.example.com.", "A", "192.0.2.1", 300,
 	)
+	if err != nil {
+		t.Fatalf("record insert failed: %v", err)
+	}
 
 	tests := []struct {
 		name           string

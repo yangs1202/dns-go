@@ -19,7 +19,7 @@ func TestNewDatabase(t *testing.T) {
 	db, err := NewDatabase(dbPath)
 	require.NoError(t, err)
 	require.NotNil(t, db)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Writer, Reader 연결 확인
 	assert.NotNil(t, db.Writer)
@@ -39,7 +39,7 @@ func TestMigrate(t *testing.T) {
 
 	db, err := NewDatabase(dbPath)
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// 모든 테이블이 생성되었는지 확인
 	tables := []string{
@@ -71,7 +71,7 @@ func TestMigrateIndexes(t *testing.T) {
 
 	db, err := NewDatabase(dbPath)
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// 인덱스 확인
 	indexes := []string{
@@ -97,7 +97,7 @@ func TestMigrateDefaultCacheSettings(t *testing.T) {
 
 	db, err := NewDatabase(dbPath)
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// 기본 캐시 설정 확인
 	var (
@@ -132,7 +132,7 @@ func TestMigrateIdempotent(t *testing.T) {
 
 	db, err := NewDatabase(dbPath)
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// 마이그레이션 재실행 (멱등성 테스트)
 	err = db.Migrate()
@@ -175,7 +175,7 @@ func TestDatabaseWALMode(t *testing.T) {
 
 	db, err := NewDatabase(dbPath)
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// WAL 모드 확인 (Writer에서 확인 - configurePragmas에서 설정됨)
 	var journalMode string
@@ -196,11 +196,7 @@ func TestDatabaseConcurrentReads(t *testing.T) {
 
 	db, err := NewDatabase(dbPath)
 	require.NoError(t, err)
-	defer db.Close()
-
-	// 테스트 데이터 삽입
-	_, err = db.Writer.Exec("INSERT INTO cache_settings (id) VALUES (2) ON CONFLICT DO NOTHING")
-	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
 
 	// 동시 읽기 테스트
 	done := make(chan bool, 4)
@@ -230,7 +226,7 @@ func TestDatabaseFileCreation(t *testing.T) {
 	// 데이터베이스 생성
 	db, err := NewDatabase(dbPath)
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// DB 파일이 생성됨
 	_, err = os.Stat(dbPath)
@@ -248,7 +244,7 @@ func TestDatabaseSchema(t *testing.T) {
 
 	db, err := NewDatabase(dbPath)
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// zones 테이블 스키마 확인
 	var sql string
@@ -267,7 +263,7 @@ func setupTestDB(t *testing.T) *Database {
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
-		db.Close()
+		_ = db.Close()
 	})
 
 	return db
@@ -350,7 +346,7 @@ func TestConfigurePragmas(t *testing.T) {
 
 	db, err := NewDatabase(dbPath)
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Writer WAL mode
 	var writerJournal string
@@ -421,13 +417,13 @@ func TestMigrateHealthCheckMigration(t *testing.T) {
 	_, err = writer.Exec(`INSERT INTO health_checks (member_id, check_type, target) VALUES (1, 'tcp', '10.0.0.1:80')`)
 	require.NoError(t, err)
 
-	writer.Close()
-	reader.Close()
+	_ = writer.Close()
+	_ = reader.Close()
 
 	// 이제 NewDatabase를 호출하면 마이그레이션이 실행됨
 	db, err := NewDatabase(dbPath)
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// health_checks 테이블에 policy_id 컬럼이 있는지 확인
 	var cnt int
@@ -488,7 +484,7 @@ func TestNewDatabase_ValidPaths(t *testing.T) {
 	err = db.Reader.Ping()
 	assert.NoError(t, err)
 
-	db.Close()
+	_ = db.Close()
 }
 
 // TestConfigurePragmas_WriterClosedError는 writer가 닫힌 상태에서 configurePragmas를 호출하면 에러가 발생하는지 테스트합니다
@@ -507,12 +503,12 @@ func TestConfigurePragmas_WriterClosedError(t *testing.T) {
 	db := &Database{Writer: writer, Reader: reader}
 
 	// Close writer to trigger error in configurePragmas
-	writer.Close()
+	_ = writer.Close()
 
 	err = db.configurePragmas()
 	assert.Error(t, err)
 
-	reader.Close()
+	_ = reader.Close()
 }
 
 // TestConfigurePragmas_ReaderClosedError는 reader만 닫힌 상태에서 configurePragmas를 호출하면 에러가 발생하는지 테스트합니다
@@ -531,12 +527,12 @@ func TestConfigurePragmas_ReaderClosedError(t *testing.T) {
 	db := &Database{Writer: writer, Reader: reader}
 
 	// Close reader to trigger error in the third step of configurePragmas
-	reader.Close()
+	_ = reader.Close()
 
 	err = db.configurePragmas()
 	assert.Error(t, err)
 
-	writer.Close()
+	_ = writer.Close()
 }
 
 func TestForeignKeyConstraints(t *testing.T) {

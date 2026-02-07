@@ -598,7 +598,7 @@ func TestUpdateHealthCheck(t *testing.T) {
 func TestListHealthChecks_DBError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, db := setupHealthTestAPI(t)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -613,7 +613,7 @@ func TestCreateHealthCheck_DBError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, db := setupHealthTestAPI(t)
 	policyID := createTestPolicy(api, "test", "example.com.")
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	body, _ := json.Marshal(healthCheckRequest{
 		CheckType: "http", Target: "http://example.com/health",

@@ -3,6 +3,7 @@ package gslb
 import (
 	"dns-go/model"
 	"dns-go/storage"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -23,6 +24,36 @@ func setupHealthCheckTestDB(t *testing.T) (*storage.Database, func()) {
 		_ = os.Remove(path)
 	}
 	return db, cleanup
+}
+
+func startTCPTestServer(t *testing.T) (host string, port string, cleanup func()) {
+	t.Helper()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("tcp listen error: %v", err)
+	}
+
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			_ = conn.Close()
+		}
+	}()
+
+	host, port, err = net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		_ = ln.Close()
+		t.Fatalf("split host port error: %v", err)
+	}
+
+	cleanup = func() {
+		_ = ln.Close()
+	}
+	return host, port, cleanup
 }
 
 func TestHealthCheckStorage_GetHealthCheck(t *testing.T) {
@@ -145,20 +176,20 @@ func TestHealthCheckStorage_ListHealthChecks(t *testing.T) {
 	})
 
 	_, err := hcStorage.CreateHealthCheck(&model.HealthCheck{
-		PolicyID:   policyID1,
-		CheckType:  "tcp",
-		Target:     "443",
-		Enabled:    true,
+		PolicyID:  policyID1,
+		CheckType: "tcp",
+		Target:    "443",
+		Enabled:   true,
 	})
 	if err != nil {
 		t.Fatalf("create health check 1 error: %v", err)
 	}
 
 	_, err = hcStorage.CreateHealthCheck(&model.HealthCheck{
-		PolicyID:   policyID2,
-		CheckType:  "http",
-		Target:     "http://example.com/health",
-		Enabled:    true,
+		PolicyID:  policyID2,
+		CheckType: "http",
+		Target:    "http://example.com/health",
+		Enabled:   true,
 	})
 	if err != nil {
 		t.Fatalf("create health check 2 error: %v", err)
@@ -520,11 +551,13 @@ func TestHealthCheckWorker_TCPCheck(t *testing.T) {
 
 	healthStatus := &sync.Map{}
 	worker := NewHealthCheckWorker(hcStorage, poolStorage, healthStatus)
+	host, port, closeTCP := startTCPTestServer(t)
+	defer closeTCP()
 
 	check := &model.HealthCheck{
 		PolicyID:           1,
 		CheckType:          "tcp",
-		Target:             "8.8.8.8:53", // 전체 주소 지정
+		Target:             net.JoinHostPort(host, port), // host:port 지정
 		IntervalSec:        1,
 		TimeoutSec:         2,
 		HealthyThreshold:   1,
@@ -535,7 +568,7 @@ func TestHealthCheckWorker_TCPCheck(t *testing.T) {
 	member := &model.GSLBMember{
 		ID:      1,
 		PoolID:  1,
-		Address: "8.8.8.8",
+		Address: host,
 		Weight:  100,
 		Enabled: true,
 	}
@@ -559,11 +592,13 @@ func TestHealthCheckWorker_TCPCheckWithPort(t *testing.T) {
 
 	healthStatus := &sync.Map{}
 	worker := NewHealthCheckWorker(hcStorage, poolStorage, healthStatus)
+	host, port, closeTCP := startTCPTestServer(t)
+	defer closeTCP()
 
 	check := &model.HealthCheck{
 		PolicyID:           1,
 		CheckType:          "tcp",
-		Target:             "53", // 포트만 지정
+		Target:             port, // 포트만 지정
 		IntervalSec:        1,
 		TimeoutSec:         2,
 		HealthyThreshold:   1,
@@ -574,7 +609,7 @@ func TestHealthCheckWorker_TCPCheckWithPort(t *testing.T) {
 	member := &model.GSLBMember{
 		ID:      1,
 		PoolID:  1,
-		Address: "8.8.8.8",
+		Address: host,
 		Weight:  100,
 		Enabled: true,
 	}
@@ -721,10 +756,12 @@ func TestHealthCheckWorker_StartWithEnabledChecks(t *testing.T) {
 		Priority:     0,
 		FallbackPool: true,
 	})
+	host, port, closeTCP := startTCPTestServer(t)
+	defer closeTCP()
 
 	_, _ = poolStorage.CreateMember(&model.GSLBMember{
 		PoolID:  poolID,
-		Address: "8.8.8.8",
+		Address: host,
 		Weight:  100,
 		Enabled: true,
 	})
@@ -732,7 +769,7 @@ func TestHealthCheckWorker_StartWithEnabledChecks(t *testing.T) {
 	_, err := hcStorage.CreateHealthCheck(&model.HealthCheck{
 		PolicyID:           policyID,
 		CheckType:          "tcp",
-		Target:             "8.8.8.8:53",
+		Target:             net.JoinHostPort(host, port),
 		IntervalSec:        1,
 		TimeoutSec:         2,
 		HealthyThreshold:   1,
@@ -1163,25 +1200,27 @@ func TestHealthCheckWorker_ProbeDefaultType(t *testing.T) {
 	hcStorage := NewHealthCheckStorage(db)
 	healthStatus := &sync.Map{}
 	worker := NewHealthCheckWorker(hcStorage, poolStorage, healthStatus)
+	host, port, closeTCP := startTCPTestServer(t)
+	defer closeTCP()
 
 	// Test with an unknown check type (falls through to default TCP behavior)
 	check := &model.HealthCheck{
 		PolicyID:   1,
 		CheckType:  "unknown_type",
-		Target:     "53",
+		Target:     port,
 		TimeoutSec: 2,
 	}
 	member := &model.GSLBMember{
 		ID:      1,
 		PoolID:  1,
-		Address: "8.8.8.8",
+		Address: host,
 		Weight:  100,
 		Enabled: true,
 	}
 
 	err := worker.probe(check, member)
 	if err != nil {
-		t.Fatalf("expected successful probe with default type (TCP fallback to 8.8.8.8:53), got: %v", err)
+		t.Fatalf("expected successful probe with default TCP behavior, got: %v", err)
 	}
 }
 
@@ -1193,18 +1232,20 @@ func TestHealthCheckWorker_ProbeDefaultTypeWithHostPort(t *testing.T) {
 	hcStorage := NewHealthCheckStorage(db)
 	healthStatus := &sync.Map{}
 	worker := NewHealthCheckWorker(hcStorage, poolStorage, healthStatus)
+	host, port, closeTCP := startTCPTestServer(t)
+	defer closeTCP()
 
 	// Test the default type with "host:port" format target
 	check := &model.HealthCheck{
 		PolicyID:   1,
 		CheckType:  "something_else",
-		Target:     "8.8.8.8:53",
+		Target:     net.JoinHostPort(host, port),
 		TimeoutSec: 2,
 	}
 	member := &model.GSLBMember{
 		ID:      1,
 		PoolID:  1,
-		Address: "8.8.8.8",
+		Address: host,
 		Weight:  100,
 		Enabled: true,
 	}

@@ -350,8 +350,8 @@ func TestToCacheSettings(t *testing.T) {
 func TestGetCacheSettings_ClosedDB(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, db := setupCacheTestAPI(t)
-	db.Writer.Close()
-	db.Reader.Close()
+	_ = db.Writer.Close()
+	_ = db.Reader.Close()
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -365,8 +365,8 @@ func TestGetCacheSettings_ClosedDB(t *testing.T) {
 func TestUpdateCacheSettings_ClosedDB(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, db := setupCacheTestAPI(t)
-	db.Writer.Close()
-	db.Reader.Close()
+	_ = db.Writer.Close()
+	_ = db.Reader.Close()
 
 	body, _ := json.Marshal(cacheSettingsRequest{Enabled: boolPtr(true)})
 	w := httptest.NewRecorder()

@@ -18,11 +18,11 @@ import (
 func TestGetServerInfo_Primary(t *testing.T) {
 	// 테스트용 DB 생성
 	tmpDB := "/tmp/test_server_info_primary.db"
-	defer os.Remove(tmpDB)
+	defer func() { _ = os.Remove(tmpDB) }()
 
 	db, err := storage.NewDatabase(tmpDB)
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Primary 설정
 	cfg := &config.Config{
@@ -82,11 +82,11 @@ func TestGetServerInfo_Primary(t *testing.T) {
 func TestGetServerInfo_Secondary(t *testing.T) {
 	// 테스트용 DB 생성
 	tmpDB := "/tmp/test_server_info_secondary.db"
-	defer os.Remove(tmpDB)
+	defer func() { _ = os.Remove(tmpDB) }()
 
 	db, err := storage.NewDatabase(tmpDB)
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Secondary 설정
 	cfg := &config.Config{
@@ -199,11 +199,11 @@ func TestFormatDuration(t *testing.T) {
 func TestServerName_Fallback(t *testing.T) {
 	// NSID가 비어있을 때 hostname을 사용하는지 테스트
 	tmpDB := "/tmp/test_server_info_hostname.db"
-	defer os.Remove(tmpDB)
+	defer func() { _ = os.Remove(tmpDB) }()
 
 	db, err := storage.NewDatabase(tmpDB)
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	cfg := &config.Config{
 		DNS: config.DNSConfig{

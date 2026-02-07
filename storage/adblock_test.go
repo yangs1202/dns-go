@@ -588,7 +588,7 @@ func TestNormalizeDomain(t *testing.T) {
 func TestAdblockStorage_GetAdblockSource_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewAdblockStorage(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := storage.GetAdblockSource(1)
 	assert.Error(t, err)
@@ -597,7 +597,7 @@ func TestAdblockStorage_GetAdblockSource_DBError(t *testing.T) {
 func TestAdblockStorage_ListAdblockSources_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewAdblockStorage(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := storage.ListAdblockSources()
 	assert.Error(t, err)
@@ -606,7 +606,7 @@ func TestAdblockStorage_ListAdblockSources_DBError(t *testing.T) {
 func TestAdblockStorage_GetEnabledAdblockSources_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewAdblockStorage(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := storage.GetEnabledAdblockSources()
 	assert.Error(t, err)
@@ -615,7 +615,7 @@ func TestAdblockStorage_GetEnabledAdblockSources_DBError(t *testing.T) {
 func TestAdblockStorage_CreateAdblockSource_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewAdblockStorage(db)
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	src := &model.AdblockSource{Name: "Test", URL: "http://example.com", Enabled: true}
 	_, err := storage.CreateAdblockSource(src)
@@ -625,7 +625,7 @@ func TestAdblockStorage_CreateAdblockSource_DBError(t *testing.T) {
 func TestAdblockStorage_UpdateAdblockSource_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewAdblockStorage(db)
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	src := &model.AdblockSource{ID: 1, Name: "Test", URL: "http://example.com", Enabled: true}
 	err := storage.UpdateAdblockSource(src)
@@ -635,7 +635,7 @@ func TestAdblockStorage_UpdateAdblockSource_DBError(t *testing.T) {
 func TestAdblockStorage_DeleteAdblockSource_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewAdblockStorage(db)
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	err := storage.DeleteAdblockSource(1)
 	assert.Error(t, err)
@@ -644,7 +644,7 @@ func TestAdblockStorage_DeleteAdblockSource_DBError(t *testing.T) {
 func TestAdblockStorage_AddBlockedDomain_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewAdblockStorage(db)
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	err := storage.AddBlockedDomain(1, "example.com")
 	assert.Error(t, err)
@@ -653,7 +653,7 @@ func TestAdblockStorage_AddBlockedDomain_DBError(t *testing.T) {
 func TestAdblockStorage_AddBlockedDomainsBatch_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewAdblockStorage(db)
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	err := storage.AddBlockedDomainsBatch(1, []string{"a.com", "b.com"})
 	assert.Error(t, err)
@@ -662,7 +662,7 @@ func TestAdblockStorage_AddBlockedDomainsBatch_DBError(t *testing.T) {
 func TestAdblockStorage_RemoveBlockedDomains_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewAdblockStorage(db)
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	err := storage.RemoveBlockedDomains(1)
 	assert.Error(t, err)
@@ -671,7 +671,7 @@ func TestAdblockStorage_RemoveBlockedDomains_DBError(t *testing.T) {
 func TestAdblockStorage_IsBlocked_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewAdblockStorage(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := storage.IsBlocked("example.com")
 	assert.Error(t, err)
@@ -680,7 +680,7 @@ func TestAdblockStorage_IsBlocked_DBError(t *testing.T) {
 func TestAdblockStorage_GetBlockedDomainCount_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewAdblockStorage(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := storage.GetBlockedDomainCount()
 	assert.Error(t, err)
@@ -689,7 +689,7 @@ func TestAdblockStorage_GetBlockedDomainCount_DBError(t *testing.T) {
 func TestAdblockStorage_ListBlockedDomains_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewAdblockStorage(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := storage.ListBlockedDomains()
 	assert.Error(t, err)
@@ -698,7 +698,7 @@ func TestAdblockStorage_ListBlockedDomains_DBError(t *testing.T) {
 func TestAdblockStorage_RecordBlockedQuery_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewAdblockStorage(db)
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	err := storage.RecordBlockedQuery("example.com", "192.168.1.1")
 	assert.Error(t, err)
@@ -707,7 +707,7 @@ func TestAdblockStorage_RecordBlockedQuery_DBError(t *testing.T) {
 func TestAdblockStorage_GetBlockedStats_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewAdblockStorage(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := storage.GetBlockedStats(10)
 	assert.Error(t, err)

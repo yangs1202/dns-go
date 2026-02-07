@@ -18,7 +18,7 @@ import (
 // setupTestHandlerWithGSLB creates a test handler with GSLB engine configured.
 func setupTestHandlerWithGSLB(t *testing.T) (*Handler, *storage.Database, func()) {
 	dbPath := "/tmp/test_handler_gslb_" + t.Name() + ".db"
-	os.Remove(dbPath)
+	_ = os.Remove(dbPath)
 
 	db, err := storage.NewDatabase(dbPath)
 	if err != nil {
@@ -39,14 +39,14 @@ func setupTestHandlerWithGSLB(t *testing.T) (*Handler, *storage.Database, func()
 
 	handler, err := NewHandler(zoneStorage, recordStorage, resolver, db, stats, engine, nil, nil, "0.0.0.0", "test-server", "DNS-Go Test v1.0")
 	if err != nil {
-		db.Close()
-		os.Remove(dbPath)
+		_ = db.Close()
+		_ = os.Remove(dbPath)
 		t.Fatalf("Handler creation failed: %v", err)
 	}
 
 	cleanup := func() {
-		db.Close()
-		os.Remove(dbPath)
+		_ = db.Close()
+		_ = os.Remove(dbPath)
 	}
 
 	return handler, db, cleanup
@@ -72,7 +72,7 @@ func (m *mockAdblockStorage) IsBlocked(domain string) (bool, error) {
 // setupTestHandlerWithAdblock creates a test handler with adblock filter.
 func setupTestHandlerWithAdblock(t *testing.T, blockedDomains []string, response string) (*Handler, *storage.Database, func()) {
 	dbPath := "/tmp/test_handler_adblock_" + t.Name() + ".db"
-	os.Remove(dbPath)
+	_ = os.Remove(dbPath)
 
 	db, err := storage.NewDatabase(dbPath)
 	if err != nil {
@@ -95,14 +95,14 @@ func setupTestHandlerWithAdblock(t *testing.T, blockedDomains []string, response
 
 	handler, err := NewHandler(zoneStorage, recordStorage, resolver, db, stats, nil, filter, adblockStorage, response, "test-server", "DNS-Go Test v1.0")
 	if err != nil {
-		db.Close()
-		os.Remove(dbPath)
+		_ = db.Close()
+		_ = os.Remove(dbPath)
 		t.Fatalf("Handler creation failed: %v", err)
 	}
 
 	cleanup := func() {
-		db.Close()
-		os.Remove(dbPath)
+		_ = db.Close()
+		_ = os.Remove(dbPath)
 	}
 
 	return handler, db, cleanup
@@ -254,10 +254,10 @@ func TestServeDNS_CNAMEChain(t *testing.T) {
 	defer cleanup()
 
 	zone := &model.Zone{
-		Name:       "example.com.",
-		SOAMname:   "ns1.example.com.",
-		SOARname:   "admin.example.com.",
-		Enabled:    true,
+		Name:     "example.com.",
+		SOAMname: "ns1.example.com.",
+		SOARname: "admin.example.com.",
+		Enabled:  true,
 	}
 	zoneID, err := handler.zoneStorage.CreateZone(zone)
 	if err != nil {
@@ -333,10 +333,10 @@ func TestServeDNS_CNAMEWithAAAAQuery(t *testing.T) {
 	defer cleanup()
 
 	zone := &model.Zone{
-		Name:       "example.com.",
-		SOAMname:   "ns1.example.com.",
-		SOARname:   "admin.example.com.",
-		Enabled:    true,
+		Name:     "example.com.",
+		SOAMname: "ns1.example.com.",
+		SOARname: "admin.example.com.",
+		Enabled:  true,
 	}
 	zoneID, err := handler.zoneStorage.CreateZone(zone)
 	if err != nil {
@@ -377,10 +377,10 @@ func TestServeDNS_CNAMEWithoutDot(t *testing.T) {
 	defer cleanup()
 
 	zone := &model.Zone{
-		Name:       "example.com.",
-		SOAMname:   "ns1.example.com.",
-		SOARname:   "admin.example.com.",
-		Enabled:    true,
+		Name:     "example.com.",
+		SOAMname: "ns1.example.com.",
+		SOARname: "admin.example.com.",
+		Enabled:  true,
 	}
 	zoneID, err := handler.zoneStorage.CreateZone(zone)
 	if err != nil {
@@ -777,10 +777,10 @@ func TestServeDNS_ZoneRecordLookupSuccess(t *testing.T) {
 	defer cleanup()
 
 	zone := &model.Zone{
-		Name:       "testzone.com.",
-		SOAMname:   "ns1.testzone.com.",
-		SOARname:   "admin.testzone.com.",
-		Enabled:    true,
+		Name:     "testzone.com.",
+		SOAMname: "ns1.testzone.com.",
+		SOARname: "admin.testzone.com.",
+		Enabled:  true,
 	}
 	zoneID, err := handler.zoneStorage.CreateZone(zone)
 	if err != nil {
@@ -956,46 +956,46 @@ func TestRecordToRR_AllTypes(t *testing.T) {
 	defer cleanup()
 
 	tests := []struct {
-		name     string
-		record   *model.Record
+		name      string
+		record    *model.Record
 		expectNil bool
 	}{
 		{
-			name: "A record",
+			name:   "A record",
 			record: &model.Record{Name: "t.com.", Type: "A", Content: "1.2.3.4", TTL: 60},
 		},
 		{
-			name: "AAAA record",
+			name:   "AAAA record",
 			record: &model.Record{Name: "t.com.", Type: "AAAA", Content: "::1", TTL: 60},
 		},
 		{
-			name: "CNAME record",
+			name:   "CNAME record",
 			record: &model.Record{Name: "t.com.", Type: "CNAME", Content: "other.com.", TTL: 60},
 		},
 		{
-			name: "MX record",
+			name:   "MX record",
 			record: &model.Record{Name: "t.com.", Type: "MX", Content: "mail.t.com.", TTL: 60, Priority: 10},
 		},
 		{
-			name: "TXT record",
+			name:   "TXT record",
 			record: &model.Record{Name: "t.com.", Type: "TXT", Content: "v=spf1 all", TTL: 60},
 		},
 		{
-			name: "NS record",
+			name:   "NS record",
 			record: &model.Record{Name: "t.com.", Type: "NS", Content: "ns1.t.com.", TTL: 60},
 		},
 		{
-			name: "SOA record (valid)",
+			name:   "SOA record (valid)",
 			record: &model.Record{Name: "t.com.", Type: "SOA", Content: "ns1.t.com. admin.t.com. 1 3600 900 86400 300", TTL: 3600},
 		},
 		{
-			name: "PTR record (unsupported)",
-			record: &model.Record{Name: "1.2.3.4.in-addr.arpa.", Type: "PTR", Content: "host.t.com.", TTL: 60},
+			name:      "PTR record (unsupported)",
+			record:    &model.Record{Name: "1.2.3.4.in-addr.arpa.", Type: "PTR", Content: "host.t.com.", TTL: 60},
 			expectNil: true,
 		},
 		{
-			name: "CAA record (unsupported)",
-			record: &model.Record{Name: "t.com.", Type: "CAA", Content: "0 issue letsencrypt.org", TTL: 60},
+			name:      "CAA record (unsupported)",
+			record:    &model.Record{Name: "t.com.", Type: "CAA", Content: "0 issue letsencrypt.org", TTL: 60},
 			expectNil: true,
 		},
 	}
@@ -1119,10 +1119,10 @@ func TestHandlePrefetch_RecordNotFound_UpstreamFail(t *testing.T) {
 
 	// Create zone but no records
 	zone := &model.Zone{
-		Name:       "prefetch.com.",
-		SOAMname:   "ns1.prefetch.com.",
-		SOARname:   "admin.prefetch.com.",
-		Enabled:    true,
+		Name:     "prefetch.com.",
+		SOAMname: "ns1.prefetch.com.",
+		SOARname: "admin.prefetch.com.",
+		Enabled:  true,
 	}
 	_, err := handler.zoneStorage.CreateZone(zone)
 	if err != nil {
@@ -1144,10 +1144,10 @@ func TestHandlePrefetch_WithRecords(t *testing.T) {
 	defer cleanup()
 
 	zone := &model.Zone{
-		Name:       "prefetch.com.",
-		SOAMname:   "ns1.prefetch.com.",
-		SOARname:   "admin.prefetch.com.",
-		Enabled:    true,
+		Name:     "prefetch.com.",
+		SOAMname: "ns1.prefetch.com.",
+		SOARname: "admin.prefetch.com.",
+		Enabled:  true,
 	}
 	zoneID, err := handler.zoneStorage.CreateZone(zone)
 	if err != nil {
@@ -1306,10 +1306,10 @@ func TestServeDNS_CNAME_To_GSLB(t *testing.T) {
 
 	// Create zone
 	zone := &model.Zone{
-		Name:       "example.com.",
-		SOAMname:   "ns1.example.com.",
-		SOARname:   "admin.example.com.",
-		Enabled:    true,
+		Name:     "example.com.",
+		SOAMname: "ns1.example.com.",
+		SOARname: "admin.example.com.",
+		Enabled:  true,
 	}
 	zoneID, err := handler.zoneStorage.CreateZone(zone)
 	if err != nil {
@@ -1847,10 +1847,10 @@ func TestHandlePrefetch_UpstreamSuccess(t *testing.T) {
 
 	// Create zone but no records
 	zone := &model.Zone{
-		Name:       "prefetch-up.com.",
-		SOAMname:   "ns1.prefetch-up.com.",
-		SOARname:   "admin.prefetch-up.com.",
-		Enabled:    true,
+		Name:     "prefetch-up.com.",
+		SOAMname: "ns1.prefetch-up.com.",
+		SOARname: "admin.prefetch-up.com.",
+		Enabled:  true,
 	}
 	_, err := handler.zoneStorage.CreateZone(zone)
 	if err != nil {
@@ -2015,15 +2015,15 @@ func TestServeDNS_CNAME_To_GSLB_AAAA(t *testing.T) {
 
 func TestServeDNS_NilStats(t *testing.T) {
 	dbPath := "/tmp/test_handler_nilstats_" + t.Name() + ".db"
-	os.Remove(dbPath)
+	_ = os.Remove(dbPath)
 
 	db, err := storage.NewDatabase(dbPath)
 	if err != nil {
 		t.Fatalf("DB creation failed: %v", err)
 	}
 	defer func() {
-		db.Close()
-		os.Remove(dbPath)
+		_ = db.Close()
+		_ = os.Remove(dbPath)
 	}()
 
 	zoneStorage := storage.NewZoneStorage(db)
@@ -2046,4 +2046,3 @@ func TestServeDNS_NilStats(t *testing.T) {
 		t.Fatal("Response not written")
 	}
 }
-

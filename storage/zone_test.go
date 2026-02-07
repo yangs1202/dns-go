@@ -233,7 +233,7 @@ func TestUpdateZone(t *testing.T) {
 
 	err = storage.UpdateZone(nonExistent)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "Zone을 찾을 수 없습니다")
+	assert.Contains(t, err.Error(), "zone을 찾을 수 없습니다")
 }
 
 // TestDeleteZone은 Zone 삭제 테스트입니다 (캐시 무효화)
@@ -270,7 +270,7 @@ func TestDeleteZone(t *testing.T) {
 	// 존재하지 않는 Zone 삭제
 	err = storage.DeleteZone(9999)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "Zone을 찾을 수 없습니다")
+	assert.Contains(t, err.Error(), "zone을 찾을 수 없습니다")
 
 	// CASCADE 삭제 테스트 (레코드도 함께 삭제)
 	zoneID := insertTestZone(t, db, "cascade.com.")
@@ -502,7 +502,7 @@ func TestNewZoneCache(t *testing.T) {
 func TestGetZone_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewZoneStorage(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := storage.GetZone(1)
 	assert.Error(t, err)
@@ -511,7 +511,7 @@ func TestGetZone_DBError(t *testing.T) {
 func TestGetZoneByName_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewZoneStorage(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := storage.GetZoneByName("example.com.")
 	assert.Error(t, err)
@@ -520,7 +520,7 @@ func TestGetZoneByName_DBError(t *testing.T) {
 func TestListZones_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewZoneStorage(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := storage.ListZones()
 	assert.Error(t, err)
@@ -529,7 +529,7 @@ func TestListZones_DBError(t *testing.T) {
 func TestCreateZone_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewZoneStorage(db)
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	zone := &model.Zone{Name: "test.com.", Enabled: true}
 	_, err := storage.CreateZone(zone)
@@ -539,7 +539,7 @@ func TestCreateZone_DBError(t *testing.T) {
 func TestUpdateZone_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewZoneStorage(db)
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	zone := &model.Zone{ID: 1, Name: "test.com.", Enabled: true}
 	err := storage.UpdateZone(zone)
@@ -549,7 +549,7 @@ func TestUpdateZone_DBError(t *testing.T) {
 func TestDeleteZone_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewZoneStorage(db)
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	err := storage.DeleteZone(1)
 	assert.Error(t, err)

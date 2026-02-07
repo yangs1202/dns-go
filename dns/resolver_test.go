@@ -22,7 +22,7 @@ func setupTestDB(t *testing.T) (*storage.Database, *storage.UpstreamStorage) {
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
-		db.Close()
+		_ = db.Close()
 	})
 
 	upstreamStorage := storage.NewUpstreamStorage(db)
@@ -84,7 +84,7 @@ func startTestDNSServer(t *testing.T, network string, address string) *dns.Serve
 func TestForward_UDP(t *testing.T) {
 	// 테스트 DB 및 스토리지 설정
 	db, upstreamStorage := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// 테스트 DNS 서버 시작
 	testServer := startTestDNSServer(t, "udp", "127.0.0.1:15353")
@@ -114,7 +114,7 @@ func TestForward_UDP(t *testing.T) {
 func TestForward_TCP(t *testing.T) {
 	// 테스트 DB 및 스토리지 설정
 	db, upstreamStorage := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// 테스트 DNS 서버 시작 (TCP)
 	testServer := startTestDNSServer(t, "tcp", "127.0.0.1:15354")
@@ -143,7 +143,7 @@ func TestForward_TCP(t *testing.T) {
 func TestForward_Priority(t *testing.T) {
 	// 테스트 DB 및 스토리지 설정
 	db, upstreamStorage := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// 테스트 DNS 서버 시작 (우선순위 높은 서버)
 	testServer1 := startTestDNSServer(t, "udp", "127.0.0.1:15355")
@@ -177,14 +177,14 @@ func TestForward_Priority(t *testing.T) {
 func TestForward_Fallback(t *testing.T) {
 	// 테스트 DB 및 스토리지 설정
 	db, upstreamStorage := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// 테스트 DNS 서버 시작 (두 번째 서버만)
 	testServer := startTestDNSServer(t, "udp", "127.0.0.1:15358")
 	defer func() { _ = testServer.Shutdown() }()
 
 	// 업스트림 서버 생성
-	createTestServer(t, upstreamStorage, "Failing Server", "127.0.0.1:15357", "udp", 1, true)  // 존재하지 않는 서버
+	createTestServer(t, upstreamStorage, "Failing Server", "127.0.0.1:15357", "udp", 1, true) // 존재하지 않는 서버
 	createTestServer(t, upstreamStorage, "Working Server", "127.0.0.1:15358", "udp", 2, true) // 정상 서버
 
 	// Resolver 생성
@@ -207,7 +207,7 @@ func TestForward_Fallback(t *testing.T) {
 func TestForward_AllServersFail(t *testing.T) {
 	// 테스트 DB 및 스토리지 설정
 	db, upstreamStorage := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// 업스트림 서버 생성 (모두 존재하지 않는 서버)
 	createTestServer(t, upstreamStorage, "Failing Server 1", "127.0.0.1:15359", "udp", 1, true)
@@ -231,7 +231,7 @@ func TestForward_AllServersFail(t *testing.T) {
 func TestForward_Timeout(t *testing.T) {
 	// 테스트 DB 및 스토리지 설정
 	db, upstreamStorage := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// 응답하지 않는 서버 시뮬레이션 (잘못된 주소)
 	createTestServer(t, upstreamStorage, "Timeout Server", "192.0.2.1:53", "udp", 1, true)
@@ -257,7 +257,7 @@ func TestForward_Timeout(t *testing.T) {
 func TestForwardToServer_UDP(t *testing.T) {
 	// 테스트 DB 및 스토리지 설정
 	db, upstreamStorage := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// 테스트 DNS 서버 시작
 	testServer := startTestDNSServer(t, "udp", "127.0.0.1:15361")
@@ -290,7 +290,7 @@ func TestForwardToServer_UDP(t *testing.T) {
 func TestForwardToServer_TCP(t *testing.T) {
 	// 테스트 DB 및 스토리지 설정
 	db, upstreamStorage := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// 테스트 DNS 서버 시작
 	testServer := startTestDNSServer(t, "tcp", "127.0.0.1:15362")
@@ -323,7 +323,7 @@ func TestForwardToServer_TCP(t *testing.T) {
 func TestForwardToServer_UnsupportedProtocol(t *testing.T) {
 	// 테스트 DB 및 스토리지 설정
 	db, upstreamStorage := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Resolver 생성
 	resolver := NewResolver(upstreamStorage, 2*time.Second)
@@ -350,7 +350,7 @@ func TestForwardToServer_UnsupportedProtocol(t *testing.T) {
 func TestForward_DisabledServersNotUsed(t *testing.T) {
 	// 테스트 DB 및 스토리지 설정
 	db, upstreamStorage := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// 테스트 DNS 서버 시작
 	testServer := startTestDNSServer(t, "udp", "127.0.0.1:15363")
@@ -380,7 +380,7 @@ func TestForward_DisabledServersNotUsed(t *testing.T) {
 func TestForward_NoEnabledServers(t *testing.T) {
 	// 테스트 DB 및 스토리지 설정
 	db, upstreamStorage := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// 업스트림 서버 생성 (모두 비활성화)
 	createTestServer(t, upstreamStorage, "Disabled Server 1", "127.0.0.1:53", "udp", 1, false)

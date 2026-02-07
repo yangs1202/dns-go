@@ -38,7 +38,7 @@ func setupTestDBFile(t *testing.T) *storage.Database {
 
 func TestWorker_New(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	worker := NewWorker("http://primary:8080", db, 1*time.Second)
 
@@ -49,7 +49,7 @@ func TestWorker_New(t *testing.T) {
 
 func TestWorker_FullSync(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	upstreamStorage := storage.NewUpstreamStorage(db)
 	_, err := upstreamStorage.CreateUpstreamServer(&model.UpstreamServer{
@@ -109,7 +109,7 @@ func TestWorker_FullSync(t *testing.T) {
 	worker := NewWorker(server.URL, db, 1*time.Second)
 
 	// Full Sync 실행
-	err := worker.fullSync()
+	err = worker.fullSync()
 	require.NoError(t, err)
 
 	// 동기화 결과 확인 (Writer로 확인 - SQLite :memory:는 단일 연결)
@@ -139,7 +139,7 @@ func TestWorker_FullSync(t *testing.T) {
 
 func TestWorker_IncrementalSync_NoChanges(t *testing.T) {
 	db := setupTestDBFile(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// sync_state 초기화 (버전 10)
 	_, err := db.Writer.Exec(`
@@ -154,14 +154,15 @@ func TestWorker_IncrementalSync_NoChanges(t *testing.T) {
 
 	// Mock Primary 서버 (변경 없음)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/sync/metadata" {
+		switch r.URL.Path {
+		case "/api/sync/metadata":
 			metadataCalled = true
 			response := map[string]interface{}{
 				"version":  int64(10),
 				"checksum": "abc123",
 			}
 			_ = json.NewEncoder(w).Encode(response)
-		} else if r.URL.Path == "/api/sync/full" {
+		case "/api/sync/full":
 			// Full Sync 데이터도 제공 (혹시 필요할 수 있음)
 			response := map[string]interface{}{
 				"version":  int64(10),
@@ -194,7 +195,7 @@ func TestWorker_IncrementalSync_NoChanges(t *testing.T) {
 
 func TestWorker_IncrementalSync_WithChanges(t *testing.T) {
 	db := setupTestDBFile(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// sync_state 초기화 (버전 5)
 	_, err := db.Writer.Exec(`
@@ -210,7 +211,8 @@ func TestWorker_IncrementalSync_WithChanges(t *testing.T) {
 
 	// Mock Primary 서버
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/sync/metadata" {
+		switch r.URL.Path {
+		case "/api/sync/metadata":
 			metadataCalled = true
 			// 버전 불일치
 			response := map[string]interface{}{
@@ -218,7 +220,7 @@ func TestWorker_IncrementalSync_WithChanges(t *testing.T) {
 				"checksum": "new456",
 			}
 			_ = json.NewEncoder(w).Encode(response)
-		} else if r.URL.Path == "/api/sync/full" {
+		case "/api/sync/full":
 			fullSyncCallCount++
 			// Full Sync 데이터
 			response := map[string]interface{}{
@@ -253,7 +255,7 @@ func TestWorker_IncrementalSync_WithChanges(t *testing.T) {
 
 func TestWorker_IncrementalSync_InitialState(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// sync_state 초기 상태 (버전 0)
 	callCount := 0
@@ -287,7 +289,7 @@ func TestWorker_IncrementalSync_InitialState(t *testing.T) {
 
 func TestWorker_FullSync_DataReplacement(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// 기존 데이터 삽입
 	zoneStorage := storage.NewZoneStorage(db)
@@ -357,7 +359,7 @@ func TestWorker_FullSync_DataReplacement(t *testing.T) {
 
 func TestWorker_FullSync_ConnectionError(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// 존재하지 않는 서버
 	worker := NewWorker("http://localhost:99999", db, 1*time.Second)
@@ -365,12 +367,12 @@ func TestWorker_FullSync_ConnectionError(t *testing.T) {
 	// Full Sync 실행 (실패 예상)
 	err := worker.fullSync()
 	assert.Error(t, err, "연결 실패 시 에러가 발생해야 함")
-	assert.Contains(t, err.Error(), "Primary 연결 실패")
+	assert.Contains(t, err.Error(), "primary 연결 실패")
 }
 
 func TestWorker_FullSync_InvalidJSON(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Mock Primary 서버 (잘못된 JSON)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -383,12 +385,12 @@ func TestWorker_FullSync_InvalidJSON(t *testing.T) {
 	// Full Sync 실행 (실패 예상)
 	err := worker.fullSync()
 	assert.Error(t, err, "잘못된 JSON 시 에러가 발생해야 함")
-	assert.Contains(t, err.Error(), "JSON 파싱 실패")
+	assert.Contains(t, err.Error(), "json 파싱 실패")
 }
 
 func TestWorker_InsertZone(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	worker := NewWorker("http://dummy", db, 1*time.Second)
 
@@ -427,7 +429,7 @@ func TestWorker_InsertZone(t *testing.T) {
 
 func TestWorker_InsertRecord(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	worker := NewWorker("http://dummy", db, 1*time.Second)
 
@@ -478,7 +480,7 @@ func TestWorker_InsertRecord(t *testing.T) {
 
 func TestWorker_InsertUpstream(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	worker := NewWorker("http://dummy", db, 1*time.Second)
 
@@ -512,7 +514,7 @@ func TestWorker_InsertUpstream(t *testing.T) {
 
 func TestWorker_StartStop(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Dummy server
@@ -545,7 +547,7 @@ func TestWorker_StartStop(t *testing.T) {
 
 func TestWorker_SetSyncCompleteCallback(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	callbackCalled := false
 
@@ -583,7 +585,7 @@ func TestWorker_SetSyncCompleteCallback(t *testing.T) {
 
 func TestWorker_SetSyncCompleteCallback_Nil(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Mock Primary 서버
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -611,7 +613,7 @@ func TestWorker_SetSyncCompleteCallback_Nil(t *testing.T) {
 
 func TestWorker_FullSync_WithGSLBData(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Mock Primary 서버 (GSLB 데이터 포함)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -748,7 +750,7 @@ func TestWorker_FullSync_WithGSLBData(t *testing.T) {
 
 func TestWorker_FullSync_HTTPErrorStatus(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Mock Primary 서버 (500 Internal Server Error)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -760,12 +762,12 @@ func TestWorker_FullSync_HTTPErrorStatus(t *testing.T) {
 
 	err := worker.fullSync()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "Primary 응답 오류: 500")
+	assert.Contains(t, err.Error(), "primary 응답 오류: 500")
 }
 
 func TestWorker_FullSync_WithCallback(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	callbackCount := 0
 
@@ -829,7 +831,7 @@ func TestWorker_FullSync_WithCallback(t *testing.T) {
 
 func TestWorker_InsertGSLBPolicy(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	worker := NewWorker("http://dummy", db, 1*time.Second)
 
@@ -866,7 +868,7 @@ func TestWorker_InsertGSLBPolicy(t *testing.T) {
 
 func TestWorker_InsertGSLBPool(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	worker := NewWorker("http://dummy", db, 1*time.Second)
 
@@ -907,7 +909,7 @@ func TestWorker_InsertGSLBPool(t *testing.T) {
 
 func TestWorker_InsertGSLBMember(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	worker := NewWorker("http://dummy", db, 1*time.Second)
 
@@ -946,7 +948,7 @@ func TestWorker_InsertGSLBMember(t *testing.T) {
 
 func TestWorker_InsertHealthCheck(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	worker := NewWorker("http://dummy", db, 1*time.Second)
 
@@ -991,7 +993,7 @@ func TestWorker_InsertHealthCheck(t *testing.T) {
 
 func TestWorker_IncrementalSync_MetadataConnectionError(t *testing.T) {
 	db := setupTestDBFile(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// sync_state 버전 설정 (0이 아닌 값 - Reader에서도 보여야 함)
 	_, err := db.Writer.Exec(`
@@ -1007,12 +1009,12 @@ func TestWorker_IncrementalSync_MetadataConnectionError(t *testing.T) {
 
 	err = worker.incrementalSync()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "Primary 연결 실패")
+	assert.Contains(t, err.Error(), "primary 연결 실패")
 }
 
 func TestWorker_IncrementalSync_MetadataHTTPError(t *testing.T) {
 	db := setupTestDBFile(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// sync_state 버전 설정 (Reader에서도 보여야 함)
 	_, err := db.Writer.Exec(`
@@ -1035,12 +1037,12 @@ func TestWorker_IncrementalSync_MetadataHTTPError(t *testing.T) {
 
 	err = worker.incrementalSync()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "Primary 응답 오류: 500")
+	assert.Contains(t, err.Error(), "primary 응답 오류: 500")
 }
 
 func TestWorker_IncrementalSync_MetadataInvalidJSON(t *testing.T) {
 	db := setupTestDBFile(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// sync_state 버전 설정 (Reader에서도 보여야 함)
 	_, err := db.Writer.Exec(`
@@ -1063,12 +1065,12 @@ func TestWorker_IncrementalSync_MetadataInvalidJSON(t *testing.T) {
 
 	err = worker.incrementalSync()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "JSON 파싱 실패")
+	assert.Contains(t, err.Error(), "json 파싱 실패")
 }
 
 func TestWorker_FullSync_GSLBDataReplacement(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// 기존 GSLB 데이터 삽입
 	_, err := db.Writer.Exec(`INSERT INTO gslb_policies (id, name, domain, record_type, ttl, enabled, created_at) VALUES (99, 'old-policy', 'old.example.com.', 'A', 60, 1, '2026-01-01T00:00:00Z')`)
@@ -1181,7 +1183,7 @@ func TestWorker_FullSync_GSLBDataReplacement(t *testing.T) {
 
 func TestWorker_IncrementalSync_VersionMismatchTriggersFullSync(t *testing.T) {
 	db := setupTestDBFile(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// sync_state 버전 설정 (버전 3, Reader에서도 보여야 함)
 	_, err := db.Writer.Exec(`
@@ -1197,14 +1199,15 @@ func TestWorker_IncrementalSync_VersionMismatchTriggersFullSync(t *testing.T) {
 
 	// Mock Primary 서버
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/sync/metadata" {
+		switch r.URL.Path {
+		case "/api/sync/metadata":
 			metadataCalled = true
 			response := map[string]interface{}{
 				"version":  int64(7),
 				"checksum": "new-check",
 			}
 			_ = json.NewEncoder(w).Encode(response)
-		} else if r.URL.Path == "/api/sync/full" {
+		case "/api/sync/full":
 			fullSyncCalled = true
 			response := map[string]interface{}{
 				"version":  int64(7),
@@ -1237,7 +1240,7 @@ func TestWorker_IncrementalSync_VersionMismatchTriggersFullSync(t *testing.T) {
 
 func TestWorker_FullSync_ZoneInsertError(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Mock Primary 서버 (중복 Zone ID로 삽입 에러 유도)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1291,12 +1294,12 @@ func TestWorker_FullSync_ZoneInsertError(t *testing.T) {
 
 	err := worker.fullSync()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "Zone 삽입 실패")
+	assert.Contains(t, err.Error(), "zone 삽입 실패")
 }
 
 func TestWorker_FullSync_RecordInsertError(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Mock Primary 서버 (존재하지 않는 zone_id 참조로 record 삽입 에러)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1332,12 +1335,12 @@ func TestWorker_FullSync_RecordInsertError(t *testing.T) {
 
 	err := worker.fullSync()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "Record 삽입 실패")
+	assert.Contains(t, err.Error(), "record 삽입 실패")
 }
 
-func TestWorker_FullSync_UpstreamInsertError(t *testing.T) {
+func TestWorker_FullSync_UpstreamIgnored(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Mock Primary 서버 (중복 upstream ID)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1380,13 +1383,18 @@ func TestWorker_FullSync_UpstreamInsertError(t *testing.T) {
 	worker := NewWorker(server.URL, db, 1*time.Second)
 
 	err := worker.fullSync()
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "Upstream 삽입 실패")
+	require.NoError(t, err)
+
+	// Upstream은 Secondary 동기화 대상이 아니므로 삽입되지 않아야 함
+	var count int
+	err = db.Writer.QueryRow("SELECT COUNT(*) FROM upstream_servers").Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 0, count)
 }
 
 func TestWorker_FullSync_GSLBPolicyInsertError(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Mock Primary 서버 (중복 GSLB Policy ID)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1418,8 +1426,8 @@ func TestWorker_FullSync_GSLBPolicyInsertError(t *testing.T) {
 							"created_at":  "2026-01-31T12:00:00Z",
 						},
 					},
-					"gslb_pools":   []map[string]interface{}{},
-					"gslb_members": []map[string]interface{}{},
+					"gslb_pools":    []map[string]interface{}{},
+					"gslb_members":  []map[string]interface{}{},
 					"health_checks": []map[string]interface{}{},
 				},
 			}
@@ -1432,12 +1440,12 @@ func TestWorker_FullSync_GSLBPolicyInsertError(t *testing.T) {
 
 	err := worker.fullSync()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "GSLB Policy 삽입 실패")
+	assert.Contains(t, err.Error(), "gslb policy 삽입 실패")
 }
 
 func TestWorker_FullSync_GSLBPoolInsertError(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Mock Primary 서버 (존재하지 않는 policy_id 참조)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1474,12 +1482,12 @@ func TestWorker_FullSync_GSLBPoolInsertError(t *testing.T) {
 
 	err := worker.fullSync()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "GSLB Pool 삽입 실패")
+	assert.Contains(t, err.Error(), "gslb pool 삽입 실패")
 }
 
 func TestWorker_FullSync_GSLBMemberInsertError(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Mock Primary 서버 (존재하지 않는 pool_id 참조)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1514,12 +1522,12 @@ func TestWorker_FullSync_GSLBMemberInsertError(t *testing.T) {
 
 	err := worker.fullSync()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "GSLB Member 삽입 실패")
+	assert.Contains(t, err.Error(), "gslb member 삽입 실패")
 }
 
 func TestWorker_FullSync_HealthCheckInsertError(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Mock Primary 서버 (존재하지 않는 policy_id 참조)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1558,12 +1566,12 @@ func TestWorker_FullSync_HealthCheckInsertError(t *testing.T) {
 
 	err := worker.fullSync()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "Health Check 삽입 실패")
+	assert.Contains(t, err.Error(), "health check 삽입 실패")
 }
 
 func TestWorker_Start_InitialFullSyncError(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// 연결 불가능한 서버로 Start (초기 Full Sync 에러 경로)
 	worker := NewWorker("http://localhost:99999", db, 10*time.Second)
@@ -1579,7 +1587,7 @@ func TestWorker_Start_InitialFullSyncError(t *testing.T) {
 
 func TestWorker_Start_IncrementalSyncError(t *testing.T) {
 	db := setupTestDBFile(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// sync_state 버전 설정 (incrementalSync가 metadata 조회하도록)
 	_, err := db.Writer.Exec(`
@@ -1595,7 +1603,8 @@ func TestWorker_Start_IncrementalSyncError(t *testing.T) {
 	// Mock 서버: 첫번째 요청(full)은 성공, metadata는 500 에러
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestCount++
-		if r.URL.Path == "/api/sync/full" {
+		switch r.URL.Path {
+		case "/api/sync/full":
 			response := map[string]interface{}{
 				"version":  int64(5),
 				"checksum": "test",
@@ -1606,7 +1615,7 @@ func TestWorker_Start_IncrementalSyncError(t *testing.T) {
 				},
 			}
 			_ = json.NewEncoder(w).Encode(response)
-		} else if r.URL.Path == "/api/sync/metadata" {
+		case "/api/sync/metadata":
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 	}))
@@ -1625,7 +1634,7 @@ func TestWorker_Start_IncrementalSyncError(t *testing.T) {
 
 func TestWorker_FullSync_ReadBodyError(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Mock Primary 서버 (응답 본문 읽기 실패 유도)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1637,7 +1646,7 @@ func TestWorker_FullSync_ReadBodyError(t *testing.T) {
 			// 연결을 강제 종료하기 위해 Hijack 사용
 			if hj, ok := w.(http.Hijacker); ok {
 				conn, _, _ := hj.Hijack()
-				conn.Close()
+				_ = conn.Close()
 			}
 		}
 	}))
@@ -1647,17 +1656,17 @@ func TestWorker_FullSync_ReadBodyError(t *testing.T) {
 
 	err := worker.fullSync()
 	assert.Error(t, err)
-	// Hijack으로 연결 종료시 io.ReadAll 실패 ("응답 읽기 실패") 또는 불완전 JSON ("JSON 파싱 실패")
+	// Hijack으로 연결 종료시 io.ReadAll 실패 ("응답 읽기 실패") 또는 불완전 JSON ("json 파싱 실패")
 	errMsg := err.Error()
 	isReadError := len(errMsg) >= len("응답 읽기 실패") && errMsg[:len("응답 읽기 실패")] == "응답 읽기 실패"
-	isJSONError := len(errMsg) >= len("JSON 파싱 실패") && errMsg[:len("JSON 파싱 실패")] == "JSON 파싱 실패"
+	isJSONError := len(errMsg) >= len("json 파싱 실패") && errMsg[:len("json 파싱 실패")] == "json 파싱 실패"
 	assert.True(t, isReadError || isJSONError,
 		"응답 읽기 또는 JSON 파싱 에러가 발생해야 함: %v", err)
 }
 
 func TestWorker_IncrementalSync_MetadataReadBodyError(t *testing.T) {
 	db := setupTestDBFile(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// sync_state 버전 설정 (Reader에서도 보여야 함)
 	_, err := db.Writer.Exec(`
@@ -1676,7 +1685,7 @@ func TestWorker_IncrementalSync_MetadataReadBodyError(t *testing.T) {
 			_, _ = w.Write([]byte("{"))
 			if hj, ok := w.(http.Hijacker); ok {
 				conn, _, _ := hj.Hijack()
-				conn.Close()
+				_ = conn.Close()
 			}
 		}
 	}))
@@ -1686,17 +1695,17 @@ func TestWorker_IncrementalSync_MetadataReadBodyError(t *testing.T) {
 
 	err = worker.incrementalSync()
 	assert.Error(t, err)
-	// metadata 응답 읽기 실패 또는 JSON 파싱 실패
+	// metadata 응답 읽기 실패 또는 json 파싱 실패
 	errMsg := err.Error()
 	isReadError := len(errMsg) >= len("응답 읽기 실패") && errMsg[:len("응답 읽기 실패")] == "응답 읽기 실패"
-	isJSONError := len(errMsg) >= len("JSON 파싱 실패") && errMsg[:len("JSON 파싱 실패")] == "JSON 파싱 실패"
+	isJSONError := len(errMsg) >= len("json 파싱 실패") && errMsg[:len("json 파싱 실패")] == "json 파싱 실패"
 	assert.True(t, isReadError || isJSONError,
 		"응답 읽기 또는 JSON 파싱 에러가 발생해야 함: %v", err)
 }
 
 func TestWorker_IncrementalSync_FullSyncViaMismatch_WithGSLBData(t *testing.T) {
 	db := setupTestDBFile(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// sync_state 버전 설정 (Reader에서도 보여야 함)
 	_, err := db.Writer.Exec(`
@@ -1711,13 +1720,14 @@ func TestWorker_IncrementalSync_FullSyncViaMismatch_WithGSLBData(t *testing.T) {
 
 	// Mock Primary 서버 (버전 불일치 -> Full Sync with GSLB data)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/sync/metadata" {
+		switch r.URL.Path {
+		case "/api/sync/metadata":
 			response := map[string]interface{}{
 				"version":  int64(5),
 				"checksum": "new-gslb",
 			}
 			_ = json.NewEncoder(w).Encode(response)
-		} else if r.URL.Path == "/api/sync/full" {
+		case "/api/sync/full":
 			response := map[string]interface{}{
 				"version":  int64(5),
 				"checksum": "new-gslb",

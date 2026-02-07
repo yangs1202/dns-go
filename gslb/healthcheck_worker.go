@@ -16,12 +16,12 @@ import (
 )
 
 type HealthCheckWorker struct {
-	storage       *HealthCheckStorage
-	poolStorage   *PoolStorage
-	healthStatus  *sync.Map
-	stopCh        chan struct{}
-	wg            sync.WaitGroup
-	runners       sync.Map // map[int64]chan struct{} - 각 헬스체크의 종료 채널
+	storage      *HealthCheckStorage
+	poolStorage  *PoolStorage
+	healthStatus *sync.Map
+	stopCh       chan struct{}
+	wg           sync.WaitGroup
+	runners      sync.Map // map[int64]chan struct{} - 각 헬스체크의 종료 채널
 }
 
 func NewHealthCheckWorker(storage *HealthCheckStorage, poolStorage *PoolStorage, healthStatus *sync.Map) *HealthCheckWorker {
@@ -249,7 +249,7 @@ func (w *HealthCheckWorker) probe(check *model.HealthCheck, member *model.GSLBMe
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			return fmt.Errorf("http status %d", resp.StatusCode)
 		}

@@ -135,14 +135,14 @@ example.net`,
 
 func TestLoader_Download(t *testing.T) {
 	tests := []struct {
-		name          string
-		content       string
-		statusCode    int
-		lastModified  string
-		reqLastMod    string
-		expectRules   int
-		expectErr     bool
-		expectNotMod  bool
+		name         string
+		content      string
+		statusCode   int
+		lastModified string
+		reqLastMod   string
+		expectRules  int
+		expectErr    bool
+		expectNotMod bool
 	}{
 		{
 			name: "Successful download",
@@ -204,7 +204,7 @@ func TestLoader_Download(t *testing.T) {
 					w.Header().Set("Last-Modified", tt.lastModified)
 				}
 				w.WriteHeader(tt.statusCode)
-				w.Write([]byte(tt.content))
+				_, _ = w.Write([]byte(tt.content))
 			}))
 			defer server.Close()
 
@@ -276,7 +276,7 @@ func TestLoader_Download_WithIfModifiedSince(t *testing.T) {
 		}
 		w.Header().Set("Last-Modified", lastMod)
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("||example.com^"))
+		_, _ = w.Write([]byte("||example.com^"))
 	}))
 	defer server.Close()
 
@@ -330,7 +330,7 @@ func TestLoader_Download_LargeResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Last-Modified", "Wed, 21 Oct 2015 07:28:00 GMT")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(largeContent))
+		_, _ = w.Write([]byte(largeContent))
 	}))
 	defer server.Close()
 

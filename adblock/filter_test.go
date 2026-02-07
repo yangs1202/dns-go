@@ -11,10 +11,10 @@ import (
 )
 
 type mockStorage struct {
-	domains       []string
-	blockedSet    map[string]bool
-	listErr       error
-	isBlockedErr  error
+	domains      []string
+	blockedSet   map[string]bool
+	listErr      error
+	isBlockedErr error
 }
 
 func (m *mockStorage) ListBlockedDomains() ([]string, error) {
@@ -90,67 +90,67 @@ func TestFilter_SetEnabled(t *testing.T) {
 
 func TestFilter_IsBlocked(t *testing.T) {
 	tests := []struct {
-		name       string
-		enabled    bool
-		domains    []string
-		blockedSet map[string]bool
-		query      string
+		name        string
+		enabled     bool
+		domains     []string
+		blockedSet  map[string]bool
+		query       string
 		wantBlocked bool
-		wantErr    bool
+		wantErr     bool
 	}{
 		{
-			name:       "Blocked domain",
-			enabled:    true,
-			domains:    []string{"example.com", "test.com"},
-			blockedSet: map[string]bool{"example.com": true, "test.com": true},
-			query:      "example.com",
+			name:        "Blocked domain",
+			enabled:     true,
+			domains:     []string{"example.com", "test.com"},
+			blockedSet:  map[string]bool{"example.com": true, "test.com": true},
+			query:       "example.com",
 			wantBlocked: true,
-			wantErr:    false,
+			wantErr:     false,
 		},
 		{
-			name:       "Not blocked domain",
-			enabled:    true,
-			domains:    []string{"example.com"},
-			blockedSet: map[string]bool{"example.com": true},
-			query:      "google.com",
+			name:        "Not blocked domain",
+			enabled:     true,
+			domains:     []string{"example.com"},
+			blockedSet:  map[string]bool{"example.com": true},
+			query:       "google.com",
 			wantBlocked: false,
-			wantErr:    false,
+			wantErr:     false,
 		},
 		{
-			name:       "Filter disabled",
-			enabled:    false,
-			domains:    []string{"example.com"},
-			blockedSet: map[string]bool{"example.com": true},
-			query:      "example.com",
+			name:        "Filter disabled",
+			enabled:     false,
+			domains:     []string{"example.com"},
+			blockedSet:  map[string]bool{"example.com": true},
+			query:       "example.com",
 			wantBlocked: false,
-			wantErr:    false,
+			wantErr:     false,
 		},
 		{
-			name:       "Domain with trailing dot",
-			enabled:    true,
-			domains:    []string{"example.com"},
-			blockedSet: map[string]bool{"example.com": true},
-			query:      "example.com.",
+			name:        "Domain with trailing dot",
+			enabled:     true,
+			domains:     []string{"example.com"},
+			blockedSet:  map[string]bool{"example.com": true},
+			query:       "example.com.",
 			wantBlocked: true,
-			wantErr:    false,
+			wantErr:     false,
 		},
 		{
-			name:       "Domain with uppercase",
-			enabled:    true,
-			domains:    []string{"example.com"},
-			blockedSet: map[string]bool{"example.com": true},
-			query:      "EXAMPLE.COM",
+			name:        "Domain with uppercase",
+			enabled:     true,
+			domains:     []string{"example.com"},
+			blockedSet:  map[string]bool{"example.com": true},
+			query:       "EXAMPLE.COM",
 			wantBlocked: true,
-			wantErr:    false,
+			wantErr:     false,
 		},
 		{
-			name:       "Domain with spaces",
-			enabled:    true,
-			domains:    []string{"example.com"},
-			blockedSet: map[string]bool{"example.com": true},
-			query:      "  example.com  ",
+			name:        "Domain with spaces",
+			enabled:     true,
+			domains:     []string{"example.com"},
+			blockedSet:  map[string]bool{"example.com": true},
+			query:       "  example.com  ",
 			wantBlocked: true,
-			wantErr:    false,
+			wantErr:     false,
 		},
 	}
 
@@ -307,7 +307,7 @@ func TestFilter_WithRealStorage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	adblockStorage := storage.NewAdblockStorage(db)
 

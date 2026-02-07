@@ -10,7 +10,7 @@ import (
 
 func TestSyncVersion_IncrementVersion(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sv := NewSyncVersion(db)
 
@@ -41,7 +41,7 @@ func TestSyncVersion_IncrementVersion(t *testing.T) {
 
 func TestSyncVersion_GetVersion(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sv := NewSyncVersion(db)
 
@@ -52,7 +52,7 @@ func TestSyncVersion_GetVersion(t *testing.T) {
 
 func TestSyncVersion_CalculateChecksum(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sv := NewSyncVersion(db)
 
@@ -106,7 +106,7 @@ func TestSyncVersion_CalculateChecksum(t *testing.T) {
 
 func TestSyncVersion_UpdateChecksum(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sv := NewSyncVersion(db)
 
@@ -127,7 +127,7 @@ func TestSyncVersion_UpdateChecksum(t *testing.T) {
 
 func TestSyncVersion_GetSyncState(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sv := NewSyncVersion(db)
 
@@ -154,7 +154,7 @@ func TestSyncVersion_GetSyncState(t *testing.T) {
 
 func TestSyncVersion_GetAllZones(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sv := NewSyncVersion(db)
 	zoneStorage := NewZoneStorage(db)
@@ -188,7 +188,7 @@ func TestSyncVersion_GetAllZones(t *testing.T) {
 
 func TestSyncVersion_GetAllRecords(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sv := NewSyncVersion(db)
 	zoneStorage := NewZoneStorage(db)
@@ -237,7 +237,7 @@ func TestSyncVersion_GetAllRecords(t *testing.T) {
 
 func TestSyncVersion_GetAllUpstreams(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sv := NewSyncVersion(db)
 	upstreamStorage := NewUpstreamStorage(db)
@@ -267,7 +267,7 @@ func TestSyncVersion_GetAllUpstreams(t *testing.T) {
 
 func TestSyncVersion_GetAllGSLBPolicies_Empty(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sv := NewSyncVersion(db)
 
@@ -278,7 +278,7 @@ func TestSyncVersion_GetAllGSLBPolicies_Empty(t *testing.T) {
 
 func TestSyncVersion_GetAllGSLBPolicies_WithData(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sv := NewSyncVersion(db)
 
@@ -307,7 +307,7 @@ func TestSyncVersion_GetAllGSLBPolicies_WithData(t *testing.T) {
 
 func TestSyncVersion_GetAllGSLBPools_Empty(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sv := NewSyncVersion(db)
 
@@ -318,7 +318,7 @@ func TestSyncVersion_GetAllGSLBPools_Empty(t *testing.T) {
 
 func TestSyncVersion_GetAllGSLBPools_WithData(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sv := NewSyncVersion(db)
 
@@ -354,7 +354,7 @@ func TestSyncVersion_GetAllGSLBPools_WithData(t *testing.T) {
 
 func TestSyncVersion_GetAllGSLBMembers_Empty(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sv := NewSyncVersion(db)
 
@@ -365,7 +365,7 @@ func TestSyncVersion_GetAllGSLBMembers_Empty(t *testing.T) {
 
 func TestSyncVersion_GetAllGSLBMembers_WithData(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sv := NewSyncVersion(db)
 
@@ -406,7 +406,7 @@ func TestSyncVersion_GetAllGSLBMembers_WithData(t *testing.T) {
 
 func TestSyncVersion_GetAllHealthChecks_Empty(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sv := NewSyncVersion(db)
 
@@ -417,7 +417,7 @@ func TestSyncVersion_GetAllHealthChecks_Empty(t *testing.T) {
 
 func TestSyncVersion_GetAllHealthChecks_WithData(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sv := NewSyncVersion(db)
 
@@ -456,7 +456,7 @@ func TestSyncVersion_GetAllHealthChecks_WithData(t *testing.T) {
 
 func TestSyncVersion_CalculateChecksum_WithGSLBData(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sv := NewSyncVersion(db)
 
@@ -480,7 +480,7 @@ func TestSyncVersion_CalculateChecksum_WithGSLBData(t *testing.T) {
 // TestSyncVersion_CalculateChecksum_FullGSLBData tests checksum with all GSLB tables populated
 func TestSyncVersion_CalculateChecksum_FullGSLBData(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sv := NewSyncVersion(db)
 	zoneStorage := NewZoneStorage(db)
@@ -619,7 +619,7 @@ func TestSyncVersion_CalculateChecksum_HealthChecksError(t *testing.T) {
 func TestSyncVersion_GetVersion_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	sv := NewSyncVersion(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := sv.GetVersion()
 	assert.Error(t, err)
@@ -628,7 +628,7 @@ func TestSyncVersion_GetVersion_DBError(t *testing.T) {
 func TestSyncVersion_GetChecksum_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	sv := NewSyncVersion(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := sv.GetChecksum()
 	assert.Error(t, err)
@@ -637,7 +637,7 @@ func TestSyncVersion_GetChecksum_DBError(t *testing.T) {
 func TestSyncVersion_GetSyncState_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	sv := NewSyncVersion(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := sv.GetSyncState()
 	assert.Error(t, err)
@@ -646,7 +646,7 @@ func TestSyncVersion_GetSyncState_DBError(t *testing.T) {
 func TestSyncVersion_IncrementVersion_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	sv := NewSyncVersion(db)
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	err := sv.IncrementVersion(nil)
 	assert.Error(t, err)
@@ -655,7 +655,7 @@ func TestSyncVersion_IncrementVersion_DBError(t *testing.T) {
 func TestSyncVersion_CalculateChecksum_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	sv := NewSyncVersion(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := sv.CalculateChecksum()
 	assert.Error(t, err)
@@ -664,7 +664,7 @@ func TestSyncVersion_CalculateChecksum_DBError(t *testing.T) {
 func TestSyncVersion_UpdateChecksum_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	sv := NewSyncVersion(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	err := sv.UpdateChecksum()
 	assert.Error(t, err)
@@ -673,7 +673,7 @@ func TestSyncVersion_UpdateChecksum_DBError(t *testing.T) {
 func TestSyncVersion_GetAllZones_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	sv := NewSyncVersion(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := sv.GetAllZones()
 	assert.Error(t, err)
@@ -682,7 +682,7 @@ func TestSyncVersion_GetAllZones_DBError(t *testing.T) {
 func TestSyncVersion_GetAllRecords_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	sv := NewSyncVersion(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := sv.GetAllRecords()
 	assert.Error(t, err)
@@ -691,7 +691,7 @@ func TestSyncVersion_GetAllRecords_DBError(t *testing.T) {
 func TestSyncVersion_GetAllUpstreams_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	sv := NewSyncVersion(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := sv.GetAllUpstreams()
 	assert.Error(t, err)
@@ -700,7 +700,7 @@ func TestSyncVersion_GetAllUpstreams_DBError(t *testing.T) {
 func TestSyncVersion_GetAllGSLBPolicies_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	sv := NewSyncVersion(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := sv.GetAllGSLBPolicies()
 	assert.Error(t, err)
@@ -709,7 +709,7 @@ func TestSyncVersion_GetAllGSLBPolicies_DBError(t *testing.T) {
 func TestSyncVersion_GetAllGSLBPools_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	sv := NewSyncVersion(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := sv.GetAllGSLBPools()
 	assert.Error(t, err)
@@ -718,7 +718,7 @@ func TestSyncVersion_GetAllGSLBPools_DBError(t *testing.T) {
 func TestSyncVersion_GetAllGSLBMembers_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	sv := NewSyncVersion(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := sv.GetAllGSLBMembers()
 	assert.Error(t, err)
@@ -727,7 +727,7 @@ func TestSyncVersion_GetAllGSLBMembers_DBError(t *testing.T) {
 func TestSyncVersion_GetAllHealthChecks_DBError(t *testing.T) {
 	db := setupTestDB(t)
 	sv := NewSyncVersion(db)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	_, err := sv.GetAllHealthChecks()
 	assert.Error(t, err)
@@ -735,7 +735,7 @@ func TestSyncVersion_GetAllHealthChecks_DBError(t *testing.T) {
 
 func TestSyncVersion_IncrementVersionWithTransaction(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sv := NewSyncVersion(db)
 
@@ -757,7 +757,7 @@ func TestSyncVersion_IncrementVersionWithTransaction(t *testing.T) {
 
 func TestSyncVersion_IncrementVersionRollback(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sv := NewSyncVersion(db)
 
@@ -779,7 +779,7 @@ func TestSyncVersion_IncrementVersionRollback(t *testing.T) {
 
 func TestSyncVersion_ChecksumConsistency(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sv := NewSyncVersion(db)
 	zoneStorage := NewZoneStorage(db)

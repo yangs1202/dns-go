@@ -121,7 +121,7 @@ func (s *PoolStorage) GetPoolsByPolicy(policyID int64) ([]*model.GSLBPool, error
 	if err != nil {
 		return nil, fmt.Errorf("풀 목록 조회 실패: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var pools []*model.GSLBPool
 	for rows.Next() {
@@ -254,7 +254,7 @@ func (s *PoolStorage) GetMembersByPool(poolID int64) ([]*model.GSLBMember, error
 	if err != nil {
 		return nil, fmt.Errorf("멤버 목록 조회 실패: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var members []*model.GSLBMember
 	for rows.Next() {

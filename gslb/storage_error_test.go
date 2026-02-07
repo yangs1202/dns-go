@@ -262,7 +262,7 @@ func TestEngine_ResolveGetPoolsError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("db init error: %v", err)
 	}
-	defer os.Remove(path)
+	defer func() { _ = os.Remove(path) }()
 
 	policyStorage := NewPolicyStorage(db)
 	poolStorage := NewPoolStorage(db)
@@ -301,7 +301,7 @@ func TestHealthCheckWorker_RunPolicyCheckGetPoolsError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("db init error: %v", err)
 	}
-	defer os.Remove(path)
+	defer func() { _ = os.Remove(path) }()
 
 	poolStorage := NewPoolStorage(db)
 	hcStorage := NewHealthCheckStorage(db)

@@ -25,20 +25,20 @@ func NewDatabase(path string) (*Database, error) {
 	// Reader 연결 (다중 연결)
 	reader, err := sql.Open("sqlite", path+"?_journal_mode=WAL&_synchronous=NORMAL&_foreign_keys=ON")
 	if err != nil {
-		writer.Close()
+		_ = writer.Close()
 		return nil, fmt.Errorf("reader 연결 실패: %w", err)
 	}
 	reader.SetMaxOpenConns(4) // 동시 읽기 지원
 
 	// 연결 테스트
 	if err := writer.Ping(); err != nil {
-		writer.Close()
-		reader.Close()
+		_ = writer.Close()
+		_ = reader.Close()
 		return nil, fmt.Errorf("writer ping 실패: %w", err)
 	}
 	if err := reader.Ping(); err != nil {
-		writer.Close()
-		reader.Close()
+		_ = writer.Close()
+		_ = reader.Close()
 		return nil, fmt.Errorf("reader ping 실패: %w", err)
 	}
 
@@ -49,13 +49,13 @@ func NewDatabase(path string) (*Database, error) {
 
 	// WAL 모드 및 외래 키 활성화 확인
 	if err := db.configurePragmas(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("PRAGMA 설정 실패: %w", err)
 	}
 
 	// 마이그레이션 실행
 	if err := db.Migrate(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("마이그레이션 실패: %w", err)
 	}
 

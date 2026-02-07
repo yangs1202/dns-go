@@ -520,8 +520,8 @@ func TestCreatePool(t *testing.T) {
 			wantStatus: http.StatusCreated,
 		},
 		{
-			name: "Read-only mode",
-			body: poolRequest{Name: "test", MatchType: "default"},
+			name:       "Read-only mode",
+			body:       poolRequest{Name: "test", MatchType: "default"},
 			readOnly:   true,
 			setup:      func(api *API) int64 { return 1 },
 			wantStatus: http.StatusForbidden,
@@ -1266,7 +1266,7 @@ func TestDeleteMember(t *testing.T) {
 func TestListPolicies_DBError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, db := setupGSLBTestAPI(t)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -1280,7 +1280,7 @@ func TestListPolicies_DBError(t *testing.T) {
 func TestListPools_DBError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, db := setupGSLBTestAPI(t)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -1295,7 +1295,7 @@ func TestListPools_DBError(t *testing.T) {
 func TestListMembers_DBError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, db := setupGSLBTestAPI(t)
-	db.Reader.Close()
+	_ = db.Reader.Close()
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -1310,7 +1310,7 @@ func TestListMembers_DBError(t *testing.T) {
 func TestCreatePolicy_DBError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api, db := setupGSLBTestAPI(t)
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	body, _ := json.Marshal(policyRequest{Name: "test", Domain: "example.com", TTL: 30})
 	w := httptest.NewRecorder()
@@ -1328,7 +1328,7 @@ func TestCreatePool_DBError(t *testing.T) {
 	api, db := setupGSLBTestAPI(t)
 	// Create policy first, then close writer
 	policyID, _ := api.policyStorage.CreatePolicy(newGSLBPolicy("test", "example.com."))
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	body, _ := json.Marshal(poolRequest{Name: "pool", MatchType: "default"})
 	w := httptest.NewRecorder()
@@ -1347,7 +1347,7 @@ func TestCreateMember_DBError(t *testing.T) {
 	api, db := setupGSLBTestAPI(t)
 	pID, _ := api.policyStorage.CreatePolicy(newGSLBPolicy("t", "e.com."))
 	poolID, _ := api.poolStorage.CreatePool(newGSLBPool(pID, "pool", "default"))
-	db.Writer.Close()
+	_ = db.Writer.Close()
 
 	body, _ := json.Marshal(memberRequest{Address: "1.2.3.4", Weight: 50})
 	w := httptest.NewRecorder()

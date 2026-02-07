@@ -86,7 +86,7 @@ func (s *AdblockStorage) ListAdblockSources() ([]*model.AdblockSource, error) {
 	if err != nil {
 		return nil, fmt.Errorf("adblock source 목록 조회 실패: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var sources []*model.AdblockSource
 	for rows.Next() {
@@ -131,7 +131,7 @@ func (s *AdblockStorage) GetEnabledAdblockSources() ([]*model.AdblockSource, err
 	if err != nil {
 		return nil, fmt.Errorf("활성 adblock source 목록 조회 실패: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var sources []*model.AdblockSource
 	for rows.Next() {
@@ -235,7 +235,7 @@ func (s *AdblockStorage) AddBlockedDomainsBatch(sourceID int64, domains []string
 	if err != nil {
 		return fmt.Errorf("prepared statement 실패: %w", err)
 	}
-	defer stmt.Close()
+	defer func() { _ = stmt.Close() }()
 
 	for _, domain := range domains {
 		domain = normalizeDomain(domain)
@@ -280,7 +280,7 @@ func (s *AdblockStorage) ListBlockedDomains() ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("차단 도메인 목록 조회 실패: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var domains []string
 	for rows.Next() {
@@ -321,7 +321,7 @@ func (s *AdblockStorage) GetBlockedStats(limit int) ([]*BlockedStat, error) {
 	if err != nil {
 		return nil, fmt.Errorf("차단 통계 조회 실패: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var stats []*BlockedStat
 	for rows.Next() {
