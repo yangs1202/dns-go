@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"dns-go/model"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -64,6 +65,105 @@ func (c *RecordCache) InvalidateAll() {
 
 	c.cache = make(map[int64][]*model.Record)
 	c.expiry = make(map[int64]time.Time)
+}
+
+// findWildcardRecords는 와일드카드 레코드를 찾습니다.
+// RFC 4592: 가장 구체적인(closest encloser) 와일드카드를 우선 매칭합니다.
+// 예: foo.bar.example.com. → *.bar.example.com. → *.example.com. 순서
+// 와일드카드는 단일 레벨만 매칭합니다 (*.example.com은 foo.example.com만 매칭, sub.foo.example.com은 안 됨)
+func findWildcardRecords(allRecords []*model.Record, queryName, recordType string) []*model.Record {
+	// 쿼리 도메인이 비어있거나 루트 도메인이면 와일드카드 매칭 불가
+	if queryName == "" || queryName == "." {
+		return nil
+	}
+
+	// 도메인을 레이블로 분리 (후행 점 제거)
+	trimmedName := strings.TrimSuffix(queryName, ".")
+	labels := strings.Split(trimmedName, ".")
+
+	// 단일 레벨만 가능하므로 첫 레이블만 *로 교체
+	// foo.bar.example.com → *.bar.example.com → *.example.com 순서
+	for i := 1; i < len(labels); i++ {
+		// 첫 레이블을 *로 교체한 와일드카드 패턴 생성
+		wildcardLabels := make([]string, len(labels)-i+1)
+		wildcardLabels[0] = "*"
+		copy(wildcardLabels[1:], labels[i:])
+		wildcardPattern := strings.Join(wildcardLabels, ".") + "."
+
+		// 해당 와일드카드 패턴으로 매칭 시도
+		var matches []*model.Record
+		for _, record := range allRecords {
+			if record.Name == wildcardPattern && record.Type == recordType && record.Enabled {
+				// 와일드카드는 단일 레벨만 매칭해야 하므로 검증
+				if !isValidWildcardMatch(wildcardPattern, queryName) {
+					continue
+				}
+				// 원본 레코드를 복사하여 Name을 쿼리 도메인으로 교체
+				copied := *record
+				copied.Name = queryName
+				matches = append(matches, &copied)
+			}
+		}
+
+		// 가장 구체적인 와일드카드 매칭을 찾으면 즉시 반환
+		if len(matches) > 0 {
+			return matches
+		}
+	}
+
+	return nil
+}
+
+// isValidWildcardMatch는 와일드카드가 쿼리 도메인과 올바르게 매칭되는지 검증합니다.
+// RFC 4592: 와일드카드는 단일 레벨만 매칭 (*.example.com은 foo.example.com만, sub.foo.example.com은 안 됨)
+func isValidWildcardMatch(wildcardPattern, queryName string) bool {
+	// 와일드카드 suffix 추출 (*.example.com. → example.com.)
+	suffix := strings.TrimPrefix(wildcardPattern, "*.")
+
+	// 쿼리 도메인이 suffix로 끝나지 않으면 매칭 불가
+	if !strings.HasSuffix(queryName, suffix) {
+		return false
+	}
+
+	// prefix 추출 (foo.example.com. → foo)
+	prefix := strings.TrimSuffix(queryName, suffix)
+	prefix = strings.TrimSuffix(prefix, ".")
+
+	// prefix가 비어있으면 매칭 불가
+	if prefix == "" {
+		return false
+	}
+
+	// prefix에 점이 있으면 다중 레벨이므로 매칭 불가
+	return !strings.Contains(prefix, ".")
+}
+
+// hasWildcardMatch는 와일드카드 레코드가 쿼리 도메인과 매칭되는지 확인합니다.
+func hasWildcardMatch(recordName, queryName string) bool {
+	// 레코드가 와일드카드로 시작하지 않으면 매칭 불가
+	if !strings.HasPrefix(recordName, "*.") {
+		return false
+	}
+
+	// 레코드의 와일드카드 부분 제거 (예: *.example.com. → example.com.)
+	suffix := strings.TrimPrefix(recordName, "*.")
+
+	// 쿼리 도메인이 와일드카드 suffix로 끝나는지 확인
+	if !strings.HasSuffix(queryName, suffix) {
+		return false
+	}
+
+	// 쿼리 도메인의 prefix 부분 추출
+	prefix := strings.TrimSuffix(queryName, suffix)
+	prefix = strings.TrimSuffix(prefix, ".")
+
+	// prefix가 비어있으면 매칭 안 됨 (예: *.example.com. 자체는 매칭 안 됨)
+	if prefix == "" {
+		return false
+	}
+
+	// prefix에 점이 없어야 함 (와일드카드는 단일 레벨만 매칭)
+	return !strings.Contains(prefix, ".")
 }
 
 // RecordStorage는 Record 저장소입니다
@@ -205,6 +305,7 @@ func (s *RecordStorage) ListAllRecords() ([]*model.Record, error) {
 }
 
 // GetRecordsByNameAndZone은 zone_id, 이름, 타입으로 Record를 조회합니다 (L2 캐시 활용)
+// RFC 4592: 정확한 매칭 우선, 매칭 없으면 와일드카드 시도
 func (s *RecordStorage) GetRecordsByNameAndZone(zoneID int64, name, recordType string) ([]*model.Record, error) {
 	// L2 캐시에서 zone의 모든 레코드 조회
 	allRecords, err := s.GetRecordsByZone(zoneID)
@@ -212,7 +313,7 @@ func (s *RecordStorage) GetRecordsByNameAndZone(zoneID int64, name, recordType s
 		return nil, err
 	}
 
-	// 메모리에서 name과 type으로 필터링
+	// 1. 정확한 매칭 시도
 	var result []*model.Record
 	for _, record := range allRecords {
 		if record.Name == name && record.Type == recordType && record.Enabled {
@@ -220,10 +321,17 @@ func (s *RecordStorage) GetRecordsByNameAndZone(zoneID int64, name, recordType s
 		}
 	}
 
-	return result, nil
+	// 2. 정확한 매칭이 있으면 반환
+	if len(result) > 0 {
+		return result, nil
+	}
+
+	// 3. 와일드카드 매칭 시도
+	return findWildcardRecords(allRecords, name, recordType), nil
 }
 
 // DomainExistsInZone은 해당 Zone에 특정 도메인 이름의 레코드가 존재하는지 확인합니다 (타입 무관)
+// RFC 4592: 정확한 매칭 우선, 매칭 없으면 와일드카드 확인
 func (s *RecordStorage) DomainExistsInZone(zoneID int64, name string) (bool, error) {
 	// L2 캐시에서 zone의 모든 레코드 조회
 	allRecords, err := s.GetRecordsByZone(zoneID)
@@ -231,9 +339,16 @@ func (s *RecordStorage) DomainExistsInZone(zoneID int64, name string) (bool, err
 		return false, err
 	}
 
-	// 메모리에서 name으로 필터링 (타입 무관, enabled만 체크)
+	// 1. 정확한 매칭 확인 (타입 무관, enabled만 체크)
 	for _, record := range allRecords {
 		if record.Name == name && record.Enabled {
+			return true, nil
+		}
+	}
+
+	// 2. 와일드카드 매칭 확인 (모든 타입 확인)
+	for _, record := range allRecords {
+		if record.Enabled && hasWildcardMatch(record.Name, name) {
 			return true, nil
 		}
 	}
