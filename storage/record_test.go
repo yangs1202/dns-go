@@ -1011,3 +1011,193 @@ func TestCreateRecord_TransactionRollback(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, initialVersion+1, currentVersion, "성공한 트랜잭션만 버전 증가")
 }
+
+// TestWildcardMatching은 와일드카드 레코드 매칭 테스트입니다
+func TestWildcardMatching(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewRecordStorage(db)
+
+	// Zone 생성
+	zoneID := insertTestZone(t, db, "example.com.")
+
+	// 와일드카드 레코드 삽입
+	_, err := db.Writer.Exec(`INSERT INTO records (zone_id, name, type, content, enabled)
+	                          VALUES (?, ?, ?, ?, ?)`, zoneID, "*.example.com.", "A", "192.0.2.100", 1)
+	require.NoError(t, err)
+
+	// 와일드카드 매칭 테스트
+	records, err := storage.GetRecordsByNameAndZone(zoneID, "foo.example.com.", "A")
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	assert.Equal(t, "foo.example.com.", records[0].Name, "응답에 쿼리 도메인이 표시되어야 함")
+	assert.Equal(t, "192.0.2.100", records[0].Content)
+
+	// 다른 서브도메인도 매칭
+	records, err = storage.GetRecordsByNameAndZone(zoneID, "bar.example.com.", "A")
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	assert.Equal(t, "bar.example.com.", records[0].Name)
+	assert.Equal(t, "192.0.2.100", records[0].Content)
+
+	// 2레벨 서브도메인은 매칭 안 됨 (와일드카드는 단일 레벨만)
+	records, err = storage.GetRecordsByNameAndZone(zoneID, "sub.foo.example.com.", "A")
+	require.NoError(t, err)
+	assert.Empty(t, records)
+}
+
+// TestWildcardWithExactMatch는 정확한 매칭이 와일드카드보다 우선하는지 테스트합니다
+func TestWildcardWithExactMatch(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewRecordStorage(db)
+
+	// Zone 생성
+	zoneID := insertTestZone(t, db, "example.com.")
+
+	// 와일드카드 레코드
+	_, err := db.Writer.Exec(`INSERT INTO records (zone_id, name, type, content, enabled)
+	                          VALUES (?, ?, ?, ?, ?)`, zoneID, "*.example.com.", "A", "192.0.2.100", 1)
+	require.NoError(t, err)
+
+	// 정확한 레코드
+	_, err = db.Writer.Exec(`INSERT INTO records (zone_id, name, type, content, enabled)
+	                          VALUES (?, ?, ?, ?, ?)`, zoneID, "www.example.com.", "A", "192.0.2.1", 1)
+	require.NoError(t, err)
+
+	// 정확한 매칭이 우선
+	records, err := storage.GetRecordsByNameAndZone(zoneID, "www.example.com.", "A")
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	assert.Equal(t, "www.example.com.", records[0].Name)
+	assert.Equal(t, "192.0.2.1", records[0].Content, "정확한 매칭이 와일드카드보다 우선")
+
+	// 다른 서브도메인은 와일드카드 매칭
+	records, err = storage.GetRecordsByNameAndZone(zoneID, "other.example.com.", "A")
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	assert.Equal(t, "other.example.com.", records[0].Name)
+	assert.Equal(t, "192.0.2.100", records[0].Content)
+}
+
+// TestWildcardMultiLevel은 다중 레벨 와일드카드 테스트입니다
+func TestWildcardMultiLevel(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewRecordStorage(db)
+
+	// Zone 생성
+	zoneID := insertTestZone(t, db, "example.com.")
+
+	// 상위 와일드카드
+	_, err := db.Writer.Exec(`INSERT INTO records (zone_id, name, type, content, enabled)
+	                          VALUES (?, ?, ?, ?, ?)`, zoneID, "*.example.com.", "A", "192.0.2.100", 1)
+	require.NoError(t, err)
+
+	// 하위 와일드카드 (더 구체적)
+	_, err = db.Writer.Exec(`INSERT INTO records (zone_id, name, type, content, enabled)
+	                          VALUES (?, ?, ?, ?, ?)`, zoneID, "*.sub.example.com.", "A", "192.0.2.200", 1)
+	require.NoError(t, err)
+
+	// 하위 와일드카드 매칭 (더 구체적)
+	records, err := storage.GetRecordsByNameAndZone(zoneID, "foo.sub.example.com.", "A")
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	assert.Equal(t, "foo.sub.example.com.", records[0].Name)
+	assert.Equal(t, "192.0.2.200", records[0].Content, "더 구체적인 와일드카드 우선")
+
+	// 상위 와일드카드 매칭
+	records, err = storage.GetRecordsByNameAndZone(zoneID, "bar.example.com.", "A")
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	assert.Equal(t, "bar.example.com.", records[0].Name)
+	assert.Equal(t, "192.0.2.100", records[0].Content)
+
+	// 3레벨은 매칭 안 됨
+	records, err = storage.GetRecordsByNameAndZone(zoneID, "deep.foo.sub.example.com.", "A")
+	require.NoError(t, err)
+	assert.Empty(t, records)
+}
+
+// TestWildcardDifferentTypes은 와일드카드가 타입별로 독립적으로 동작하는지 테스트합니다
+func TestWildcardDifferentTypes(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewRecordStorage(db)
+
+	// Zone 생성
+	zoneID := insertTestZone(t, db, "example.com.")
+
+	// A 타입 와일드카드
+	_, err := db.Writer.Exec(`INSERT INTO records (zone_id, name, type, content, enabled)
+	                          VALUES (?, ?, ?, ?, ?)`, zoneID, "*.example.com.", "A", "192.0.2.100", 1)
+	require.NoError(t, err)
+
+	// AAAA 타입 와일드카드
+	_, err = db.Writer.Exec(`INSERT INTO records (zone_id, name, type, content, enabled)
+	                          VALUES (?, ?, ?, ?, ?)`, zoneID, "*.example.com.", "AAAA", "2001:db8::100", 1)
+	require.NoError(t, err)
+
+	// A 타입 쿼리
+	records, err := storage.GetRecordsByNameAndZone(zoneID, "test.example.com.", "A")
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	assert.Equal(t, "A", records[0].Type)
+	assert.Equal(t, "192.0.2.100", records[0].Content)
+
+	// AAAA 타입 쿼리
+	records, err = storage.GetRecordsByNameAndZone(zoneID, "test.example.com.", "AAAA")
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	assert.Equal(t, "AAAA", records[0].Type)
+	assert.Equal(t, "2001:db8::100", records[0].Content)
+
+	// MX 타입은 매칭 안 됨
+	records, err = storage.GetRecordsByNameAndZone(zoneID, "test.example.com.", "MX")
+	require.NoError(t, err)
+	assert.Empty(t, records)
+}
+
+// TestWildcardDisabled는 비활성화된 와일드카드가 매칭되지 않는지 테스트합니다
+func TestWildcardDisabled(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewRecordStorage(db)
+
+	// Zone 생성
+	zoneID := insertTestZone(t, db, "example.com.")
+
+	// 비활성화된 와일드카드
+	_, err := db.Writer.Exec(`INSERT INTO records (zone_id, name, type, content, enabled)
+	                          VALUES (?, ?, ?, ?, ?)`, zoneID, "*.example.com.", "A", "192.0.2.100", 0)
+	require.NoError(t, err)
+
+	// 매칭 안 됨
+	records, err := storage.GetRecordsByNameAndZone(zoneID, "foo.example.com.", "A")
+	require.NoError(t, err)
+	assert.Empty(t, records)
+}
+
+// TestDomainExistsInZone_Wildcard는 와일드카드 도메인 존재 확인 테스트입니다
+func TestDomainExistsInZone_Wildcard(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewRecordStorage(db)
+
+	// Zone 생성
+	zoneID := insertTestZone(t, db, "example.com.")
+
+	// 와일드카드 레코드
+	_, err := db.Writer.Exec(`INSERT INTO records (zone_id, name, type, content, enabled)
+	                          VALUES (?, ?, ?, ?, ?)`, zoneID, "*.example.com.", "A", "192.0.2.100", 1)
+	require.NoError(t, err)
+
+	// 와일드카드로 매칭되는 도메인 존재 확인
+	exists, err := storage.DomainExistsInZone(zoneID, "foo.example.com.")
+	require.NoError(t, err)
+	assert.True(t, exists, "와일드카드로 매칭되는 도메인은 존재해야 함")
+
+	// 와일드카드 자체는 존재하지 않음
+	exists, err = storage.DomainExistsInZone(zoneID, "*.example.com.")
+	require.NoError(t, err)
+	assert.True(t, exists, "와일드카드 레코드 자체도 존재함")
+
+	// 2레벨 서브도메인은 존재하지 않음
+	exists, err = storage.DomainExistsInZone(zoneID, "sub.foo.example.com.")
+	require.NoError(t, err)
+	assert.False(t, exists)
+}
