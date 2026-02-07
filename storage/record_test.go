@@ -36,6 +36,51 @@ func TestGetRecord(t *testing.T) {
 	assert.Nil(t, record)
 }
 
+func TestBatchUpdateLastQueryAt(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewRecordStorage(db)
+
+	zoneID := insertTestZone(t, db, "example.com.")
+	recordID := insertTestRecord(t, db, zoneID, "www.example.com.", "A", "192.0.2.1")
+
+	first := time.Date(2026, 2, 7, 13, 0, 0, 0, time.UTC)
+	second := first.Add(5 * time.Minute)
+
+	err := storage.BatchUpdateLastQueryAt(map[string]time.Time{
+		"www.example.com.": first,
+	})
+	require.NoError(t, err)
+
+	record, err := storage.GetRecord(recordID)
+	require.NoError(t, err)
+	require.NotNil(t, record)
+	require.NotNil(t, record.LastQueryAt)
+	assert.Equal(t, first.Unix(), record.LastQueryAt.Unix())
+
+	err = storage.BatchUpdateLastQueryAt(map[string]time.Time{
+		"www.example.com.": second,
+	})
+	require.NoError(t, err)
+
+	record, err = storage.GetRecord(recordID)
+	require.NoError(t, err)
+	require.NotNil(t, record.LastQueryAt)
+	assert.Equal(t, second.Unix(), record.LastQueryAt.Unix())
+}
+
+func TestBatchUpdateLastQueryAt_EmptyAndUnknown(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewRecordStorage(db)
+
+	err := storage.BatchUpdateLastQueryAt(nil)
+	require.NoError(t, err)
+
+	err = storage.BatchUpdateLastQueryAt(map[string]time.Time{
+		"unknown.example.com.": time.Now().UTC(),
+	})
+	require.NoError(t, err)
+}
+
 // TestGetRecordsByZone은 특정 Zone의 모든 Record를 조회하는 테스트입니다 (L2 캐시 활용)
 func TestGetRecordsByZone(t *testing.T) {
 	db := setupTestDB(t)

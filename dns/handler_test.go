@@ -40,6 +40,7 @@ func setupTestHandler(t *testing.T) (*Handler, *storage.Database, func()) {
 
 	// Cleanup 함수
 	cleanup := func() {
+		handler.Stop()
 		_ = db.Close()
 		_ = os.Remove(dbPath)
 	}

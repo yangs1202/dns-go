@@ -19,17 +19,19 @@ import (
 
 func TestToRecordResponse(t *testing.T) {
 	now := time.Now()
+	lastQueryAt := now.Add(-10 * time.Minute)
 	record := &model.Record{
-		ID:        1,
-		ZoneID:    1,
-		Name:      "www.example.com.",
-		Type:      "A",
-		Content:   "192.0.2.1",
-		TTL:       3600,
-		Priority:  0,
-		Enabled:   true,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:          1,
+		ZoneID:      1,
+		Name:        "www.example.com.",
+		Type:        "A",
+		Content:     "192.0.2.1",
+		TTL:         3600,
+		Priority:    0,
+		Enabled:     true,
+		LastQueryAt: &lastQueryAt,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 
 	zone := &model.Zone{
@@ -58,6 +60,8 @@ func TestToRecordResponse(t *testing.T) {
 	assert.Equal(t, record.TTL, respWithoutZone.TTL)
 	assert.Equal(t, record.Priority, respWithoutZone.Priority)
 	assert.Equal(t, record.Enabled, respWithoutZone.Enabled)
+	require.NotNil(t, respWithoutZone.LastQueryAt)
+	assert.Equal(t, record.LastQueryAt.Unix(), respWithoutZone.LastQueryAt.Unix())
 	assert.Equal(t, record.CreatedAt, respWithoutZone.CreatedAt)
 	assert.Equal(t, record.UpdatedAt, respWithoutZone.UpdatedAt)
 
@@ -119,6 +123,10 @@ func TestListAllRecords(t *testing.T) {
 				records, ok := response.Data.([]interface{})
 				require.True(t, ok)
 				assert.Len(t, records, tt.wantCount)
+				first, ok := records[0].(map[string]interface{})
+				require.True(t, ok)
+				_, exists := first["last_query_at"]
+				assert.True(t, exists)
 			}
 		})
 	}
@@ -197,6 +205,10 @@ func TestListRecords(t *testing.T) {
 					records, ok := response.Data.([]interface{})
 					require.True(t, ok)
 					assert.Len(t, records, tt.wantCount)
+					first, ok := records[0].(map[string]interface{})
+					require.True(t, ok)
+					_, exists := first["last_query_at"]
+					assert.True(t, exists)
 				}
 			}
 		})

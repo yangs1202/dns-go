@@ -45,6 +45,7 @@ func setupTestHandlerWithGSLB(t *testing.T) (*Handler, *storage.Database, func()
 	}
 
 	cleanup := func() {
+		handler.Stop()
 		_ = db.Close()
 		_ = os.Remove(dbPath)
 	}
@@ -101,6 +102,7 @@ func setupTestHandlerWithAdblock(t *testing.T, blockedDomains []string, response
 	}
 
 	cleanup := func() {
+		handler.Stop()
 		_ = db.Close()
 		_ = os.Remove(dbPath)
 	}
@@ -2036,6 +2038,7 @@ func TestServeDNS_NilStats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Handler creation failed: %v", err)
 	}
+	defer handler.Stop()
 
 	req := new(dns.Msg)
 	req.SetQuestion("test.example.com.", dns.TypeA)
