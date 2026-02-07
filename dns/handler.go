@@ -635,6 +635,20 @@ func (h *Handler) resolveCNAMEChain(zoneID int64, domain, qtype string, clientIP
 			return records, err
 		}
 		if len(cnameRecords) == 0 {
+			// 크로스 Zone CNAME 탐색
+			currentZoneName := h.extractDomain(current)
+			currentZone, zErr := h.zoneStorage.GetZoneByName(currentZoneName)
+			if zErr == nil && currentZone != nil && currentZone.ID != zoneID {
+				cnameRecords, err = h.recordStorage.GetRecordsByNameAndZone(currentZone.ID, current, "CNAME")
+				if err != nil {
+					return records, err
+				}
+				if len(cnameRecords) > 0 {
+					log.Printf("[DNS] Cross-zone CNAME found: %s in zone %s", current, currentZoneName)
+				}
+			}
+		}
+		if len(cnameRecords) == 0 {
 			break
 		}
 
@@ -703,8 +717,70 @@ func (h *Handler) resolveTargetRecords(zoneID int64, target, qtype string, clien
 		}
 	}
 
-	// 2. 로컬 Zone 레코드 조회
-	return h.recordStorage.GetRecordsByNameAndZone(zoneID, target, qtype)
+	// 2. 동일 Zone 내 레코드 조회
+	records, err := h.recordStorage.GetRecordsByNameAndZone(zoneID, target, qtype)
+	if err != nil {
+		return nil, err
+	}
+	if len(records) > 0 {
+		return records, nil
+	}
+
+	// 3. 크로스 Zone 조회 - 타겟이 다른 Zone에 속할 수 있음
+	targetZoneName := h.extractDomain(target)
+	targetZone, err := h.zoneStorage.GetZoneByName(targetZoneName)
+	if err == nil && targetZone != nil && targetZone.ID != zoneID {
+		records, err = h.recordStorage.GetRecordsByNameAndZone(targetZone.ID, target, qtype)
+		if err != nil {
+			return nil, err
+		}
+		if len(records) > 0 {
+			log.Printf("[DNS] Cross-zone resolution: found %s record for %s in zone %s", qtype, target, targetZoneName)
+			return records, nil
+		}
+	}
+
+	// 4. 로컬에 없으면 업스트림 포워딩으로 해석
+	if h.resolver != nil {
+		msg := new(dns.Msg)
+		msg.SetQuestion(dns.Fqdn(target), dns.StringToType[qtype])
+		msg.RecursionDesired = true
+
+		resp, err := h.resolver.Forward(msg)
+		if err == nil && len(resp.Answer) > 0 {
+			records := make([]*model.Record, 0, len(resp.Answer))
+			for _, rr := range resp.Answer {
+				switch v := rr.(type) {
+				case *dns.A:
+					if qtype == "A" {
+						records = append(records, &model.Record{
+							Name:    target,
+							Type:    "A",
+							Content: v.A.String(),
+							TTL:     int64(v.Hdr.Ttl),
+							Enabled: true,
+						})
+					}
+				case *dns.AAAA:
+					if qtype == "AAAA" {
+						records = append(records, &model.Record{
+							Name:    target,
+							Type:    "AAAA",
+							Content: v.AAAA.String(),
+							TTL:     int64(v.Hdr.Ttl),
+							Enabled: true,
+						})
+					}
+				}
+			}
+			if len(records) > 0 {
+				log.Printf("[DNS] Upstream resolution: found %d %s record(s) for %s", len(records), qtype, target)
+				return records, nil
+			}
+		}
+	}
+
+	return nil, nil
 }
 
 // recordToRR은 model.Record를 dns.RR로 변환합니다

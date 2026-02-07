@@ -333,6 +333,179 @@ func TestServeDNS_CNAMEChainLoop(t *testing.T) {
 	}
 }
 
+// TestServeDNS_CNAMEChainCrossZone은 크로스 Zone CNAME 해석을 테스트합니다
+func TestServeDNS_CNAMEChainCrossZone(t *testing.T) {
+	handler, _, cleanup := setupTestHandler(t)
+	defer cleanup()
+
+	// Zone 1: decoverstudio.com
+	zone1 := &model.Zone{
+		Name:          "decoverstudio.com.",
+		Enabled:       true,
+		AllowFallback: false,
+	}
+	zoneID1, err := handler.zoneStorage.CreateZone(zone1)
+	if err != nil {
+		t.Fatalf("Zone 1 생성 실패: %v", err)
+	}
+
+	// Zone 2: yangs.sh
+	zone2 := &model.Zone{
+		Name:          "yangs.sh.",
+		Enabled:       true,
+		AllowFallback: false,
+	}
+	zoneID2, err := handler.zoneStorage.CreateZone(zone2)
+	if err != nil {
+		t.Fatalf("Zone 2 생성 실패: %v", err)
+	}
+
+	// Zone 1의 레코드: dev-ins-api.decoverstudio.com. -> lb.yangs.sh.
+	record1 := &model.Record{
+		ZoneID:  zoneID1,
+		Name:    "dev-ins-api.decoverstudio.com.",
+		Type:    "CNAME",
+		Content: "lb.yangs.sh.",
+		TTL:     300,
+		Enabled: true,
+	}
+	if _, err := handler.recordStorage.CreateRecord(record1); err != nil {
+		t.Fatalf("CNAME 레코드 생성 실패: %v", err)
+	}
+
+	// Zone 2의 레코드: lb.yangs.sh. -> A 10.97.11.110
+	record2 := &model.Record{
+		ZoneID:  zoneID2,
+		Name:    "lb.yangs.sh.",
+		Type:    "A",
+		Content: "10.97.11.110",
+		TTL:     60,
+		Enabled: true,
+	}
+	if _, err := handler.recordStorage.CreateRecord(record2); err != nil {
+		t.Fatalf("A 레코드 생성 실패: %v", err)
+	}
+
+	// dev-ins-api.decoverstudio.com에 대한 A 쿼리
+	req := new(dns.Msg)
+	req.SetQuestion("dev-ins-api.decoverstudio.com.", dns.TypeA)
+
+	w := newMockWriter("192.0.2.100")
+	handler.ServeDNS(w, req)
+
+	if w.msg == nil {
+		t.Fatal("응답이 없습니다")
+	}
+	if w.msg.Rcode != dns.RcodeSuccess {
+		t.Fatalf("예상 Rcode: %d, 실제: %d", dns.RcodeSuccess, w.msg.Rcode)
+	}
+
+	// CNAME + A 레코드 모두 반환되어야 함
+	if len(w.msg.Answer) != 2 {
+		t.Fatalf("예상 Answer 수: 2 (CNAME, A), 실제: %d", len(w.msg.Answer))
+	}
+
+	// 첫 번째는 CNAME이어야 함
+	cname, ok := w.msg.Answer[0].(*dns.CNAME)
+	if !ok {
+		t.Fatalf("첫 번째 응답은 CNAME이어야 합니다: %T", w.msg.Answer[0])
+	}
+	if cname.Target != "lb.yangs.sh." {
+		t.Fatalf("예상 CNAME 타겟: lb.yangs.sh., 실제: %s", cname.Target)
+	}
+
+	// 두 번째는 A 레코드여야 함
+	a, ok := w.msg.Answer[1].(*dns.A)
+	if !ok {
+		t.Fatalf("두 번째 응답은 A여야 합니다: %T", w.msg.Answer[1])
+	}
+	if a.A.String() != "10.97.11.110" {
+		t.Fatalf("예상 IP: 10.97.11.110, 실제: %s", a.A.String())
+	}
+}
+
+// TestServeDNS_CNAMEChainCrossZoneUpstream은 업스트림 포워딩을 통한 크로스 Zone CNAME 해석을 테스트합니다
+func TestServeDNS_CNAMEChainCrossZoneUpstream(t *testing.T) {
+	t.Skip("실제 업스트림 DNS 서버가 필요하므로 스킵")
+
+	handler, db, cleanup := setupTestHandler(t)
+	defer cleanup()
+
+	// 업스트림 서버 추가
+	upstream := &model.UpstreamServer{
+		Name:     "Google DNS",
+		Address:  "8.8.8.8:53",
+		Protocol: "udp",
+		Priority: 1,
+		Enabled:  true,
+	}
+	_, err := db.Writer.Exec(
+		`INSERT INTO upstream_servers (name, address, protocol, priority, enabled) VALUES (?, ?, ?, ?, ?)`,
+		upstream.Name, upstream.Address, upstream.Protocol, upstream.Priority, upstream.Enabled,
+	)
+	if err != nil {
+		t.Fatalf("업스트림 서버 추가 실패: %v", err)
+	}
+
+	// Zone 생성
+	zone := &model.Zone{
+		Name:          "example.com.",
+		Enabled:       true,
+		AllowFallback: true,
+	}
+	zoneID, err := handler.zoneStorage.CreateZone(zone)
+	if err != nil {
+		t.Fatalf("Zone 생성 실패: %v", err)
+	}
+
+	// CNAME 레코드: api.example.com. -> www.google.com.
+	record := &model.Record{
+		ZoneID:  zoneID,
+		Name:    "api.example.com.",
+		Type:    "CNAME",
+		Content: "www.google.com.",
+		TTL:     300,
+		Enabled: true,
+	}
+	if _, err := handler.recordStorage.CreateRecord(record); err != nil {
+		t.Fatalf("CNAME 레코드 생성 실패: %v", err)
+	}
+
+	// api.example.com에 대한 A 쿼리 (www.google.com은 업스트림에서 해석됨)
+	req := new(dns.Msg)
+	req.SetQuestion("api.example.com.", dns.TypeA)
+
+	w := newMockWriter("192.0.2.100")
+	handler.ServeDNS(w, req)
+
+	if w.msg == nil {
+		t.Fatal("응답이 없습니다")
+	}
+	if w.msg.Rcode != dns.RcodeSuccess {
+		t.Fatalf("예상 Rcode: %d, 실제: %d", dns.RcodeSuccess, w.msg.Rcode)
+	}
+
+	// CNAME + A 레코드 모두 반환되어야 함
+	if len(w.msg.Answer) < 2 {
+		t.Fatalf("예상 Answer 수: 최소 2 (CNAME, A), 실제: %d", len(w.msg.Answer))
+	}
+
+	// 첫 번째는 CNAME이어야 함
+	cname, ok := w.msg.Answer[0].(*dns.CNAME)
+	if !ok {
+		t.Fatalf("첫 번째 응답은 CNAME이어야 합니다: %T", w.msg.Answer[0])
+	}
+	if cname.Target != "www.google.com." {
+		t.Fatalf("예상 CNAME 타겟: www.google.com., 실제: %s", cname.Target)
+	}
+
+	// 마지막은 A 레코드여야 함
+	_, ok = w.msg.Answer[len(w.msg.Answer)-1].(*dns.A)
+	if !ok {
+		t.Fatalf("마지막 응답은 A여야 합니다: %T", w.msg.Answer[len(w.msg.Answer)-1])
+	}
+}
+
 // TestServeDNS_UpstreamForwarding은 업스트림 포워딩을 테스트합니다
 func TestServeDNS_UpstreamForwarding(t *testing.T) {
 	t.Skip("실제 DNS 서버가 필요하므로 스킵")
