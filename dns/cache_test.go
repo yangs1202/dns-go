@@ -26,6 +26,7 @@ func createTestRR(domain string, ip string) dns.RR {
 // TestGetSetBasic tests basic Get/Set operations
 func TestGetSetBasic(t *testing.T) {
 	cache := NewDNSCache(100, 300, 60, 0.9)
+	defer cache.Stop()
 
 	domain := "example.com."
 	qtype := "A"
@@ -70,6 +71,7 @@ func TestGetSetBasic(t *testing.T) {
 // TestTTLExpiry tests that entries expire after TTL
 func TestTTLExpiry(t *testing.T) {
 	cache := NewDNSCache(100, 300, 60, 0.9)
+	defer cache.Stop()
 
 	domain := "example.com."
 	qtype := "A"
@@ -102,6 +104,7 @@ func TestTTLExpiry(t *testing.T) {
 // TestNegativeCaching tests NXDOMAIN caching
 func TestNegativeCaching(t *testing.T) {
 	cache := NewDNSCache(100, 300, 60, 0.9)
+	defer cache.Stop()
 
 	domain := "nonexistent.com."
 	qtype := "A"
@@ -134,6 +137,7 @@ func TestNegativeCaching(t *testing.T) {
 // TestPrefetchTrigger tests that prefetch is triggered at the right time
 func TestPrefetchTrigger(t *testing.T) {
 	cache := NewDNSCache(100, 300, 60, 0.9)
+	defer cache.Stop()
 
 	prefetchCalled := make(chan bool, 1)
 	prefetchDomain := ""
@@ -187,6 +191,7 @@ func TestPrefetchTrigger(t *testing.T) {
 // TestLRUEviction tests that oldest entries are evicted when cache is full
 func TestLRUEviction(t *testing.T) {
 	cache := NewDNSCache(3, 300, 60, 0.9) // Small cache size
+	defer cache.Stop()
 
 	domain1 := "example1.com."
 	domain2 := "example2.com."
@@ -250,6 +255,7 @@ func TestLRUEviction(t *testing.T) {
 // TestConcurrency tests concurrent access to the cache
 func TestConcurrency(t *testing.T) {
 	cache := NewDNSCache(1000, 300, 60, 0.9)
+	defer cache.Stop()
 
 	var wg sync.WaitGroup
 	numGoroutines := 50
@@ -294,6 +300,7 @@ func TestConcurrency(t *testing.T) {
 // TestDelete tests deleting all entries for a domain
 func TestDelete(t *testing.T) {
 	cache := NewDNSCache(100, 300, 60, 0.9)
+	defer cache.Stop()
 
 	domain := "example.com."
 	rrs := []dns.RR{createTestRR(domain, "1.2.3.4")}
@@ -343,6 +350,7 @@ func TestDelete(t *testing.T) {
 // TestClear tests clearing the entire cache
 func TestClear(t *testing.T) {
 	cache := NewDNSCache(100, 300, 60, 0.9)
+	defer cache.Stop()
 
 	rrs := []dns.RR{createTestRR("test.com.", "1.2.3.4")}
 
@@ -377,6 +385,7 @@ func TestClear(t *testing.T) {
 // TestStats tests cache statistics tracking
 func TestStats(t *testing.T) {
 	cache := NewDNSCache(2, 300, 60, 0.9)
+	defer cache.Stop()
 
 	domain := "example.com."
 	qtype := "A"
@@ -427,6 +436,7 @@ func TestStats(t *testing.T) {
 // TestDefaultTTL tests that default TTL is used when TTL is 0
 func TestDefaultTTL(t *testing.T) {
 	cache := NewDNSCache(100, 300, 60, 0.9)
+	defer cache.Stop()
 
 	domain := "example.com."
 	qtype := "A"
@@ -451,6 +461,7 @@ func TestDefaultTTL(t *testing.T) {
 // TestPrefetchNotTriggeredForNegative tests that prefetch is not triggered for negative entries
 func TestPrefetchNotTriggeredForNegative(t *testing.T) {
 	cache := NewDNSCache(100, 300, 60, 0.9)
+	defer cache.Stop()
 
 	prefetchCalled := make(chan bool, 1)
 
@@ -481,6 +492,7 @@ func TestPrefetchNotTriggeredForNegative(t *testing.T) {
 // TestCacheKeyFormat tests that cache keys are properly formatted
 func TestCacheKeyFormat(t *testing.T) {
 	cache := NewDNSCache(100, 300, 60, 0.9)
+	defer cache.Stop()
 
 	domain := "example.com."
 	rrs := []dns.RR{createTestRR(domain, "1.2.3.4")}
@@ -508,6 +520,7 @@ func TestCacheKeyFormat(t *testing.T) {
 // TestCleanupExpired tests the background cleanup of expired entries
 func TestCleanupExpired(t *testing.T) {
 	cache := NewDNSCache(100, 300, 60, 0.9)
+	defer cache.Stop()
 
 	domain := "example.com."
 	qtype := "A"
@@ -539,6 +552,7 @@ func TestCleanupExpired(t *testing.T) {
 // BenchmarkCacheSet benchmarks cache Set operations
 func BenchmarkCacheSet(b *testing.B) {
 	cache := NewDNSCache(10000, 300, 60, 0.9)
+	defer cache.Stop()
 	rrs := []dns.RR{createTestRR("example.com.", "1.2.3.4")}
 
 	b.ResetTimer()
@@ -551,6 +565,7 @@ func BenchmarkCacheSet(b *testing.B) {
 // BenchmarkCacheGet benchmarks cache Get operations
 func BenchmarkCacheGet(b *testing.B) {
 	cache := NewDNSCache(10000, 300, 60, 0.9)
+	defer cache.Stop()
 	domain := "example.com."
 	rrs := []dns.RR{createTestRR(domain, "1.2.3.4")}
 	cache.Set(domain, "A", rrs, 300, false)
@@ -564,6 +579,7 @@ func BenchmarkCacheGet(b *testing.B) {
 // BenchmarkCacheConcurrent benchmarks concurrent cache operations
 func BenchmarkCacheConcurrent(b *testing.B) {
 	cache := NewDNSCache(10000, 300, 60, 0.9)
+	defer cache.Stop()
 	domain := "example.com."
 	rrs := []dns.RR{createTestRR(domain, "1.2.3.4")}
 	cache.Set(domain, "A", rrs, 300, false)
@@ -579,6 +595,7 @@ func BenchmarkCacheConcurrent(b *testing.B) {
 // TestAtomicOperations tests that atomic operations work correctly
 func TestAtomicOperations(t *testing.T) {
 	cache := NewDNSCache(100, 300, 60, 0.9)
+	defer cache.Stop()
 
 	var wg sync.WaitGroup
 	numGoroutines := 100

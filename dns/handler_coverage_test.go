@@ -45,6 +45,7 @@ func setupTestHandlerWithGSLB(t *testing.T) (*Handler, *storage.Database, func()
 	}
 
 	cleanup := func() {
+		handler.Stop()
 		_ = db.Close()
 		_ = os.Remove(dbPath)
 	}
@@ -101,6 +102,7 @@ func setupTestHandlerWithAdblock(t *testing.T, blockedDomains []string, response
 	}
 
 	cleanup := func() {
+		handler.Stop()
 		_ = db.Close()
 		_ = os.Remove(dbPath)
 	}
@@ -1734,6 +1736,7 @@ func TestServeDNS_MinTTLCaching(t *testing.T) {
 
 func TestCacheRemoveExpired_WithExpiredEntries(t *testing.T) {
 	cache := NewDNSCache(100, 300, 60, 0.9)
+	defer cache.Stop()
 
 	rrs := []dns.RR{&dns.A{
 		Hdr: dns.RR_Header{Name: "test.com.", Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 1},
@@ -1768,6 +1771,7 @@ func TestCacheRemoveExpired_WithExpiredEntries(t *testing.T) {
 
 func TestCacheRemoveExpired_NoExpiredEntries(t *testing.T) {
 	cache := NewDNSCache(100, 300, 60, 0.9)
+	defer cache.Stop()
 
 	rrs := []dns.RR{&dns.A{
 		Hdr: dns.RR_Header{Name: "test.com.", Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 3600},
@@ -1787,6 +1791,7 @@ func TestCacheRemoveExpired_NoExpiredEntries(t *testing.T) {
 
 func TestCacheRemoveExpired_EmptyCache(t *testing.T) {
 	cache := NewDNSCache(100, 300, 60, 0.9)
+	defer cache.Stop()
 
 	// Should not panic on empty cache
 	cache.removeExpired()
@@ -2036,6 +2041,7 @@ func TestServeDNS_NilStats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Handler creation failed: %v", err)
 	}
+	defer handler.Stop()
 
 	req := new(dns.Msg)
 	req.SetQuestion("test.example.com.", dns.TypeA)

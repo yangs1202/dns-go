@@ -107,6 +107,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("DNS 핸들러 초기화 실패: %v", err)
 	}
+	defer handler.Stop()
 
 	log.Printf("DNS 핸들러 초기화 완료 (NSID: %s)", cfg.DNS.NSID)
 

@@ -54,6 +54,9 @@ type DNSCache struct {
 	prefetchFn      func(domain, qtype string) // Prefetch 콜백 함수
 	mu              sync.RWMutex          // items 맵 보호용
 	items           map[string]*cacheItem // LRU 추적용
+	stopCh          chan struct{}         // cleanup goroutine 중지용
+	doneCh          chan struct{}         // cleanup goroutine 종료 대기용
+	stopOnce        sync.Once             // Stop이 한 번만 실행되도록 보장
 }
 
 // NewDNSCache creates a new DNS cache
@@ -64,6 +67,8 @@ func NewDNSCache(maxSize int64, defaultTTL, negativeTTL int64, prefetchTrigger f
 		negativeTTL:     negativeTTL,
 		prefetchTrigger: prefetchTrigger,
 		items:           make(map[string]*cacheItem),
+		stopCh:          make(chan struct{}),
+		doneCh:          make(chan struct{}),
 	}
 
 	// Start background cleanup goroutine
@@ -75,6 +80,14 @@ func NewDNSCache(maxSize int64, defaultTTL, negativeTTL int64, prefetchTrigger f
 // SetPrefetchFunc sets the prefetch callback function
 func (c *DNSCache) SetPrefetchFunc(fn func(domain, qtype string)) {
 	c.prefetchFn = fn
+}
+
+// Stop gracefully stops the cache cleanup goroutine
+func (c *DNSCache) Stop() {
+	c.stopOnce.Do(func() {
+		close(c.stopCh)
+		<-c.doneCh
+	})
 }
 
 // Get retrieves a cached DNS entry
@@ -283,9 +296,15 @@ func (c *DNSCache) evictOldest() {
 func (c *DNSCache) cleanupExpired() {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
+	defer close(c.doneCh)
 
-	for range ticker.C {
-		c.removeExpired()
+	for {
+		select {
+		case <-ticker.C:
+			c.removeExpired()
+		case <-c.stopCh:
+			return
+		}
 	}
 }
 

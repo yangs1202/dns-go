@@ -32,6 +32,7 @@ func (db *Database) Migrate() error {
 			ttl INTEGER DEFAULT 300,
 			priority INTEGER DEFAULT 0,
 			enabled INTEGER DEFAULT 1,
+			last_query_at DATETIME,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
@@ -170,6 +171,7 @@ func (db *Database) Migrate() error {
 	// 기존 테이블에 컬럼 추가 (ALTER TABLE은 실패해도 계속 진행)
 	migrations := []string{
 		`ALTER TABLE zones ADD COLUMN allow_fallback INTEGER DEFAULT 1`,
+		`ALTER TABLE records ADD COLUMN last_query_at DATETIME`,
 	}
 
 	// 헬스체크 테이블 마이그레이션: member_id -> policy_id (일회성)

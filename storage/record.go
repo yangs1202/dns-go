@@ -189,10 +189,11 @@ func (s *RecordStorage) ClearCache() {
 
 // GetRecord는 ID로 Record를 조회합니다
 func (s *RecordStorage) GetRecord(id int64) (*model.Record, error) {
-	query := `SELECT id, zone_id, name, type, content, ttl, priority, enabled, created_at, updated_at
+	query := `SELECT id, zone_id, name, type, content, ttl, priority, enabled, last_query_at, created_at, updated_at
 	          FROM records WHERE id = ?`
 
 	var record model.Record
+	var lastQueryAt sql.NullTime
 	err := s.db.Reader.QueryRow(query, id).Scan(
 		&record.ID,
 		&record.ZoneID,
@@ -202,6 +203,7 @@ func (s *RecordStorage) GetRecord(id int64) (*model.Record, error) {
 		&record.TTL,
 		&record.Priority,
 		&record.Enabled,
+		&lastQueryAt,
 		&record.CreatedAt,
 		&record.UpdatedAt,
 	)
@@ -212,6 +214,10 @@ func (s *RecordStorage) GetRecord(id int64) (*model.Record, error) {
 
 	if err != nil {
 		return nil, fmt.Errorf("record 조회 실패: %w", err)
+	}
+	if lastQueryAt.Valid {
+		t := lastQueryAt.Time
+		record.LastQueryAt = &t
 	}
 
 	return &record, nil
@@ -225,7 +231,7 @@ func (s *RecordStorage) GetRecordsByZone(zoneID int64) ([]*model.Record, error) 
 	}
 
 	// DB 조회
-	query := `SELECT id, zone_id, name, type, content, ttl, priority, enabled, created_at, updated_at
+	query := `SELECT id, zone_id, name, type, content, ttl, priority, enabled, last_query_at, created_at, updated_at
 	          FROM records WHERE zone_id = ? ORDER BY name, type`
 
 	rows, err := s.db.Reader.Query(query, zoneID)
@@ -237,6 +243,7 @@ func (s *RecordStorage) GetRecordsByZone(zoneID int64) ([]*model.Record, error) 
 	var records []*model.Record
 	for rows.Next() {
 		var record model.Record
+		var lastQueryAt sql.NullTime
 		err := rows.Scan(
 			&record.ID,
 			&record.ZoneID,
@@ -246,11 +253,16 @@ func (s *RecordStorage) GetRecordsByZone(zoneID int64) ([]*model.Record, error) 
 			&record.TTL,
 			&record.Priority,
 			&record.Enabled,
+			&lastQueryAt,
 			&record.CreatedAt,
 			&record.UpdatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("record 스캔 실패: %w", err)
+		}
+		if lastQueryAt.Valid {
+			t := lastQueryAt.Time
+			record.LastQueryAt = &t
 		}
 		records = append(records, &record)
 	}
@@ -267,7 +279,7 @@ func (s *RecordStorage) GetRecordsByZone(zoneID int64) ([]*model.Record, error) 
 
 // ListAllRecords는 모든 Zone의 모든 Record를 조회합니다
 func (s *RecordStorage) ListAllRecords() ([]*model.Record, error) {
-	query := `SELECT id, zone_id, name, type, content, ttl, priority, enabled, created_at, updated_at
+	query := `SELECT id, zone_id, name, type, content, ttl, priority, enabled, last_query_at, created_at, updated_at
 	          FROM records ORDER BY zone_id, name, type`
 
 	rows, err := s.db.Reader.Query(query)
@@ -279,6 +291,7 @@ func (s *RecordStorage) ListAllRecords() ([]*model.Record, error) {
 	var records []*model.Record
 	for rows.Next() {
 		var record model.Record
+		var lastQueryAt sql.NullTime
 		err := rows.Scan(
 			&record.ID,
 			&record.ZoneID,
@@ -288,11 +301,16 @@ func (s *RecordStorage) ListAllRecords() ([]*model.Record, error) {
 			&record.TTL,
 			&record.Priority,
 			&record.Enabled,
+			&lastQueryAt,
 			&record.CreatedAt,
 			&record.UpdatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("record 스캔 실패: %w", err)
+		}
+		if lastQueryAt.Valid {
+			t := lastQueryAt.Time
+			record.LastQueryAt = &t
 		}
 		records = append(records, &record)
 	}
@@ -359,7 +377,7 @@ func (s *RecordStorage) DomainExistsInZone(zoneID int64, name string) (bool, err
 // GetRecordsByName은 이름과 타입으로 Record를 조회합니다 (하위 호환성을 위해 유지)
 func (s *RecordStorage) GetRecordsByName(name, recordType string) ([]*model.Record, error) {
 	// zone_id를 모르는 경우 DB 직접 조회
-	query := `SELECT id, zone_id, name, type, content, ttl, priority, enabled, created_at, updated_at
+	query := `SELECT id, zone_id, name, type, content, ttl, priority, enabled, last_query_at, created_at, updated_at
 	          FROM records WHERE name = ? AND type = ? AND enabled = 1
 	          ORDER BY priority, id`
 
@@ -372,6 +390,7 @@ func (s *RecordStorage) GetRecordsByName(name, recordType string) ([]*model.Reco
 	var records []*model.Record
 	for rows.Next() {
 		var record model.Record
+		var lastQueryAt sql.NullTime
 		err := rows.Scan(
 			&record.ID,
 			&record.ZoneID,
@@ -381,11 +400,16 @@ func (s *RecordStorage) GetRecordsByName(name, recordType string) ([]*model.Reco
 			&record.TTL,
 			&record.Priority,
 			&record.Enabled,
+			&lastQueryAt,
 			&record.CreatedAt,
 			&record.UpdatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("record 스캔 실패: %w", err)
+		}
+		if lastQueryAt.Valid {
+			t := lastQueryAt.Time
+			record.LastQueryAt = &t
 		}
 		records = append(records, &record)
 	}
@@ -395,6 +419,41 @@ func (s *RecordStorage) GetRecordsByName(name, recordType string) ([]*model.Reco
 	}
 
 	return records, nil
+}
+
+// BatchUpdateLastQueryAt는 domain별 마지막 조회 시간을 일괄 업데이트합니다.
+func (s *RecordStorage) BatchUpdateLastQueryAt(lastQueries map[string]time.Time) error {
+	if len(lastQueries) == 0 {
+		return nil
+	}
+
+	tx, err := s.db.Writer.Begin()
+	if err != nil {
+		return fmt.Errorf("트랜잭션 시작 실패: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	stmt, err := tx.Prepare(`UPDATE records SET last_query_at = ? WHERE name = ?`)
+	if err != nil {
+		return fmt.Errorf("쿼리 준비 실패: %w", err)
+	}
+	defer func() { _ = stmt.Close() }()
+
+	for domain, queriedAt := range lastQueries {
+		if domain == "" {
+			continue
+		}
+
+		if _, err := stmt.Exec(queriedAt.UTC(), domain); err != nil {
+			return fmt.Errorf("last_query_at 업데이트 실패: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("트랜잭션 커밋 실패: %w", err)
+	}
+
+	return nil
 }
 
 // CreateRecord는 새로운 Record를 생성합니다

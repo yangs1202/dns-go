@@ -18,19 +18,20 @@ import (
 
 // Handler는 DNS 쿼리를 처리하는 핸들러입니다
 type Handler struct {
-	cache           *DNSCache              // L1 DNS 응답 캐시
-	zoneStorage     *storage.ZoneStorage   // Zone 저장소 (L2 캐시)
-	recordStorage   *storage.RecordStorage // Record 저장소 (L2 캐시)
-	resolver        *Resolver              // 업스트림 리졸버
-	cacheSettings   *storage.Database      // 캐시 설정 조회용
-	stats           *QueryStats
-	gslbEngine      *gslb.Engine
-	adblockFilter   *adblock.Filter
-	adblockStorage  *storage.AdblockStorage
-	adblockResponse string
-	nsid            string // RFC 5001 NSID (Name Server Identifier)
-	version         string // CHAOS TXT version.bind 응답
-	negativeTTL     uint32 // NXDOMAIN 응답 TTL (SOA Minimum)
+	cache            *DNSCache              // L1 DNS 응답 캐시
+	zoneStorage      *storage.ZoneStorage   // Zone 저장소 (L2 캐시)
+	recordStorage    *storage.RecordStorage // Record 저장소 (L2 캐시)
+	lastQueryTracker *lastQueryTracker
+	resolver         *Resolver         // 업스트림 리졸버
+	cacheSettings    *storage.Database // 캐시 설정 조회용
+	stats            *QueryStats
+	gslbEngine       *gslb.Engine
+	adblockFilter    *adblock.Filter
+	adblockStorage   *storage.AdblockStorage
+	adblockResponse  string
+	nsid             string // RFC 5001 NSID (Name Server Identifier)
+	version          string // CHAOS TXT version.bind 응답
+	negativeTTL      uint32 // NXDOMAIN 응답 TTL (SOA Minimum)
 }
 
 const maxCNAMEChainDepth = 8
@@ -63,25 +64,36 @@ func NewHandler(
 	cache := NewDNSCache(maxSize, defaultTTL, negativeTTL, prefetchTrigger)
 
 	handler := &Handler{
-		cache:           cache,
-		zoneStorage:     zoneStorage,
-		recordStorage:   recordStorage,
-		resolver:        resolver,
-		cacheSettings:   db,
-		stats:           stats,
-		gslbEngine:      gslbEngine,
-		adblockFilter:   adblockFilter,
-		adblockStorage:  adblockStorage,
-		adblockResponse: adblockResponse,
-		nsid:            nsid,
-		version:         version,
-		negativeTTL:     uint32(negativeTTL),
+		cache:            cache,
+		zoneStorage:      zoneStorage,
+		recordStorage:    recordStorage,
+		lastQueryTracker: newLastQueryTracker(recordStorage, defaultLastQueryFlushInterval),
+		resolver:         resolver,
+		cacheSettings:    db,
+		stats:            stats,
+		gslbEngine:       gslbEngine,
+		adblockFilter:    adblockFilter,
+		adblockStorage:   adblockStorage,
+		adblockResponse:  adblockResponse,
+		nsid:             nsid,
+		version:          version,
+		negativeTTL:      uint32(negativeTTL),
 	}
 
 	// Prefetch 콜백 함수 설정
 	cache.SetPrefetchFunc(handler.handlePrefetch)
 
 	return handler, nil
+}
+
+// Stop는 핸들러 내부 백그라운드 작업을 종료합니다.
+func (h *Handler) Stop() {
+	if h.cache != nil {
+		h.cache.Stop()
+	}
+	if h.lastQueryTracker != nil {
+		h.lastQueryTracker.Stop()
+	}
 }
 
 // ClearCache는 모든 DNS 캐시를 클리어합니다 (동기화 시 호출)
@@ -268,6 +280,11 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 		metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeNotImplemented]).Inc()
 		_ = w.WriteMsg(resp)
 		return
+	}
+
+	// 조회 시각은 domain 기준으로 최신값만 비동기 반영합니다.
+	if h.lastQueryTracker != nil {
+		h.lastQueryTracker.Record(domain, start)
 	}
 
 	// 1. L1 캐시 확인

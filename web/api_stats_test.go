@@ -34,6 +34,7 @@ func setupStatsTestAPI(t *testing.T) *API {
 		"",  // version
 	)
 	require.NoError(t, err)
+	t.Cleanup(handler.Stop)
 
 	api := &API{
 		db:         db,

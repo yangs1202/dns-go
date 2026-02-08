@@ -63,32 +63,34 @@ type recordRequest struct {
 
 // recordResponse는 API 응답용 Record 구조체 (마침표 제거)
 type recordResponse struct {
-	ID        int64         `json:"id"`
-	ZoneID    int64         `json:"zone_id"`
-	Zone      *zoneResponse `json:"zone,omitempty"` // Zone 정보 추가
-	Name      string        `json:"name"`
-	Type      string        `json:"type"`
-	Content   string        `json:"content"`
-	TTL       int64         `json:"ttl"`
-	Priority  int64         `json:"priority"`
-	Enabled   bool          `json:"enabled"`
-	CreatedAt time.Time     `json:"created_at"`
-	UpdatedAt time.Time     `json:"updated_at"`
+	ID          int64         `json:"id"`
+	ZoneID      int64         `json:"zone_id"`
+	Zone        *zoneResponse `json:"zone,omitempty"` // Zone 정보 추가
+	Name        string        `json:"name"`
+	Type        string        `json:"type"`
+	Content     string        `json:"content"`
+	TTL         int64         `json:"ttl"`
+	Priority    int64         `json:"priority"`
+	Enabled     bool          `json:"enabled"`
+	LastQueryAt *time.Time    `json:"last_query_at"`
+	CreatedAt   time.Time     `json:"created_at"`
+	UpdatedAt   time.Time     `json:"updated_at"`
 }
 
 // toRecordResponse는 model.Record를 recordResponse로 변환합니다
 func toRecordResponse(r *model.Record, zone *model.Zone) recordResponse {
 	resp := recordResponse{
-		ID:        r.ID,
-		ZoneID:    r.ZoneID,
-		Name:      removeFQDNDot(r.Name),
-		Type:      r.Type,
-		Content:   r.Content,
-		TTL:       r.TTL,
-		Priority:  r.Priority,
-		Enabled:   r.Enabled,
-		CreatedAt: r.CreatedAt,
-		UpdatedAt: r.UpdatedAt,
+		ID:          r.ID,
+		ZoneID:      r.ZoneID,
+		Name:        removeFQDNDot(r.Name),
+		Type:        r.Type,
+		Content:     r.Content,
+		TTL:         r.TTL,
+		Priority:    r.Priority,
+		Enabled:     r.Enabled,
+		LastQueryAt: r.LastQueryAt,
+		CreatedAt:   r.CreatedAt,
+		UpdatedAt:   r.UpdatedAt,
 	}
 
 	if zone != nil {
