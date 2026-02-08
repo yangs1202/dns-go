@@ -1,0 +1,24 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: "dns-go"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets:
+          - "localhost:8080"
+        labels:
+          host: "local"
+          environment: "production"
+      # 추가 호스트 예시:
+      # - targets:
+      #     - "192.168.1.10:8080"
+      #   labels:
+      #     host: "server1"
+      #     environment: "production"
+      # - targets:
+      #     - "192.168.1.11:8080"
+      #   labels:
+      #     host: "server2"
+      #     environment: "staging"
