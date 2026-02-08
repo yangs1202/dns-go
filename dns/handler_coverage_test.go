@@ -1736,6 +1736,7 @@ func TestServeDNS_MinTTLCaching(t *testing.T) {
 
 func TestCacheRemoveExpired_WithExpiredEntries(t *testing.T) {
 	cache := NewDNSCache(100, 300, 60, 0.9)
+	defer cache.Stop()
 
 	rrs := []dns.RR{&dns.A{
 		Hdr: dns.RR_Header{Name: "test.com.", Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 1},
@@ -1770,6 +1771,7 @@ func TestCacheRemoveExpired_WithExpiredEntries(t *testing.T) {
 
 func TestCacheRemoveExpired_NoExpiredEntries(t *testing.T) {
 	cache := NewDNSCache(100, 300, 60, 0.9)
+	defer cache.Stop()
 
 	rrs := []dns.RR{&dns.A{
 		Hdr: dns.RR_Header{Name: "test.com.", Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 3600},
@@ -1789,6 +1791,7 @@ func TestCacheRemoveExpired_NoExpiredEntries(t *testing.T) {
 
 func TestCacheRemoveExpired_EmptyCache(t *testing.T) {
 	cache := NewDNSCache(100, 300, 60, 0.9)
+	defer cache.Stop()
 
 	// Should not panic on empty cache
 	cache.removeExpired()

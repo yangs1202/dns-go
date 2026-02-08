@@ -88,6 +88,9 @@ func NewHandler(
 
 // Stop는 핸들러 내부 백그라운드 작업을 종료합니다.
 func (h *Handler) Stop() {
+	if h.cache != nil {
+		h.cache.Stop()
+	}
 	if h.lastQueryTracker != nil {
 		h.lastQueryTracker.Stop()
 	}
