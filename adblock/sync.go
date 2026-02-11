@@ -30,13 +30,19 @@ type FilterInterface interface {
 	Rebuild() error
 }
 
+// VersionIncrementer는 데이터 변경 시 동기화 버전을 증가시킵니다
+type VersionIncrementer interface {
+	IncrementVersion(tx *sql.Tx) error
+}
+
 type Syncer struct {
-	storage  SyncStorageInterface
-	loader   LoaderInterface
-	filter   FilterInterface
-	interval time.Duration
-	stopCh   chan struct{}
-	wg       sync.WaitGroup
+	storage            SyncStorageInterface
+	loader             LoaderInterface
+	filter             FilterInterface
+	versionIncrementer VersionIncrementer
+	interval           time.Duration
+	stopCh             chan struct{}
+	wg                 sync.WaitGroup
 }
 
 func NewSyncer(storage SyncStorageInterface, loader LoaderInterface, filter FilterInterface, interval time.Duration) *Syncer {
@@ -47,6 +53,11 @@ func NewSyncer(storage SyncStorageInterface, loader LoaderInterface, filter Filt
 		interval: interval,
 		stopCh:   make(chan struct{}),
 	}
+}
+
+// SetVersionIncrementer는 동기화 버전 증가기를 설정합니다 (Primary 모드에서 사용)
+func (s *Syncer) SetVersionIncrementer(v VersionIncrementer) {
+	s.versionIncrementer = v
 }
 
 func (s *Syncer) Start() {
@@ -78,9 +89,20 @@ func (s *Syncer) SyncAll() error {
 	if err != nil {
 		return err
 	}
+	changed := false
 	for _, src := range sources {
-		if err := s.syncSource(src); err != nil {
+		updated, err := s.syncSource(src)
+		if err != nil {
 			log.Printf("[Adblock] source sync failed (%s): %v", src.Name, err)
+			continue
+		}
+		if updated {
+			changed = true
+		}
+	}
+	if changed && s.versionIncrementer != nil {
+		if err := s.versionIncrementer.IncrementVersion(nil); err != nil {
+			log.Printf("[Adblock] version increment failed: %v", err)
 		}
 	}
 	return s.filter.Rebuild()
@@ -97,30 +119,38 @@ func (s *Syncer) SyncSource(id int64) error {
 	if !src.Enabled {
 		return nil
 	}
-	if err := s.syncSource(src); err != nil {
+	updated, err := s.syncSource(src)
+	if err != nil {
 		return err
+	}
+	if updated && s.versionIncrementer != nil {
+		if err := s.versionIncrementer.IncrementVersion(nil); err != nil {
+			log.Printf("[Adblock] version increment failed: %v", err)
+		}
 	}
 	return s.filter.Rebuild()
 }
 
-func (s *Syncer) syncSource(src *model.AdblockSource) error {
+func (s *Syncer) syncSource(src *model.AdblockSource) (bool, error) {
 	lastMod := ""
 	if src.LastModified.Valid {
 		lastMod = src.LastModified.String
 	}
 	rules, lastModified, err := s.loader.Download(src.URL, lastMod)
 	if err != nil {
-		return err
+		return false, err
 	}
 
+	updated := false
 	if rules != nil {
 		if err := s.storage.RemoveBlockedDomains(src.ID); err != nil {
-			return err
+			return false, err
 		}
 		if err := s.storage.AddBlockedDomainsBatch(src.ID, rules); err != nil {
-			return err
+			return false, err
 		}
 		src.RuleCount = int64(len(rules))
+		updated = true
 	}
 
 	src.LastModified = sql.NullString{String: lastModified, Valid: lastModified != ""}
@@ -131,5 +161,5 @@ func (s *Syncer) syncSource(src *model.AdblockSource) error {
 	metrics.AdblockSourceLastSync.WithLabelValues(srcID, src.Name).SetToCurrentTime()
 	metrics.AdblockLastSyncTimestamp.SetToCurrentTime()
 
-	return s.storage.UpdateAdblockSource(src)
+	return updated, s.storage.UpdateAdblockSource(src)
 }

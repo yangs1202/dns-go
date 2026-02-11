@@ -114,6 +114,20 @@ func (s *SyncVersion) CalculateChecksum() (string, error) {
 	}
 	data["health_checks"] = healthChecks
 
+	// Adblock Sources
+	adblockSources, err := s.GetAllAdblockSources()
+	if err != nil {
+		return "", err
+	}
+	data["adblock_sources"] = adblockSources
+
+	// Adblock Domains
+	adblockDomains, err := s.GetAllAdblockDomains()
+	if err != nil {
+		return "", err
+	}
+	data["adblock_domains"] = adblockDomains
+
 	// JSON 직렬화
 	jsonData, err := json.Marshal(data)
 	if err != nil {
@@ -441,4 +455,86 @@ func (s *SyncVersion) GetAllHealthChecks() ([]map[string]interface{}, error) {
 	}
 
 	return checks, nil
+}
+
+// GetAllAdblockSources는 모든 Adblock Source를 조회합니다
+func (s *SyncVersion) GetAllAdblockSources() ([]map[string]interface{}, error) {
+	rows, err := s.db.Reader.Query(`
+		SELECT id, name, url, enabled, last_sync, last_modified, rule_count,
+		       created_at, updated_at
+		FROM adblock_sources
+		ORDER BY id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var sources []map[string]interface{}
+	for rows.Next() {
+		var id int
+		var name, url string
+		var enabled int
+		var lastSync sql.NullTime
+		var lastModified sql.NullString
+		var ruleCount int
+		var createdAt, updatedAt time.Time
+
+		err := rows.Scan(&id, &name, &url, &enabled, &lastSync, &lastModified,
+			&ruleCount, &createdAt, &updatedAt)
+		if err != nil {
+			continue
+		}
+
+		source := map[string]interface{}{
+			"id":         id,
+			"name":       name,
+			"url":        url,
+			"enabled":    enabled,
+			"rule_count": ruleCount,
+			"created_at": createdAt,
+			"updated_at": updatedAt,
+		}
+		if lastSync.Valid {
+			source["last_sync"] = lastSync.Time
+		}
+		if lastModified.Valid {
+			source["last_modified"] = lastModified.String
+		}
+
+		sources = append(sources, source)
+	}
+
+	return sources, nil
+}
+
+// GetAllAdblockDomains는 모든 Adblock 차단 도메인을 조회합니다
+func (s *SyncVersion) GetAllAdblockDomains() ([]map[string]interface{}, error) {
+	rows, err := s.db.Reader.Query(`
+		SELECT domain, source_id
+		FROM adblock_domains
+		ORDER BY domain
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var domains []map[string]interface{}
+	for rows.Next() {
+		var domain string
+		var sourceID int
+
+		err := rows.Scan(&domain, &sourceID)
+		if err != nil {
+			continue
+		}
+
+		domains = append(domains, map[string]interface{}{
+			"domain":    domain,
+			"source_id": sourceID,
+		})
+	}
+
+	return domains, nil
 }
