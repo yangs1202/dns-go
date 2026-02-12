@@ -78,13 +78,21 @@ func main() {
 	defer healthWorker.Stop()
 	log.Println("헬스체크 워커 시작")
 
+	// Sync Version 초기화 (Primary/Secondary 공통)
+	syncVersion := storage.NewSyncVersion(db)
+
 	// Adblock 초기화
 	adblockStorage := storage.NewAdblockStorage(db)
 	adblockFilter := adblock.NewFilter(adblockStorage, cfg.Adblock.Enabled)
 	adblockLoader := adblock.NewLoader()
 	adblockSyncer := adblock.NewSyncer(adblockStorage, adblockLoader, adblockFilter, cfg.Adblock.SyncInterval)
-	adblockSyncer.Start()
-	defer adblockSyncer.Stop()
+
+	// Secondary 모드에서는 Primary에서 adblock 데이터를 동기화받으므로 HTTP 동기화 불필요
+	if cfg.Sync.Mode != "secondary" {
+		adblockSyncer.SetVersionIncrementer(syncVersion)
+		adblockSyncer.Start()
+		defer adblockSyncer.Stop()
+	}
 	log.Println("Adblock 초기화 완료")
 
 	// 쿼리 통계
@@ -125,14 +133,19 @@ func main() {
 	if cfg.Sync.Mode == "secondary" {
 		syncWorker = sync.NewWorker(cfg.Sync.PrimaryURL, db, cfg.Sync.Interval)
 
-		// 동기화 완료 시 콜백 설정 (헬스체크 재시작, 캐시 클리어)
+		// 동기화 완료 시 콜백 설정 (헬스체크 재시작, 캐시 클리어, Adblock 필터 재빌드)
 		syncWorker.SetSyncCompleteCallback(func() {
-			log.Println("동기화 완료: 헬스체크 재시작 및 캐시 클리어")
+			log.Println("동기화 완료: 헬스체크 재시작, Adblock 재빌드 및 캐시 클리어")
 
 			// 1. 헬스체크 워커 재시작
 			healthWorker.Restart()
 
-			// 2. DNS 캐시 전체 클리어
+			// 2. Adblock 필터 재빌드 (Primary에서 동기화받은 도메인 반영)
+			if err := adblockFilter.Rebuild(); err != nil {
+				log.Printf("Adblock 필터 재빌드 실패: %v", err)
+			}
+
+			// 3. DNS 캐시 전체 클리어
 			handler.ClearCache()
 			log.Println("DNS 캐시 클리어 완료")
 		})
@@ -142,10 +155,9 @@ func main() {
 		log.Printf("Secondary 모드: Primary=%s, Interval=%v", cfg.Sync.PrimaryURL, cfg.Sync.Interval)
 	}
 
-	// Sync Version (Primary 모드에서만 API 제공)
+	// Sync API (Primary 모드에서만 제공)
 	var syncAPI *web.SyncAPI
 	if cfg.Sync.Mode == "primary" {
-		syncVersion := storage.NewSyncVersion(db)
 		syncAPI = web.NewSyncAPI(syncVersion)
 		log.Println("Primary 모드: Sync API 활성화")
 	}

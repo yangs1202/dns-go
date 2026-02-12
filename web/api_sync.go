@@ -112,6 +112,22 @@ func (a *SyncAPI) GetFull(c *gin.Context) {
 		return
 	}
 
+	adblockSources, err := a.syncVersion.GetAllAdblockSources()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Adblock Source 조회 실패: " + err.Error(),
+		})
+		return
+	}
+
+	adblockDomains, err := a.syncVersion.GetAllAdblockDomains()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Adblock Domain 조회 실패: " + err.Error(),
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"version":  version,
 		"checksum": checksum,
@@ -123,6 +139,8 @@ func (a *SyncAPI) GetFull(c *gin.Context) {
 			"gslb_pools":       gslbPools,
 			"gslb_members":     gslbMembers,
 			"health_checks":    healthChecks,
+			"adblock_sources":  adblockSources,
+			"adblock_domains":  adblockDomains,
 		},
 	})
 }

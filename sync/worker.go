@@ -105,12 +105,14 @@ func (w *Worker) fullSync() error {
 		Version  int64  `json:"version"`
 		Checksum string `json:"checksum"`
 		Data     struct {
-			Zones        []map[string]interface{} `json:"zones"`
-			Records      []map[string]interface{} `json:"records"`
-			GSLBPolicies []map[string]interface{} `json:"gslb_policies"`
-			GSLBPools    []map[string]interface{} `json:"gslb_pools"`
-			GSLBMembers  []map[string]interface{} `json:"gslb_members"`
-			HealthChecks []map[string]interface{} `json:"health_checks"`
+			Zones          []map[string]interface{} `json:"zones"`
+			Records        []map[string]interface{} `json:"records"`
+			GSLBPolicies   []map[string]interface{} `json:"gslb_policies"`
+			GSLBPools      []map[string]interface{} `json:"gslb_pools"`
+			GSLBMembers    []map[string]interface{} `json:"gslb_members"`
+			HealthChecks   []map[string]interface{} `json:"health_checks"`
+			AdblockSources []map[string]interface{} `json:"adblock_sources"`
+			AdblockDomains []map[string]interface{} `json:"adblock_domains"`
 		} `json:"data"`
 	}
 
@@ -145,6 +147,14 @@ func (w *Worker) fullSync() error {
 	}
 	if _, err := tx.Exec("DELETE FROM gslb_policies"); err != nil {
 		return fmt.Errorf("gslb policies 삭제 실패: %w", err)
+	}
+
+	// Adblock 테이블 삭제 (domains 먼저 - Foreign Key 제약)
+	if _, err := tx.Exec("DELETE FROM adblock_domains"); err != nil {
+		return fmt.Errorf("adblock domains 삭제 실패: %w", err)
+	}
+	if _, err := tx.Exec("DELETE FROM adblock_sources"); err != nil {
+		return fmt.Errorf("adblock sources 삭제 실패: %w", err)
 	}
 
 	// Zones 삽입
@@ -190,6 +200,20 @@ func (w *Worker) fullSync() error {
 		}
 	}
 
+	// Adblock Sources 삽입
+	for _, source := range data.Data.AdblockSources {
+		if err := w.insertAdblockSource(tx, source); err != nil {
+			return fmt.Errorf("adblock source 삽입 실패: %w", err)
+		}
+	}
+
+	// Adblock Domains 삽입 (batch)
+	if len(data.Data.AdblockDomains) > 0 {
+		if err := w.insertAdblockDomainsBatch(tx, data.Data.AdblockDomains); err != nil {
+			return fmt.Errorf("adblock domains 삽입 실패: %w", err)
+		}
+	}
+
 	// Sync State 업데이트
 	_, err = tx.Exec(`
 		UPDATE sync_state
@@ -208,9 +232,10 @@ func (w *Worker) fullSync() error {
 		return fmt.Errorf("트랜잭션 커밋 실패: %w", err)
 	}
 
-	log.Printf("Full Sync 완료: Version=%d, Zones=%d, Records=%d, GSLB Policies=%d, Pools=%d, Members=%d, HealthChecks=%d",
+	log.Printf("Full Sync 완료: Version=%d, Zones=%d, Records=%d, GSLB Policies=%d, Pools=%d, Members=%d, HealthChecks=%d, AdblockSources=%d, AdblockDomains=%d",
 		data.Version, len(data.Data.Zones), len(data.Data.Records),
-		len(data.Data.GSLBPolicies), len(data.Data.GSLBPools), len(data.Data.GSLBMembers), len(data.Data.HealthChecks))
+		len(data.Data.GSLBPolicies), len(data.Data.GSLBPools), len(data.Data.GSLBMembers), len(data.Data.HealthChecks),
+		len(data.Data.AdblockSources), len(data.Data.AdblockDomains))
 
 	// 동기화 완료 콜백 호출 (헬스체크 재시작, 캐시 클리어)
 	if w.onSyncComplete != nil {
@@ -378,6 +403,41 @@ func (w *Worker) insertGSLBMember(tx *sql.Tx, member map[string]interface{}) err
 		member["enabled"],
 	)
 	return err
+}
+
+// insertAdblockSource는 Adblock Source를 삽입합니다
+func (w *Worker) insertAdblockSource(tx *sql.Tx, source map[string]interface{}) error {
+	_, err := tx.Exec(`
+		INSERT INTO adblock_sources (id, name, url, enabled, last_sync, last_modified, rule_count, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		source["id"],
+		source["name"],
+		source["url"],
+		source["enabled"],
+		source["last_sync"],
+		source["last_modified"],
+		source["rule_count"],
+		source["created_at"],
+		source["updated_at"],
+	)
+	return err
+}
+
+// insertAdblockDomainsBatch는 Adblock Domain을 일괄 삽입합니다
+func (w *Worker) insertAdblockDomainsBatch(tx *sql.Tx, domains []map[string]interface{}) error {
+	stmt, err := tx.Prepare(`INSERT OR IGNORE INTO adblock_domains (domain, source_id) VALUES (?, ?)`)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = stmt.Close() }()
+
+	for _, domain := range domains {
+		if _, err := stmt.Exec(domain["domain"], domain["source_id"]); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // insertHealthCheck는 Health Check를 삽입합니다
