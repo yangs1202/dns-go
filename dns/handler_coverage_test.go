@@ -15,8 +15,19 @@ import (
 	"github.com/miekg/dns"
 )
 
+// gslbTestEnv holds references to GSLB storage for tests that need cache invalidation.
+type gslbTestEnv struct {
+	PoolStorage *gslb.PoolStorage
+}
+
 // setupTestHandlerWithGSLB creates a test handler with GSLB engine configured.
 func setupTestHandlerWithGSLB(t *testing.T) (*Handler, *storage.Database, func()) {
+	handler, db, _, cleanup := setupTestHandlerWithGSLBEnv(t)
+	return handler, db, cleanup
+}
+
+// setupTestHandlerWithGSLBEnv creates a test handler with GSLB engine and returns gslbTestEnv.
+func setupTestHandlerWithGSLBEnv(t *testing.T) (*Handler, *storage.Database, *gslbTestEnv, func()) {
 	dbPath := "/tmp/test_handler_gslb_" + t.Name() + ".db"
 	_ = os.Remove(dbPath)
 
@@ -44,13 +55,15 @@ func setupTestHandlerWithGSLB(t *testing.T) (*Handler, *storage.Database, func()
 		t.Fatalf("Handler creation failed: %v", err)
 	}
 
+	env := &gslbTestEnv{PoolStorage: poolStorage}
+
 	cleanup := func() {
 		handler.Stop()
 		_ = db.Close()
 		_ = os.Remove(dbPath)
 	}
 
-	return handler, db, cleanup
+	return handler, db, env, cleanup
 }
 
 // mockAdblockStorage implements adblock.AdblockStorageInterface for testing.
@@ -1375,6 +1388,283 @@ func TestServeDNS_CNAME_To_GSLB(t *testing.T) {
 	// Should contain both CNAME and A records
 	if len(w.msg.Answer) < 2 {
 		t.Errorf("Expected at least 2 answers (CNAME + A from GSLB), got: %d", len(w.msg.Answer))
+	}
+}
+
+// =============================================================================
+// ServeDNS - CNAME to GSLB: L1 cache must NOT store GSLB-resolved responses
+// =============================================================================
+
+func TestServeDNS_CNAME_To_GSLB_NoCacheOnFirstQuery(t *testing.T) {
+	handler, db, cleanup := setupTestHandlerWithGSLB(t)
+	defer cleanup()
+
+	// Zone 생성
+	zone := &model.Zone{
+		Name:    "yangs.sh.",
+		Enabled: true,
+	}
+	zoneID, err := handler.zoneStorage.CreateZone(zone)
+	if err != nil {
+		t.Fatalf("Zone creation failed: %v", err)
+	}
+
+	// album.yangs.sh. -> CNAME -> lb.gslb.yangs.sh.
+	_, err = handler.recordStorage.CreateRecord(&model.Record{
+		ZoneID:  zoneID,
+		Name:    "album.yangs.sh.",
+		Type:    "CNAME",
+		Content: "lb.gslb.yangs.sh.",
+		TTL:     300,
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("CNAME record creation failed: %v", err)
+	}
+
+	// GSLB policy: lb.gslb.yangs.sh. -> 10.96.50.21
+	res, err := db.Writer.Exec(
+		`INSERT INTO gslb_policies (name, domain, record_type, ttl, enabled) VALUES (?, ?, ?, ?, ?)`,
+		"lb-gslb", "lb.gslb.yangs.sh.", "A", 0, 1,
+	)
+	if err != nil {
+		t.Fatalf("GSLB policy insert failed: %v", err)
+	}
+	policyID, _ := res.LastInsertId()
+
+	poolRes, err := db.Writer.Exec(
+		`INSERT INTO gslb_pools (policy_id, name, match_type, match_value, priority, fallback_pool) VALUES (?, ?, ?, ?, ?, ?)`,
+		policyID, "default", "default", "", 0, 1,
+	)
+	if err != nil {
+		t.Fatalf("GSLB pool insert failed: %v", err)
+	}
+	poolID, _ := poolRes.LastInsertId()
+
+	_, err = db.Writer.Exec(
+		`INSERT INTO gslb_members (pool_id, address, weight, enabled) VALUES (?, ?, ?, ?)`,
+		poolID, "10.96.50.21", 100, 1,
+	)
+	if err != nil {
+		t.Fatalf("GSLB member insert failed: %v", err)
+	}
+
+	// 1차 쿼리: album.yangs.sh. A
+	req := new(dns.Msg)
+	req.SetQuestion("album.yangs.sh.", dns.TypeA)
+	w := newMockWriter("192.0.2.100")
+	handler.ServeDNS(w, req)
+
+	if w.msg.Rcode != dns.RcodeSuccess {
+		t.Fatalf("Expected NOERROR, got: %s", dns.RcodeToString[w.msg.Rcode])
+	}
+	if len(w.msg.Answer) < 2 {
+		t.Fatalf("Expected at least 2 answers (CNAME + A), got: %d", len(w.msg.Answer))
+	}
+
+	// L1 캐시에 저장되지 않아야 함 (GSLB 경유)
+	_, cached := handler.cache.Get("album.yangs.sh.", "A")
+	if cached {
+		t.Fatal("CNAME→GSLB 응답이 L1 캐시에 저장되면 안 됨 (동적 응답)")
+	}
+}
+
+func TestServeDNS_CNAME_To_GSLB_AlwaysFreshResponse(t *testing.T) {
+	handler, db, env, cleanup := setupTestHandlerWithGSLBEnv(t)
+	defer cleanup()
+
+	zone := &model.Zone{
+		Name:    "yangs.sh.",
+		Enabled: true,
+	}
+	zoneID, err := handler.zoneStorage.CreateZone(zone)
+	if err != nil {
+		t.Fatalf("Zone creation failed: %v", err)
+	}
+
+	// album.yangs.sh. -> CNAME -> lb.gslb.yangs.sh.
+	_, err = handler.recordStorage.CreateRecord(&model.Record{
+		ZoneID:  zoneID,
+		Name:    "album.yangs.sh.",
+		Type:    "CNAME",
+		Content: "lb.gslb.yangs.sh.",
+		TTL:     300,
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("CNAME record creation failed: %v", err)
+	}
+
+	// GSLB policy with 2 members (weight-based)
+	res, err := db.Writer.Exec(
+		`INSERT INTO gslb_policies (name, domain, record_type, ttl, enabled) VALUES (?, ?, ?, ?, ?)`,
+		"lb-gslb", "lb.gslb.yangs.sh.", "A", 0, 1,
+	)
+	if err != nil {
+		t.Fatalf("GSLB policy insert failed: %v", err)
+	}
+	policyID, _ := res.LastInsertId()
+
+	poolRes, err := db.Writer.Exec(
+		`INSERT INTO gslb_pools (policy_id, name, match_type, match_value, priority, fallback_pool) VALUES (?, ?, ?, ?, ?, ?)`,
+		policyID, "default", "default", "", 0, 1,
+	)
+	if err != nil {
+		t.Fatalf("GSLB pool insert failed: %v", err)
+	}
+	poolID, _ := poolRes.LastInsertId()
+
+	_, err = db.Writer.Exec(
+		`INSERT INTO gslb_members (pool_id, address, weight, enabled) VALUES (?, ?, ?, ?)`,
+		poolID, "10.96.50.21", 100, 1,
+	)
+	if err != nil {
+		t.Fatalf("GSLB member insert failed: %v", err)
+	}
+
+	// 1차 쿼리
+	req1 := new(dns.Msg)
+	req1.SetQuestion("album.yangs.sh.", dns.TypeA)
+	w1 := newMockWriter("192.0.2.100")
+	handler.ServeDNS(w1, req1)
+
+	if w1.msg.Rcode != dns.RcodeSuccess {
+		t.Fatalf("1차 쿼리 실패: %s", dns.RcodeToString[w1.msg.Rcode])
+	}
+
+	// GSLB 멤버 IP 변경 (장애 복구 시나리오: 10.96.50.21 → 10.97.11.18)
+	// Engine이 사용하는 PoolStorage를 통해 업데이트 → 캐시 자동 무효화
+	member, err := env.PoolStorage.GetMember(1) // 첫 번째 멤버
+	if err != nil || member == nil {
+		t.Fatalf("GSLB member lookup failed: %v", err)
+	}
+	member.Address = "10.97.11.18"
+	err = env.PoolStorage.UpdateMember(member)
+	if err != nil {
+		t.Fatalf("GSLB member update failed: %v", err)
+	}
+
+	// 2차 쿼리 - 캐시가 없으므로 GSLB 엔진에서 새로운 IP를 받아야 함
+	req2 := new(dns.Msg)
+	req2.SetQuestion("album.yangs.sh.", dns.TypeA)
+	w2 := newMockWriter("192.0.2.100")
+	handler.ServeDNS(w2, req2)
+
+	if w2.msg.Rcode != dns.RcodeSuccess {
+		t.Fatalf("2차 쿼리 실패: %s", dns.RcodeToString[w2.msg.Rcode])
+	}
+
+	// 2차 응답에서 새 IP가 반환되어야 함
+	var foundIP string
+	for _, ans := range w2.msg.Answer {
+		if a, ok := ans.(*dns.A); ok {
+			foundIP = a.A.String()
+		}
+	}
+	if foundIP != "10.97.11.18" {
+		t.Errorf("GSLB IP 변경 후 2차 쿼리에서 새 IP 예상: 10.97.11.18, 실제: %s (stale cache 문제)", foundIP)
+	}
+}
+
+func TestServeDNS_CNAME_To_NonGSLB_StillCached(t *testing.T) {
+	handler, _, cleanup := setupTestHandlerWithGSLB(t)
+	defer cleanup()
+
+	zone := &model.Zone{
+		Name:    "example.com.",
+		Enabled: true,
+	}
+	zoneID, err := handler.zoneStorage.CreateZone(zone)
+	if err != nil {
+		t.Fatalf("Zone creation failed: %v", err)
+	}
+
+	// CNAME -> 일반 A 레코드 (GSLB 아님)
+	_, err = handler.recordStorage.CreateRecord(&model.Record{
+		ZoneID:  zoneID,
+		Name:    "alias.example.com.",
+		Type:    "CNAME",
+		Content: "target.example.com.",
+		TTL:     300,
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("CNAME record creation failed: %v", err)
+	}
+
+	_, err = handler.recordStorage.CreateRecord(&model.Record{
+		ZoneID:  zoneID,
+		Name:    "target.example.com.",
+		Type:    "A",
+		Content: "192.0.2.99",
+		TTL:     300,
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("A record creation failed: %v", err)
+	}
+
+	// 쿼리 실행
+	req := new(dns.Msg)
+	req.SetQuestion("alias.example.com.", dns.TypeA)
+	w := newMockWriter("192.0.2.100")
+	handler.ServeDNS(w, req)
+
+	if w.msg.Rcode != dns.RcodeSuccess {
+		t.Fatalf("Expected NOERROR, got: %s", dns.RcodeToString[w.msg.Rcode])
+	}
+
+	// GSLB가 아닌 일반 CNAME 체인은 여전히 L1 캐시에 저장되어야 함
+	_, cached := handler.cache.Get("alias.example.com.", "A")
+	if !cached {
+		t.Error("CNAME→일반 A 레코드 응답은 L1 캐시에 저장되어야 함")
+	}
+}
+
+func TestServeDNS_DirectGSLB_NeverCached(t *testing.T) {
+	handler, db, cleanup := setupTestHandlerWithGSLB(t)
+	defer cleanup()
+
+	// GSLB 직접 쿼리는 기존처럼 캐시하지 않는 것 확인
+	res, err := db.Writer.Exec(
+		`INSERT INTO gslb_policies (name, domain, record_type, ttl, enabled) VALUES (?, ?, ?, ?, ?)`,
+		"direct-gslb", "lb.gslb.example.com.", "A", 0, 1,
+	)
+	if err != nil {
+		t.Fatalf("GSLB policy insert failed: %v", err)
+	}
+	policyID, _ := res.LastInsertId()
+
+	poolRes, err := db.Writer.Exec(
+		`INSERT INTO gslb_pools (policy_id, name, match_type, match_value, priority, fallback_pool) VALUES (?, ?, ?, ?, ?, ?)`,
+		policyID, "default", "default", "", 0, 1,
+	)
+	if err != nil {
+		t.Fatalf("GSLB pool insert failed: %v", err)
+	}
+	poolID, _ := poolRes.LastInsertId()
+
+	_, err = db.Writer.Exec(
+		`INSERT INTO gslb_members (pool_id, address, weight, enabled) VALUES (?, ?, ?, ?)`,
+		poolID, "10.0.0.1", 100, 1,
+	)
+	if err != nil {
+		t.Fatalf("GSLB member insert failed: %v", err)
+	}
+
+	req := new(dns.Msg)
+	req.SetQuestion("lb.gslb.example.com.", dns.TypeA)
+	w := newMockWriter("192.0.2.100")
+	handler.ServeDNS(w, req)
+
+	if w.msg.Rcode != dns.RcodeSuccess {
+		t.Fatalf("Expected NOERROR, got: %s", dns.RcodeToString[w.msg.Rcode])
+	}
+
+	// 직접 GSLB 쿼리도 캐시되지 않아야 함
+	_, cached := handler.cache.Get("lb.gslb.example.com.", "A")
+	if cached {
+		t.Error("직접 GSLB 쿼리 응답이 L1 캐시에 저장되면 안 됨")
 	}
 }
 

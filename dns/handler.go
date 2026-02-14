@@ -458,13 +458,15 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 		}
 
 		// A/AAAA 레코드가 없으면 CNAME 체인 확인
+		cnameResolvedViaGSLB := false
 		if len(records) == 0 && (qtype == "A" || qtype == "AAAA") {
-			chainRecords, err := h.resolveCNAMEChain(zone.ID, domain, qtype, clientIP)
+			chainRecords, viaGSLB, err := h.resolveCNAMEChain(zone.ID, domain, qtype, clientIP)
 			if err != nil {
 				log.Printf("[DNS] CNAME 체인 조회 에러: %v", err)
 			}
 			if len(chainRecords) > 0 {
 				records = chainRecords
+				cnameResolvedViaGSLB = viaGSLB
 			}
 		}
 
@@ -492,17 +494,21 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 				}
 			}
 
-			// L1 캐시에 저장 (최소 TTL 사용)
-			minTTL := int64(300) // 기본값
-			if len(records) > 0 {
-				minTTL = records[0].TTL
-				for _, r := range records {
-					if r.TTL < minTTL {
-						minTTL = r.TTL
+			// L1 캐시에 저장 (GSLB 경유 응답은 캐시하지 않음)
+			if cnameResolvedViaGSLB {
+				log.Printf("[DNS] Skipping L1 cache for %s %s (CNAME target resolved via GSLB)", domain, qtype)
+			} else {
+				minTTL := int64(300) // 기본값
+				if len(records) > 0 {
+					minTTL = records[0].TTL
+					for _, r := range records {
+						if r.TTL < minTTL {
+							minTTL = r.TTL
+						}
 					}
 				}
+				h.cache.Set(domain, qtype, resp.Answer, minTTL, false)
 			}
-			h.cache.Set(domain, qtype, resp.Answer, minTTL, false)
 
 			metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeSuccess]).Inc()
 			metrics.QueryDurationSeconds.WithLabelValues("zone").Observe(time.Since(start).Seconds())
@@ -636,10 +642,12 @@ func (h *Handler) buildResponse(question dns.Question, records []*model.Record) 
 }
 
 // resolveCNAMEChain은 A/AAAA 질의 시 CNAME 체인을 최대 maxCNAMEChainDepth 단계까지 추적합니다.
-func (h *Handler) resolveCNAMEChain(zoneID int64, domain, qtype string, clientIP net.IP) ([]*model.Record, error) {
+// 반환값: records, resolvedViaGSLB, error
+func (h *Handler) resolveCNAMEChain(zoneID int64, domain, qtype string, clientIP net.IP) ([]*model.Record, bool, error) {
 	records := make([]*model.Record, 0, maxCNAMEChainDepth+1)
 	visited := make(map[string]struct{}, maxCNAMEChainDepth+1)
 	current := domain
+	resolvedViaGSLB := false
 
 	for depth := 0; depth < maxCNAMEChainDepth; depth++ {
 		if _, exists := visited[current]; exists {
@@ -650,7 +658,7 @@ func (h *Handler) resolveCNAMEChain(zoneID int64, domain, qtype string, clientIP
 
 		cnameRecords, err := h.recordStorage.GetRecordsByNameAndZone(zoneID, current, "CNAME")
 		if err != nil {
-			return records, err
+			return records, false, err
 		}
 		if len(cnameRecords) == 0 {
 			// 크로스 Zone CNAME 탐색
@@ -659,7 +667,7 @@ func (h *Handler) resolveCNAMEChain(zoneID int64, domain, qtype string, clientIP
 			if zErr == nil && currentZone != nil && currentZone.ID != zoneID {
 				cnameRecords, err = h.recordStorage.GetRecordsByNameAndZone(currentZone.ID, current, "CNAME")
 				if err != nil {
-					return records, err
+					return records, false, err
 				}
 				if len(cnameRecords) > 0 {
 					log.Printf("[DNS] Cross-zone CNAME found: %s in zone %s", current, currentZoneName)
@@ -679,24 +687,26 @@ func (h *Handler) resolveCNAMEChain(zoneID int64, domain, qtype string, clientIP
 			target = target + "."
 		}
 
-		targetRecords, err := h.resolveTargetRecords(zoneID, target, qtype, clientIP)
+		targetRecords, viaGSLB, err := h.resolveTargetRecords(zoneID, target, qtype, clientIP)
 		if err != nil {
-			return records, err
+			return records, false, err
 		}
 		if len(targetRecords) > 0 {
-			log.Printf("[DNS] CNAME target records found: %d records", len(targetRecords))
+			log.Printf("[DNS] CNAME target records found: %d records (viaGSLB: %v)", len(targetRecords), viaGSLB)
 			records = append(records, targetRecords...)
-			return records, nil
+			resolvedViaGSLB = viaGSLB
+			return records, resolvedViaGSLB, nil
 		}
 
 		current = target
 	}
 
-	return records, nil
+	return records, resolvedViaGSLB, nil
 }
 
 // resolveTargetRecords은 CNAME 타겟의 A/AAAA 레코드를 GSLB 또는 로컬 레코드에서 조회합니다.
-func (h *Handler) resolveTargetRecords(zoneID int64, target, qtype string, clientIP net.IP) ([]*model.Record, error) {
+// 반환값: records, resolvedViaGSLB, error
+func (h *Handler) resolveTargetRecords(zoneID int64, target, qtype string, clientIP net.IP) ([]*model.Record, bool, error) {
 	// 1. GSLB 도메인 조회
 	if h.gslbEngine != nil {
 		ips, _, err := h.gslbEngine.Resolve(target, qtype, clientIP)
@@ -731,7 +741,7 @@ func (h *Handler) resolveTargetRecords(zoneID int64, target, qtype string, clien
 				}
 			}
 			if len(records) > 0 {
-				return records, nil
+				return records, true, nil
 			}
 		}
 	}
@@ -739,10 +749,10 @@ func (h *Handler) resolveTargetRecords(zoneID int64, target, qtype string, clien
 	// 2. 동일 Zone 내 레코드 조회
 	records, err := h.recordStorage.GetRecordsByNameAndZone(zoneID, target, qtype)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if len(records) > 0 {
-		return records, nil
+		return records, false, nil
 	}
 
 	// 3. 크로스 Zone 조회 - 타겟이 다른 Zone에 속할 수 있음
@@ -751,11 +761,11 @@ func (h *Handler) resolveTargetRecords(zoneID int64, target, qtype string, clien
 	if err == nil && targetZone != nil && targetZone.ID != zoneID {
 		records, err = h.recordStorage.GetRecordsByNameAndZone(targetZone.ID, target, qtype)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		if len(records) > 0 {
 			log.Printf("[DNS] Cross-zone resolution: found %s record for %s in zone %s", qtype, target, targetZoneName)
-			return records, nil
+			return records, false, nil
 		}
 	}
 
@@ -794,12 +804,12 @@ func (h *Handler) resolveTargetRecords(zoneID int64, target, qtype string, clien
 			}
 			if len(records) > 0 {
 				log.Printf("[DNS] Upstream resolution: found %d %s record(s) for %s", len(records), qtype, target)
-				return records, nil
+				return records, false, nil
 			}
 		}
 	}
 
-	return nil, nil
+	return nil, false, nil
 }
 
 // recordToRR은 model.Record를 dns.RR로 변환합니다
