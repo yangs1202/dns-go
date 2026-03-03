@@ -43,5 +43,6 @@ type HealthCheck struct {
 	TimeoutSec         int64  `json:"timeout_sec"`          // 타임아웃 (초)
 	HealthyThreshold   int64  `json:"healthy_threshold"`    // 정상 판정 임계값
 	UnhealthyThreshold int64  `json:"unhealthy_threshold"`  // 비정상 판정 임계값
+	ExpectedCodes      []int  `json:"expected_codes"`       // 정상 판정 HTTP 상태코드 목록 (http/https 전용, 기본값: [200])
 	Enabled            bool   `json:"enabled"`
 }

@@ -172,6 +172,7 @@ func (db *Database) Migrate() error {
 	migrations := []string{
 		`ALTER TABLE zones ADD COLUMN allow_fallback INTEGER DEFAULT 1`,
 		`ALTER TABLE records ADD COLUMN last_query_at DATETIME`,
+		`ALTER TABLE health_checks ADD COLUMN expected_codes TEXT DEFAULT '[200]'`,
 	}
 
 	// 헬스체크 테이블 마이그레이션: member_id -> policy_id (일회성)

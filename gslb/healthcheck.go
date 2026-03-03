@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"dns-go/model"
 	"dns-go/storage"
+	"encoding/json"
 	"fmt"
 )
 
@@ -15,11 +16,12 @@ func NewHealthCheckStorage(db *storage.Database) *HealthCheckStorage {
 	return &HealthCheckStorage{db: db}
 }
 
-func (s *HealthCheckStorage) GetHealthCheck(id int64) (*model.HealthCheck, error) {
-	query := `SELECT id, policy_id, check_type, target, interval_sec, timeout_sec, healthy_threshold, unhealthy_threshold, enabled
-		FROM health_checks WHERE id = ?`
+func scanHealthCheck(row interface {
+	Scan(...interface{}) error
+}) (*model.HealthCheck, error) {
 	var hc model.HealthCheck
-	err := s.db.Reader.QueryRow(query, id).Scan(
+	var codesJSON string
+	err := row.Scan(
 		&hc.ID,
 		&hc.PolicyID,
 		&hc.CheckType,
@@ -28,43 +30,46 @@ func (s *HealthCheckStorage) GetHealthCheck(id int64) (*model.HealthCheck, error
 		&hc.TimeoutSec,
 		&hc.HealthyThreshold,
 		&hc.UnhealthyThreshold,
+		&codesJSON,
 		&hc.Enabled,
 	)
+	if err != nil {
+		return nil, err
+	}
+	if codesJSON != "" {
+		_ = json.Unmarshal([]byte(codesJSON), &hc.ExpectedCodes)
+	}
+	return &hc, nil
+}
+
+func (s *HealthCheckStorage) GetHealthCheck(id int64) (*model.HealthCheck, error) {
+	query := `SELECT id, policy_id, check_type, target, interval_sec, timeout_sec, healthy_threshold, unhealthy_threshold, expected_codes, enabled
+		FROM health_checks WHERE id = ?`
+	hc, err := scanHealthCheck(s.db.Reader.QueryRow(query, id))
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("헬스체크 조회 실패: %w", err)
 	}
-	return &hc, nil
+	return hc, nil
 }
 
 func (s *HealthCheckStorage) GetHealthCheckByPolicy(policyID int64) (*model.HealthCheck, error) {
-	query := `SELECT id, policy_id, check_type, target, interval_sec, timeout_sec, healthy_threshold, unhealthy_threshold, enabled
+	query := `SELECT id, policy_id, check_type, target, interval_sec, timeout_sec, healthy_threshold, unhealthy_threshold, expected_codes, enabled
 		FROM health_checks WHERE policy_id = ?`
-	var hc model.HealthCheck
-	err := s.db.Reader.QueryRow(query, policyID).Scan(
-		&hc.ID,
-		&hc.PolicyID,
-		&hc.CheckType,
-		&hc.Target,
-		&hc.IntervalSec,
-		&hc.TimeoutSec,
-		&hc.HealthyThreshold,
-		&hc.UnhealthyThreshold,
-		&hc.Enabled,
-	)
+	hc, err := scanHealthCheck(s.db.Reader.QueryRow(query, policyID))
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("헬스체크 조회 실패: %w", err)
 	}
-	return &hc, nil
+	return hc, nil
 }
 
 func (s *HealthCheckStorage) ListHealthChecks() ([]*model.HealthCheck, error) {
-	query := `SELECT id, policy_id, check_type, target, interval_sec, timeout_sec, healthy_threshold, unhealthy_threshold, enabled
+	query := `SELECT id, policy_id, check_type, target, interval_sec, timeout_sec, healthy_threshold, unhealthy_threshold, expected_codes, enabled
 		FROM health_checks ORDER BY id`
 	rows, err := s.db.Reader.Query(query)
 	if err != nil {
@@ -74,21 +79,11 @@ func (s *HealthCheckStorage) ListHealthChecks() ([]*model.HealthCheck, error) {
 
 	var checks []*model.HealthCheck
 	for rows.Next() {
-		var hc model.HealthCheck
-		if err := rows.Scan(
-			&hc.ID,
-			&hc.PolicyID,
-			&hc.CheckType,
-			&hc.Target,
-			&hc.IntervalSec,
-			&hc.TimeoutSec,
-			&hc.HealthyThreshold,
-			&hc.UnhealthyThreshold,
-			&hc.Enabled,
-		); err != nil {
+		hc, err := scanHealthCheck(rows)
+		if err != nil {
 			return nil, fmt.Errorf("헬스체크 스캔 실패: %w", err)
 		}
-		checks = append(checks, &hc)
+		checks = append(checks, hc)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("헬스체크 행 반복 실패: %w", err)
@@ -98,8 +93,9 @@ func (s *HealthCheckStorage) ListHealthChecks() ([]*model.HealthCheck, error) {
 
 func (s *HealthCheckStorage) CreateHealthCheck(check *model.HealthCheck) (int64, error) {
 	applyDefaults(check)
-	query := `INSERT INTO health_checks (policy_id, check_type, target, interval_sec, timeout_sec, healthy_threshold, unhealthy_threshold, enabled)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	codesJSON, _ := json.Marshal(check.ExpectedCodes)
+	query := `INSERT INTO health_checks (policy_id, check_type, target, interval_sec, timeout_sec, healthy_threshold, unhealthy_threshold, expected_codes, enabled)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	result, err := s.db.Writer.Exec(query,
 		check.PolicyID,
 		check.CheckType,
@@ -108,6 +104,7 @@ func (s *HealthCheckStorage) CreateHealthCheck(check *model.HealthCheck) (int64,
 		check.TimeoutSec,
 		check.HealthyThreshold,
 		check.UnhealthyThreshold,
+		string(codesJSON),
 		check.Enabled,
 	)
 	if err != nil {
@@ -122,7 +119,8 @@ func (s *HealthCheckStorage) CreateHealthCheck(check *model.HealthCheck) (int64,
 
 func (s *HealthCheckStorage) UpdateHealthCheck(check *model.HealthCheck) error {
 	applyDefaults(check)
-	query := `UPDATE health_checks SET check_type = ?, target = ?, interval_sec = ?, timeout_sec = ?, healthy_threshold = ?, unhealthy_threshold = ?, enabled = ?
+	codesJSON, _ := json.Marshal(check.ExpectedCodes)
+	query := `UPDATE health_checks SET check_type = ?, target = ?, interval_sec = ?, timeout_sec = ?, healthy_threshold = ?, unhealthy_threshold = ?, expected_codes = ?, enabled = ?
 		WHERE id = ?`
 	result, err := s.db.Writer.Exec(query,
 		check.CheckType,
@@ -131,6 +129,7 @@ func (s *HealthCheckStorage) UpdateHealthCheck(check *model.HealthCheck) error {
 		check.TimeoutSec,
 		check.HealthyThreshold,
 		check.UnhealthyThreshold,
+		string(codesJSON),
 		check.Enabled,
 		check.ID,
 	)
@@ -177,5 +176,8 @@ func applyDefaults(check *model.HealthCheck) {
 	}
 	if check.UnhealthyThreshold == 0 {
 		check.UnhealthyThreshold = 2
+	}
+	if (check.CheckType == "http" || check.CheckType == "https") && len(check.ExpectedCodes) == 0 {
+		check.ExpectedCodes = []int{200}
 	}
 }

@@ -250,10 +250,17 @@ func (w *HealthCheckWorker) probe(check *model.HealthCheck, member *model.GSLBMe
 			return err
 		}
 		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			return fmt.Errorf("http status %d", resp.StatusCode)
+
+		expectedCodes := check.ExpectedCodes
+		if len(expectedCodes) == 0 {
+			expectedCodes = []int{200}
 		}
-		return nil
+		for _, code := range expectedCodes {
+			if resp.StatusCode == code {
+				return nil
+			}
+		}
+		return fmt.Errorf("http status %d (expected: %v)", resp.StatusCode, expectedCodes)
 	case "tcp":
 		// Target이 "host:port" 형태면 포트만 추출, 아니면 Target을 포트로 사용
 		var port string

@@ -17,6 +17,7 @@ type healthCheckRequest struct {
 	TimeoutSec         int64  `json:"timeout_sec"`
 	HealthyThreshold   int64  `json:"healthy_threshold"`
 	UnhealthyThreshold int64  `json:"unhealthy_threshold"`
+	ExpectedCodes      []int  `json:"expected_codes"`
 	Enabled            *bool  `json:"enabled"`
 }
 
@@ -109,6 +110,15 @@ func (api *API) createHealthCheck(c *gin.Context) {
 		return
 	}
 
+	if (checkType == "http" || checkType == "https") && len(req.ExpectedCodes) > 0 {
+		for _, code := range req.ExpectedCodes {
+			if code < 100 || code > 599 {
+				respondBadRequest(c, "expected_codes의 각 값은 100~599 사이여야 합니다")
+				return
+			}
+		}
+	}
+
 	enabled := true
 	if req.Enabled != nil {
 		enabled = *req.Enabled
@@ -122,6 +132,7 @@ func (api *API) createHealthCheck(c *gin.Context) {
 		TimeoutSec:         req.TimeoutSec,
 		HealthyThreshold:   req.HealthyThreshold,
 		UnhealthyThreshold: req.UnhealthyThreshold,
+		ExpectedCodes:      req.ExpectedCodes,
 		Enabled:            enabled,
 	}
 
@@ -201,6 +212,15 @@ func (api *API) updateHealthCheck(c *gin.Context) {
 		return
 	}
 
+	if (checkType == "http" || checkType == "https") && len(req.ExpectedCodes) > 0 {
+		for _, code := range req.ExpectedCodes {
+			if code < 100 || code > 599 {
+				respondBadRequest(c, "expected_codes의 각 값은 100~599 사이여야 합니다")
+				return
+			}
+		}
+	}
+
 	existing, err := api.healthCheckStorage.GetHealthCheck(id)
 	if err != nil {
 		respondInternalError(c, err.Error())
@@ -224,6 +244,7 @@ func (api *API) updateHealthCheck(c *gin.Context) {
 		TimeoutSec:         req.TimeoutSec,
 		HealthyThreshold:   req.HealthyThreshold,
 		UnhealthyThreshold: req.UnhealthyThreshold,
+		ExpectedCodes:      req.ExpectedCodes,
 		Enabled:            enabled,
 	}
 
