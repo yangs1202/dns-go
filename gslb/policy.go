@@ -148,8 +148,14 @@ func (s *PolicyStorage) CreatePolicy(policy *model.GSLBPolicy) (int64, error) {
 	if policy.RecordType == "" {
 		policy.RecordType = "A"
 	}
+	tx, err := s.db.Writer.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("트랜잭션 시작 실패: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	query := `INSERT INTO gslb_policies (name, domain, record_type, ttl, enabled) VALUES (?, ?, ?, ?, ?)`
-	result, err := s.db.Writer.Exec(query,
+	result, err := tx.Exec(query,
 		policy.Name,
 		policy.Domain,
 		strings.ToUpper(policy.RecordType),
@@ -163,13 +169,28 @@ func (s *PolicyStorage) CreatePolicy(policy *model.GSLBPolicy) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("정책 ID 확인 실패: %w", err)
 	}
+
+	if err := incrementSyncVersion(s.db, tx); err != nil {
+		return 0, fmt.Errorf("동기화 버전 업데이트 실패: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("트랜잭션 커밋 실패: %w", err)
+	}
+
 	s.cache.Invalidate()
 	return id, nil
 }
 
 func (s *PolicyStorage) UpdatePolicy(policy *model.GSLBPolicy) error {
+	tx, err := s.db.Writer.Begin()
+	if err != nil {
+		return fmt.Errorf("트랜잭션 시작 실패: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	query := `UPDATE gslb_policies SET name = ?, domain = ?, record_type = ?, ttl = ?, enabled = ? WHERE id = ?`
-	result, err := s.db.Writer.Exec(query,
+	result, err := tx.Exec(query,
 		policy.Name,
 		policy.Domain,
 		strings.ToUpper(policy.RecordType),
@@ -187,12 +208,27 @@ func (s *PolicyStorage) UpdatePolicy(policy *model.GSLBPolicy) error {
 	if rows == 0 {
 		return fmt.Errorf("정책을 찾을 수 없습니다")
 	}
+
+	if err := incrementSyncVersion(s.db, tx); err != nil {
+		return fmt.Errorf("동기화 버전 업데이트 실패: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("트랜잭션 커밋 실패: %w", err)
+	}
+
 	s.cache.Invalidate()
 	return nil
 }
 
 func (s *PolicyStorage) DeletePolicy(id int64) error {
-	result, err := s.db.Writer.Exec("DELETE FROM gslb_policies WHERE id = ?", id)
+	tx, err := s.db.Writer.Begin()
+	if err != nil {
+		return fmt.Errorf("트랜잭션 시작 실패: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	result, err := tx.Exec("DELETE FROM gslb_policies WHERE id = ?", id)
 	if err != nil {
 		return fmt.Errorf("정책 삭제 실패: %w", err)
 	}
@@ -203,6 +239,15 @@ func (s *PolicyStorage) DeletePolicy(id int64) error {
 	if rows == 0 {
 		return fmt.Errorf("정책을 찾을 수 없습니다")
 	}
+
+	if err := incrementSyncVersion(s.db, tx); err != nil {
+		return fmt.Errorf("동기화 버전 업데이트 실패: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("트랜잭션 커밋 실패: %w", err)
+	}
+
 	s.cache.Invalidate()
 	return nil
 }

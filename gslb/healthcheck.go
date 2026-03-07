@@ -94,9 +94,15 @@ func (s *HealthCheckStorage) ListHealthChecks() ([]*model.HealthCheck, error) {
 func (s *HealthCheckStorage) CreateHealthCheck(check *model.HealthCheck) (int64, error) {
 	applyDefaults(check)
 	codesJSON, _ := json.Marshal(check.ExpectedCodes)
+	tx, err := s.db.Writer.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("트랜잭션 시작 실패: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	query := `INSERT INTO health_checks (policy_id, check_type, target, interval_sec, timeout_sec, healthy_threshold, unhealthy_threshold, expected_codes, enabled)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	result, err := s.db.Writer.Exec(query,
+	result, err := tx.Exec(query,
 		check.PolicyID,
 		check.CheckType,
 		check.Target,
@@ -114,15 +120,30 @@ func (s *HealthCheckStorage) CreateHealthCheck(check *model.HealthCheck) (int64,
 	if err != nil {
 		return 0, fmt.Errorf("헬스체크 ID 확인 실패: %w", err)
 	}
+
+	if err := incrementSyncVersion(s.db, tx); err != nil {
+		return 0, fmt.Errorf("동기화 버전 업데이트 실패: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("트랜잭션 커밋 실패: %w", err)
+	}
+
 	return id, nil
 }
 
 func (s *HealthCheckStorage) UpdateHealthCheck(check *model.HealthCheck) error {
 	applyDefaults(check)
 	codesJSON, _ := json.Marshal(check.ExpectedCodes)
+	tx, err := s.db.Writer.Begin()
+	if err != nil {
+		return fmt.Errorf("트랜잭션 시작 실패: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	query := `UPDATE health_checks SET check_type = ?, target = ?, interval_sec = ?, timeout_sec = ?, healthy_threshold = ?, unhealthy_threshold = ?, expected_codes = ?, enabled = ?
 		WHERE id = ?`
-	result, err := s.db.Writer.Exec(query,
+	result, err := tx.Exec(query,
 		check.CheckType,
 		check.Target,
 		check.IntervalSec,
@@ -143,11 +164,26 @@ func (s *HealthCheckStorage) UpdateHealthCheck(check *model.HealthCheck) error {
 	if rows == 0 {
 		return fmt.Errorf("헬스체크를 찾을 수 없습니다")
 	}
+
+	if err := incrementSyncVersion(s.db, tx); err != nil {
+		return fmt.Errorf("동기화 버전 업데이트 실패: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("트랜잭션 커밋 실패: %w", err)
+	}
+
 	return nil
 }
 
 func (s *HealthCheckStorage) DeleteHealthCheck(id int64) error {
-	result, err := s.db.Writer.Exec("DELETE FROM health_checks WHERE id = ?", id)
+	tx, err := s.db.Writer.Begin()
+	if err != nil {
+		return fmt.Errorf("트랜잭션 시작 실패: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	result, err := tx.Exec("DELETE FROM health_checks WHERE id = ?", id)
 	if err != nil {
 		return fmt.Errorf("헬스체크 삭제 실패: %w", err)
 	}
@@ -158,6 +194,15 @@ func (s *HealthCheckStorage) DeleteHealthCheck(id int64) error {
 	if rows == 0 {
 		return fmt.Errorf("헬스체크를 찾을 수 없습니다")
 	}
+
+	if err := incrementSyncVersion(s.db, tx); err != nil {
+		return fmt.Errorf("동기화 버전 업데이트 실패: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("트랜잭션 커밋 실패: %w", err)
+	}
+
 	return nil
 }
 

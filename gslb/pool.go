@@ -148,9 +148,15 @@ func (s *PoolStorage) GetPoolsByPolicy(policyID int64) ([]*model.GSLBPool, error
 }
 
 func (s *PoolStorage) CreatePool(pool *model.GSLBPool) (int64, error) {
+	tx, err := s.db.Writer.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("트랜잭션 시작 실패: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	query := `INSERT INTO gslb_pools (policy_id, name, match_type, match_value, priority, fallback_pool)
 		VALUES (?, ?, ?, ?, ?, ?)`
-	result, err := s.db.Writer.Exec(query,
+	result, err := tx.Exec(query,
 		pool.PolicyID,
 		pool.Name,
 		pool.MatchType,
@@ -165,6 +171,15 @@ func (s *PoolStorage) CreatePool(pool *model.GSLBPool) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("풀 ID 확인 실패: %w", err)
 	}
+
+	if err := incrementSyncVersion(s.db, tx); err != nil {
+		return 0, fmt.Errorf("동기화 버전 업데이트 실패: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("트랜잭션 커밋 실패: %w", err)
+	}
+
 	s.cache.invalidate(pool.PolicyID)
 	return id, nil
 }
@@ -178,9 +193,15 @@ func (s *PoolStorage) UpdatePool(pool *model.GSLBPool) error {
 		return fmt.Errorf("풀을 찾을 수 없습니다")
 	}
 
+	tx, err := s.db.Writer.Begin()
+	if err != nil {
+		return fmt.Errorf("트랜잭션 시작 실패: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	query := `UPDATE gslb_pools SET name = ?, match_type = ?, match_value = ?, priority = ?, fallback_pool = ?
 		WHERE id = ?`
-	result, err := s.db.Writer.Exec(query,
+	result, err := tx.Exec(query,
 		pool.Name,
 		pool.MatchType,
 		pool.MatchValue,
@@ -198,6 +219,15 @@ func (s *PoolStorage) UpdatePool(pool *model.GSLBPool) error {
 	if rows == 0 {
 		return fmt.Errorf("풀을 찾을 수 없습니다")
 	}
+
+	if err := incrementSyncVersion(s.db, tx); err != nil {
+		return fmt.Errorf("동기화 버전 업데이트 실패: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("트랜잭션 커밋 실패: %w", err)
+	}
+
 	s.cache.invalidate(existing.PolicyID)
 	return nil
 }
@@ -210,7 +240,14 @@ func (s *PoolStorage) DeletePool(id int64) error {
 	if pool == nil {
 		return fmt.Errorf("풀을 찾을 수 없습니다")
 	}
-	result, err := s.db.Writer.Exec("DELETE FROM gslb_pools WHERE id = ?", id)
+
+	tx, err := s.db.Writer.Begin()
+	if err != nil {
+		return fmt.Errorf("트랜잭션 시작 실패: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	result, err := tx.Exec("DELETE FROM gslb_pools WHERE id = ?", id)
 	if err != nil {
 		return fmt.Errorf("풀 삭제 실패: %w", err)
 	}
@@ -221,6 +258,15 @@ func (s *PoolStorage) DeletePool(id int64) error {
 	if rows == 0 {
 		return fmt.Errorf("풀을 찾을 수 없습니다")
 	}
+
+	if err := incrementSyncVersion(s.db, tx); err != nil {
+		return fmt.Errorf("동기화 버전 업데이트 실패: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("트랜잭션 커밋 실패: %w", err)
+	}
+
 	s.cache.invalidate(pool.PolicyID)
 	return nil
 }
@@ -279,8 +325,14 @@ func (s *PoolStorage) GetMembersByPool(poolID int64) ([]*model.GSLBMember, error
 }
 
 func (s *PoolStorage) CreateMember(member *model.GSLBMember) (int64, error) {
+	tx, err := s.db.Writer.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("트랜잭션 시작 실패: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	query := `INSERT INTO gslb_members (pool_id, address, weight, enabled) VALUES (?, ?, ?, ?)`
-	result, err := s.db.Writer.Exec(query,
+	result, err := tx.Exec(query,
 		member.PoolID,
 		member.Address,
 		member.Weight,
@@ -293,13 +345,28 @@ func (s *PoolStorage) CreateMember(member *model.GSLBMember) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("멤버 ID 확인 실패: %w", err)
 	}
+
+	if err := incrementSyncVersion(s.db, tx); err != nil {
+		return 0, fmt.Errorf("동기화 버전 업데이트 실패: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("트랜잭션 커밋 실패: %w", err)
+	}
+
 	s.cache.invalidateMembers(member.PoolID)
 	return id, nil
 }
 
 func (s *PoolStorage) UpdateMember(member *model.GSLBMember) error {
+	tx, err := s.db.Writer.Begin()
+	if err != nil {
+		return fmt.Errorf("트랜잭션 시작 실패: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	query := `UPDATE gslb_members SET address = ?, weight = ?, enabled = ? WHERE id = ?`
-	result, err := s.db.Writer.Exec(query,
+	result, err := tx.Exec(query,
 		member.Address,
 		member.Weight,
 		member.Enabled,
@@ -315,6 +382,15 @@ func (s *PoolStorage) UpdateMember(member *model.GSLBMember) error {
 	if rows == 0 {
 		return fmt.Errorf("멤버를 찾을 수 없습니다")
 	}
+
+	if err := incrementSyncVersion(s.db, tx); err != nil {
+		return fmt.Errorf("동기화 버전 업데이트 실패: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("트랜잭션 커밋 실패: %w", err)
+	}
+
 	s.cache.invalidateMembers(member.PoolID)
 	return nil
 }
@@ -327,7 +403,14 @@ func (s *PoolStorage) DeleteMember(id int64) error {
 	if member == nil {
 		return fmt.Errorf("멤버를 찾을 수 없습니다")
 	}
-	result, err := s.db.Writer.Exec("DELETE FROM gslb_members WHERE id = ?", id)
+
+	tx, err := s.db.Writer.Begin()
+	if err != nil {
+		return fmt.Errorf("트랜잭션 시작 실패: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	result, err := tx.Exec("DELETE FROM gslb_members WHERE id = ?", id)
 	if err != nil {
 		return fmt.Errorf("멤버 삭제 실패: %w", err)
 	}
@@ -338,6 +421,15 @@ func (s *PoolStorage) DeleteMember(id int64) error {
 	if rows == 0 {
 		return fmt.Errorf("멤버를 찾을 수 없습니다")
 	}
+
+	if err := incrementSyncVersion(s.db, tx); err != nil {
+		return fmt.Errorf("동기화 버전 업데이트 실패: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("트랜잭션 커밋 실패: %w", err)
+	}
+
 	s.cache.invalidateMembers(member.PoolID)
 	return nil
 }
