@@ -22,6 +22,7 @@ type HealthCheckWorker struct {
 	stopCh       chan struct{}
 	wg           sync.WaitGroup
 	runners      sync.Map // map[int64]chan struct{} - 각 헬스체크의 종료 채널
+	running      sync.Map // map[int64]struct{} - 현재 실행 중인 체크 (중복 방지)
 }
 
 func NewHealthCheckWorker(storage *HealthCheckStorage, poolStorage *PoolStorage, healthStatus *sync.Map) *HealthCheckWorker {
@@ -86,6 +87,13 @@ func (w *HealthCheckWorker) runCheckLoop(check *model.HealthCheck) {
 
 // runPolicyCheck는 GSLB 정책에 속한 모든 멤버를 체크합니다
 func (w *HealthCheckWorker) runPolicyCheck(check *model.HealthCheck) {
+	// 이미 실행 중인 체크가 있으면 skip (고루틴 누적 방지)
+	if _, loaded := w.running.LoadOrStore(check.ID, struct{}{}); loaded {
+		log.Printf("[HEALTH] check_id=%d 이전 체크 실행 중, skip", check.ID)
+		return
+	}
+	defer w.running.Delete(check.ID)
+
 	// Policy에 속한 모든 Pool 조회
 	pools, err := w.poolStorage.GetPoolsByPolicy(check.PolicyID)
 	if err != nil {
@@ -93,7 +101,10 @@ func (w *HealthCheckWorker) runPolicyCheck(check *model.HealthCheck) {
 		return
 	}
 
-	// 각 Pool의 모든 Member 체크
+	// 멤버별 병렬 체크 (최대 10개 동시 실행)
+	sem := make(chan struct{}, 10)
+	var wg sync.WaitGroup
+
 	for _, pool := range pools {
 		members, err := w.poolStorage.GetMembersByPool(pool.ID)
 		if err != nil {
@@ -105,9 +116,16 @@ func (w *HealthCheckWorker) runPolicyCheck(check *model.HealthCheck) {
 			if !member.Enabled {
 				continue
 			}
-			w.runCheck(check, member, pool)
+			sem <- struct{}{}
+			wg.Add(1)
+			go func(m *model.GSLBMember, p *model.GSLBPool) {
+				defer func() { <-sem; wg.Done() }()
+				w.runCheck(check, m, p)
+			}(member, pool)
 		}
 	}
+
+	wg.Wait()
 }
 
 func (w *HealthCheckWorker) runCheck(check *model.HealthCheck, member *model.GSLBMember, pool *model.GSLBPool) {
