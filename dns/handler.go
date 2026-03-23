@@ -425,6 +425,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 			resp.Rcode = dns.RcodeSuccess
 			zoneName := h.extractDomain(domain)
 			resp.Ns = []dns.RR{h.buildSOA(zoneName)}
+			h.cache.Set(domain, qtype, nil, 0, false) // 빈 응답도 캐시 (AAAA 반복 쿼리 방지)
 			metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeSuccess]).Inc()
 			metrics.QueryDurationSeconds.WithLabelValues("gslb").Observe(time.Since(start).Seconds())
 			_ = w.WriteMsg(resp)
@@ -540,6 +541,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 			log.Printf("[DNS] Domain %s exists but no %s record, returning NOERROR", domain, qtype)
 			resp.Rcode = dns.RcodeSuccess
 			resp.Ns = []dns.RR{h.buildSOA(zoneName)}
+			h.cache.Set(domain, qtype, nil, 0, false) // 빈 응답도 캐시 (AAAA 반복 쿼리 방지)
 			metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeSuccess]).Inc()
 			metrics.QueryDurationSeconds.WithLabelValues("zone").Observe(time.Since(start).Seconds())
 			_ = w.WriteMsg(resp)
@@ -558,6 +560,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 			resp.Authoritative = true
 			resp.Rcode = dns.RcodeSuccess
 			resp.Ns = []dns.RR{h.buildSOA(zoneName)}
+			h.cache.Set(domain, qtype, nil, 0, false) // 빈 응답도 캐시 (AAAA 반복 쿼리 방지)
 			metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeSuccess]).Inc()
 			metrics.QueryDurationSeconds.WithLabelValues("zone").Observe(time.Since(start).Seconds())
 			_ = w.WriteMsg(resp)
