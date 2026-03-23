@@ -27,3 +27,8 @@ adblock:
 
 logging:
   level: "info"
+  query_log:
+    enabled: true
+    retention_days: 7
+    flush_interval: 2s
+    buffer_size: 1000

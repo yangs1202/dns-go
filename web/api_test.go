@@ -28,6 +28,7 @@ func TestNewAPI(t *testing.T) {
 		nil, // healthCheckStorage
 		nil, // healthStatus
 		nil, // healthWorker
+		nil, // queryLogStorage
 	)
 
 	assert.NotNil(t, api)

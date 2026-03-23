@@ -69,7 +69,16 @@ type SyncConfig struct {
 
 // LoggingConfig는 로깅 설정입니다
 type LoggingConfig struct {
-	Level string `yaml:"level"`
+	Level    string         `yaml:"level"`
+	QueryLog QueryLogConfig `yaml:"query_log"`
+}
+
+// QueryLogConfig는 DNS 쿼리 로그 설정입니다
+type QueryLogConfig struct {
+	Enabled       bool          `yaml:"enabled"`
+	RetentionDays int           `yaml:"retention_days"`
+	FlushInterval time.Duration `yaml:"flush_interval"`
+	BufferSize    int           `yaml:"buffer_size"`
 }
 
 // Load는 YAML 파일에서 설정을 로드합니다
@@ -116,6 +125,15 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Logging.Level == "" {
 		cfg.Logging.Level = "info"
+	}
+	if cfg.Logging.QueryLog.RetentionDays == 0 {
+		cfg.Logging.QueryLog.RetentionDays = 7
+	}
+	if cfg.Logging.QueryLog.FlushInterval == 0 {
+		cfg.Logging.QueryLog.FlushInterval = 2 * time.Second
+	}
+	if cfg.Logging.QueryLog.BufferSize == 0 {
+		cfg.Logging.QueryLog.BufferSize = 1000
 	}
 	if cfg.Sync.Mode == "" {
 		cfg.Sync.Mode = "primary"

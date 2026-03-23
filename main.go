@@ -98,6 +98,17 @@ func main() {
 	// 쿼리 통계
 	queryStats := dns.NewQueryStats()
 
+	// 쿼리 로그 초기화
+	var queryLogStorage *storage.QueryLogStorage
+	var queryLogWriter *dns.QueryLogWriter
+	if cfg.Logging.QueryLog.Enabled {
+		queryLogStorage = storage.NewQueryLogStorage(db)
+		queryLogWriter = dns.NewQueryLogWriter(queryLogStorage, cfg.Logging.QueryLog.FlushInterval, cfg.Logging.QueryLog.BufferSize)
+		queryLogCleaner := dns.NewQueryLogCleaner(queryLogStorage, cfg.Logging.QueryLog.RetentionDays)
+		defer queryLogCleaner.Stop()
+		log.Printf("쿼리 로그 활성화 (보관: %d일, 플러시: %v)", cfg.Logging.QueryLog.RetentionDays, cfg.Logging.QueryLog.FlushInterval)
+	}
+
 	// DNS 핸들러 초기화
 	handler, err := dns.NewHandler(
 		zoneStorage,
@@ -111,6 +122,7 @@ func main() {
 		cfg.Adblock.BlockResponse,
 		cfg.DNS.NSID,    // NSID
 		cfg.DNS.Version, // CHAOS version
+		queryLogWriter,
 	)
 	if err != nil {
 		log.Fatalf("DNS 핸들러 초기화 실패: %v", err)
@@ -163,7 +175,7 @@ func main() {
 	}
 
 	// Web API 서버 초기화 및 시작
-	api := web.NewAPI(zoneStorage, recordStorage, upstreamStorage, db, handler, queryStats, policyStorage, poolStorage, adblockStorage, adblockSyncer, adblockFilter, healthCheckStorage, healthStatus, healthWorker)
+	api := web.NewAPI(zoneStorage, recordStorage, upstreamStorage, db, handler, queryStats, policyStorage, poolStorage, adblockStorage, adblockSyncer, adblockFilter, healthCheckStorage, healthStatus, healthWorker, queryLogStorage)
 
 	// Read-Only 모드 설정 (Secondary)
 	if cfg.Sync.ReadOnly {

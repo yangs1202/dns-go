@@ -48,7 +48,7 @@ func setupTestHandlerWithGSLBEnv(t *testing.T) (*Handler, *storage.Database, *gs
 	healthStatus := &sync.Map{}
 	engine := gslb.NewEngine(policyStorage, poolStorage, nil, healthStatus)
 
-	handler, err := NewHandler(zoneStorage, recordStorage, resolver, db, stats, engine, nil, nil, "0.0.0.0", "test-server", "DNS-Go Test v1.0")
+	handler, err := NewHandler(zoneStorage, recordStorage, resolver, db, stats, engine, nil, nil, "0.0.0.0", "test-server", "DNS-Go Test v1.0", nil)
 	if err != nil {
 		_ = db.Close()
 		_ = os.Remove(dbPath)
@@ -107,7 +107,7 @@ func setupTestHandlerWithAdblock(t *testing.T, blockedDomains []string, response
 	}
 	filter := adblock.NewFilter(mockStorage, true)
 
-	handler, err := NewHandler(zoneStorage, recordStorage, resolver, db, stats, nil, filter, adblockStorage, response, "test-server", "DNS-Go Test v1.0")
+	handler, err := NewHandler(zoneStorage, recordStorage, resolver, db, stats, nil, filter, adblockStorage, response, "test-server", "DNS-Go Test v1.0", nil)
 	if err != nil {
 		_ = db.Close()
 		_ = os.Remove(dbPath)
@@ -2327,7 +2327,7 @@ func TestServeDNS_NilStats(t *testing.T) {
 	resolver := NewResolver(upstreamStorage, 5*time.Second)
 
 	// Pass nil stats
-	handler, err := NewHandler(zoneStorage, recordStorage, resolver, db, nil, nil, nil, nil, "0.0.0.0", "test", "v1")
+	handler, err := NewHandler(zoneStorage, recordStorage, resolver, db, nil, nil, nil, nil, "0.0.0.0", "test", "v1", nil)
 	if err != nil {
 		t.Fatalf("Handler creation failed: %v", err)
 	}

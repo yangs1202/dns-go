@@ -23,6 +23,7 @@ type API struct {
 	healthCheckStorage *gslb.HealthCheckStorage
 	healthStatus       *sync.Map
 	healthWorker       *gslb.HealthCheckWorker // 동적 헬스체크 관리
+	queryLogStorage    *storage.QueryLogStorage
 	readOnly           bool                    // Read-Only 모드
 }
 
@@ -41,6 +42,7 @@ func NewAPI(
 	healthCheckStorage *gslb.HealthCheckStorage,
 	healthStatus *sync.Map,
 	healthWorker *gslb.HealthCheckWorker,
+	queryLogStorage *storage.QueryLogStorage,
 ) *API {
 	return &API{
 		zoneStorage:        zoneStorage,
@@ -57,6 +59,7 @@ func NewAPI(
 		healthCheckStorage: healthCheckStorage,
 		healthStatus:       healthStatus,
 		healthWorker:       healthWorker,
+		queryLogStorage:    queryLogStorage,
 		readOnly:           false, // 기본값: Read-Write
 	}
 }

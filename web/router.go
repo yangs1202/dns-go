@@ -55,6 +55,8 @@ func NewRouter(api *API, syncAPI *SyncAPI, serverInfoAPI *ServerInfoAPI) *gin.En
 
 		apiGroup.GET("/stats", api.getStats)
 
+		apiGroup.GET("/query-logs", api.getQueryLogs)
+
 		apiGroup.GET("/gslb/policies", api.listPolicies)
 		apiGroup.POST("/gslb/policies", api.createPolicy)
 		apiGroup.PUT("/gslb/policies/:id", api.updatePolicy)

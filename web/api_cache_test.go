@@ -42,6 +42,7 @@ func setupCacheTestAPIWithHandler(t *testing.T) (*API, *storage.Database) {
 		"",  // adblockResponse
 		"",  // nsid
 		"",  // version
+		nil, // queryLogWriter
 	)
 	require.NoError(t, err)
 	t.Cleanup(handler.Stop)

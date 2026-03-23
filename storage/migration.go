@@ -140,6 +140,28 @@ func (db *Database) Migrate() error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_adblock_stats_time ON adblock_stats(query_time)`,
 
+		// DNS 쿼리 로그
+		`CREATE TABLE IF NOT EXISTS query_logs (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			timestamp DATETIME NOT NULL,
+			client_ip TEXT NOT NULL,
+			domain TEXT NOT NULL,
+			query_type TEXT NOT NULL,
+			response_code TEXT NOT NULL,
+			response_source TEXT NOT NULL,
+			latency_ms REAL NOT NULL,
+			response_data TEXT DEFAULT '',
+			protocol TEXT DEFAULT 'udp',
+			response_size INTEGER DEFAULT 0,
+			edns_present INTEGER DEFAULT 0,
+			edns_version INTEGER DEFAULT 0,
+			edns_buffer_size INTEGER DEFAULT 0
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_query_logs_timestamp ON query_logs(timestamp)`,
+		`CREATE INDEX IF NOT EXISTS idx_query_logs_domain ON query_logs(domain, timestamp)`,
+		`CREATE INDEX IF NOT EXISTS idx_query_logs_client_ip ON query_logs(client_ip, timestamp)`,
+		`CREATE INDEX IF NOT EXISTS idx_query_logs_source ON query_logs(response_source, timestamp)`,
+
 		// 기본 캐시 설정 삽입
 		`INSERT OR IGNORE INTO cache_settings (id, enabled, max_size, default_ttl, min_ttl, max_ttl, negative_ttl, prefetch_trigger)
 		 VALUES (1, 1, 10000, 300, 60, 86400, 300, 0.9)`,

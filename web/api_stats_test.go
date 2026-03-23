@@ -32,6 +32,7 @@ func setupStatsTestAPI(t *testing.T) *API {
 		"",  // adblockResponse
 		"",  // nsid
 		"",  // version
+		nil, // queryLogWriter
 	)
 	require.NoError(t, err)
 	t.Cleanup(handler.Stop)
