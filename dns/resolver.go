@@ -26,9 +26,8 @@ func NewResolver(storage *storage.UpstreamStorage, timeout time.Duration) *Resol
 	}
 }
 
-// Forward는 DNS 쿼리를 우선순위 기반으로 업스트림 서버에 전달합니다
+// Forward는 모든 업스트림 서버에 동시 요청하여 가장 빠른 응답을 반환합니다
 func (r *Resolver) Forward(req *dns.Msg) (*dns.Msg, error) {
-	// 활성화된 업스트림 서버 목록 조회 (L2 캐시 활용)
 	servers, err := r.storage.ListEnabledUpstreamServers()
 	if err != nil {
 		return nil, fmt.Errorf("활성화된 업스트림 서버 목록 조회 실패: %w", err)
@@ -38,18 +37,38 @@ func (r *Resolver) Forward(req *dns.Msg) (*dns.Msg, error) {
 		return nil, fmt.Errorf("활성화된 업스트림 서버가 없습니다")
 	}
 
-	// priority 오름차순으로 정렬된 서버 순회
-	var lastErr error
-	for _, server := range servers {
-		resp, err := r.forwardToServer(server, req)
-		if err == nil {
-			// 첫 번째 성공한 응답 반환
-			return resp, nil
-		}
-		lastErr = err
+	// 서버가 1개면 바로 요청
+	if len(servers) == 1 {
+		return r.forwardToServer(servers[0], req)
 	}
 
-	// 모든 서버 실패 시 에러 반환
+	type result struct {
+		resp *dns.Msg
+		err  error
+	}
+
+	ch := make(chan result, len(servers))
+
+	// 모든 서버에 동시 요청
+	for _, server := range servers {
+		go func(s *model.UpstreamServer) {
+			// 각 고루틴에서 별도의 요청 메시지 사용 (race 방지)
+			reqCopy := req.Copy()
+			resp, err := r.forwardToServer(s, reqCopy)
+			ch <- result{resp: resp, err: err}
+		}(server)
+	}
+
+	// 가장 빠른 성공 응답 반환, 모두 실패 시 마지막 에러 반환
+	var lastErr error
+	for range servers {
+		res := <-ch
+		if res.err == nil {
+			return res.resp, nil
+		}
+		lastErr = res.err
+	}
+
 	return nil, fmt.Errorf("모든 업스트림 서버 실패: %w", lastErr)
 }
 

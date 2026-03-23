@@ -1437,6 +1437,87 @@ func TestServeDNS_EDNS0Support(t *testing.T) {
 	}
 }
 
+// TestServeDNS_CaseInsensitive는 RFC 4343 대소문자 무시 조회를 테스트합니다
+func TestServeDNS_CaseInsensitive(t *testing.T) {
+	handler, _, cleanup := setupTestHandler(t)
+	defer cleanup()
+
+	// Zone 생성
+	zone := &model.Zone{
+		Name:       "example.com.",
+		SOAMname:   "ns1.example.com.",
+		SOARname:   "admin.example.com.",
+		SOASerial:  1,
+		SOARefresh: 3600,
+		SOARetry:   900,
+		SOAExpire:  86400,
+		SOAMinimum: 300,
+		Enabled:    true,
+	}
+
+	zoneID, err := handler.zoneStorage.CreateZone(zone)
+	if err != nil {
+		t.Fatalf("Zone 생성 실패: %v", err)
+	}
+
+	// Record 생성 (소문자)
+	record := &model.Record{
+		ZoneID:  zoneID,
+		Name:    "svc-db01.example.com.",
+		Type:    "A",
+		Content: "10.96.50.150",
+		TTL:     300,
+		Enabled: true,
+	}
+
+	_, err = handler.recordStorage.CreateRecord(record)
+	if err != nil {
+		t.Fatalf("Record 생성 실패: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		domain string
+	}{
+		{"소문자", "svc-db01.example.com."},
+		{"대문자", "SVC-DB01.EXAMPLE.COM."},
+		{"Mixed case", "SVC-db01.Example.COM."},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// L1 캐시 비우기
+			handler.cache.Clear()
+
+			req := new(dns.Msg)
+			req.SetQuestion(tt.domain, dns.TypeA)
+
+			w := newMockWriter("192.0.2.100")
+			handler.ServeDNS(w, req)
+
+			if !w.written {
+				t.Fatal("응답이 작성되지 않음")
+			}
+
+			if w.msg.Rcode != dns.RcodeSuccess {
+				t.Errorf("도메인 %q: 예상 NOERROR, 실제 %s", tt.domain, dns.RcodeToString[w.msg.Rcode])
+			}
+
+			if len(w.msg.Answer) != 1 {
+				t.Fatalf("도메인 %q: 예상 Answer 수 1, 실제 %d", tt.domain, len(w.msg.Answer))
+			}
+
+			if a, ok := w.msg.Answer[0].(*dns.A); ok {
+				if a.A.String() != "10.96.50.150" {
+					t.Errorf("도메인 %q: 예상 IP 10.96.50.150, 실제 %s", tt.domain, a.A.String())
+				}
+			} else {
+				t.Errorf("도메인 %q: A 레코드가 아님", tt.domain)
+			}
+		})
+	}
+}
+
 // TestServeDNS_NegativeCache은 Negative 캐시를 테스트합니다
 func TestServeDNS_NegativeCache(t *testing.T) {
 	handler, _, cleanup := setupTestHandler(t)

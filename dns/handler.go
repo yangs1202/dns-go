@@ -262,7 +262,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	}
 
 	question := req.Question[0]
-	domain := question.Name
+	domain := strings.ToLower(question.Name)
 	qtype := dns.TypeToString[question.Qtype]
 
 	log.Printf("[DNS] Query: %s %s (class: %s)", domain, qtype, dns.ClassToString[question.Qclass])
