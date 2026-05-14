@@ -18,6 +18,8 @@ var validRecordTypes = map[string]bool{
 	"TXT": true, "NS": true, "SOA": true, "SRV": true, "PTR": true, "CAA": true,
 }
 
+const validRecordTypeError = "type은 A, AAAA, CNAME, MX, TXT, NS, SOA, SRV, PTR, CAA 중 하나여야 합니다"
+
 // validateRecordType은 레코드 타입이 유효한지 검증합니다
 func validateRecordType(t string) bool {
 	return validRecordTypes[strings.ToUpper(t)]
@@ -88,6 +90,19 @@ func validateRecordContent(recordType, content string) string {
 		}
 		if parts[1] == "" {
 			return "CAA 레코드의 tag는 필수입니다"
+		}
+	}
+	return ""
+}
+
+func validateRecordPriority(recordType string, priority int64) string {
+	if priority < 0 {
+		return "priority는 0 이상이어야 합니다"
+	}
+	switch strings.ToUpper(recordType) {
+	case "MX", "SRV":
+		if priority > 65535 {
+			return "MX/SRV 레코드의 priority는 0~65535 숫자여야 합니다"
 		}
 	}
 	return ""
@@ -241,7 +256,7 @@ func (api *API) createRecord(c *gin.Context) {
 		return
 	}
 	if !validateRecordType(req.Type) {
-		respondBadRequest(c, "type은 A, AAAA, CNAME, MX, TXT, NS, SRV, PTR, CAA 중 하나여야 합니다")
+		respondBadRequest(c, validRecordTypeError)
 		return
 	}
 	if strings.TrimSpace(req.Content) == "" {
@@ -256,8 +271,8 @@ func (api *API) createRecord(c *gin.Context) {
 		respondBadRequest(c, "TTL은 0 이상이어야 합니다")
 		return
 	}
-	if req.Priority < 0 {
-		respondBadRequest(c, "priority는 0 이상이어야 합니다")
+	if msg := validateRecordPriority(req.Type, req.Priority); msg != "" {
+		respondBadRequest(c, msg)
 		return
 	}
 
@@ -322,7 +337,7 @@ func (api *API) updateRecord(c *gin.Context) {
 		return
 	}
 	if !validateRecordType(req.Type) {
-		respondBadRequest(c, "type은 A, AAAA, CNAME, MX, TXT, NS, SRV, PTR, CAA 중 하나여야 합니다")
+		respondBadRequest(c, validRecordTypeError)
 		return
 	}
 	if strings.TrimSpace(req.Content) == "" {
@@ -337,8 +352,8 @@ func (api *API) updateRecord(c *gin.Context) {
 		respondBadRequest(c, "TTL은 0 이상이어야 합니다")
 		return
 	}
-	if req.Priority < 0 {
-		respondBadRequest(c, "priority는 0 이상이어야 합니다")
+	if msg := validateRecordPriority(req.Type, req.Priority); msg != "" {
+		respondBadRequest(c, msg)
 		return
 	}
 
