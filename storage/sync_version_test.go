@@ -3,6 +3,7 @@ package storage
 import (
 	"dns-go/model"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -37,6 +38,57 @@ func TestSyncVersion_IncrementVersion(t *testing.T) {
 	version, err = sv.GetVersion()
 	require.NoError(t, err)
 	assert.Equal(t, int64(6), version)
+}
+
+func TestSyncVersion_GetAllAdblockSourcesAndDomains(t *testing.T) {
+	db := setupTestDB(t)
+	defer func() { _ = db.Close() }()
+
+	lastSync := time.Date(2026, 5, 14, 10, 0, 0, 0, time.UTC)
+	result, err := db.Writer.Exec(`
+		INSERT INTO adblock_sources (name, url, enabled, last_sync, last_modified, rule_count)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, "AdGuard", "https://example.com/filter.txt", 1, lastSync, "etag-1", 2)
+	require.NoError(t, err)
+	sourceID, err := result.LastInsertId()
+	require.NoError(t, err)
+	_, err = db.Writer.Exec(`INSERT INTO adblock_sources (name, url, enabled) VALUES (?, ?, ?)`, "Empty", "https://example.com/empty.txt", 0)
+	require.NoError(t, err)
+	_, err = db.Writer.Exec(`INSERT INTO adblock_domains (domain, source_id) VALUES (?, ?)`, "ads.example.com", sourceID)
+	require.NoError(t, err)
+
+	sv := NewSyncVersion(db)
+	sources, err := sv.GetAllAdblockSources()
+	require.NoError(t, err)
+	require.Len(t, sources, 2)
+	assert.Equal(t, "AdGuard", sources[0]["name"])
+	assert.Equal(t, "etag-1", sources[0]["last_modified"])
+	assert.Equal(t, lastSync, sources[0]["last_sync"])
+	assert.Equal(t, 2, sources[0]["rule_count"])
+	assert.NotContains(t, sources[1], "last_sync")
+	assert.NotContains(t, sources[1], "last_modified")
+
+	domains, err := sv.GetAllAdblockDomains()
+	require.NoError(t, err)
+	require.Len(t, domains, 1)
+	assert.Equal(t, "ads.example.com", domains[0]["domain"])
+	assert.Equal(t, int(sourceID), domains[0]["source_id"])
+}
+
+func TestSyncVersion_GetAllAdblockSourcesSkipsBadRows(t *testing.T) {
+	db := setupTestDB(t)
+	defer func() { _ = db.Close() }()
+
+	_, err := db.Writer.Exec(`
+		INSERT INTO adblock_sources (name, url, enabled, last_sync, last_modified, rule_count)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, "BadTime", "https://example.com/filter.txt", 1, "not-a-time", nil, 1)
+	require.NoError(t, err)
+
+	sv := NewSyncVersion(db)
+	sources, err := sv.GetAllAdblockSources()
+	require.NoError(t, err)
+	assert.Empty(t, sources)
 }
 
 func TestSyncVersion_GetVersion(t *testing.T) {

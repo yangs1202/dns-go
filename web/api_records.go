@@ -15,8 +15,10 @@ import (
 // validRecordTypes는 허용되는 DNS 레코드 타입 목록
 var validRecordTypes = map[string]bool{
 	"A": true, "AAAA": true, "CNAME": true, "MX": true,
-	"TXT": true, "NS": true, "SRV": true, "PTR": true, "CAA": true,
+	"TXT": true, "NS": true, "SOA": true, "SRV": true, "PTR": true, "CAA": true,
 }
+
+const validRecordTypeError = "type은 A, AAAA, CNAME, MX, TXT, NS, SOA, SRV, PTR, CAA 중 하나여야 합니다"
 
 // validateRecordType은 레코드 타입이 유효한지 검증합니다
 func validateRecordType(t string) bool {
@@ -47,6 +49,60 @@ func validateRecordContent(recordType, content string) string {
 		name := strings.TrimSuffix(content, ".")
 		if name == "" || strings.Contains(name, " ") {
 			return "MX 레코드의 content는 유효한 도메인명이어야 합니다"
+		}
+	case "SOA":
+		parts := strings.Fields(content)
+		if len(parts) < 7 {
+			return "SOA 레코드의 content는 mname rname serial refresh retry expire minimum 형식이어야 합니다"
+		}
+		for _, part := range parts[2:7] {
+			if _, err := strconv.ParseUint(part, 10, 32); err != nil {
+				return "SOA 레코드의 serial/refresh/retry/expire/minimum은 숫자여야 합니다"
+			}
+		}
+	case "SRV":
+		parts := strings.Fields(content)
+		if len(parts) != 3 && len(parts) != 4 {
+			return "SRV 레코드의 content는 weight port target 또는 priority weight port target 형식이어야 합니다"
+		}
+		numericParts := parts[:2]
+		targetIndex := 2
+		if len(parts) == 4 {
+			numericParts = parts[:3]
+			targetIndex = 3
+		}
+		for _, part := range numericParts {
+			if _, err := strconv.ParseUint(part, 10, 16); err != nil {
+				return "SRV 레코드의 priority/weight/port는 0~65535 숫자여야 합니다"
+			}
+		}
+		target := strings.TrimSuffix(parts[targetIndex], ".")
+		if target == "" || strings.Contains(target, " ") {
+			return "SRV 레코드의 target은 유효한 도메인명이어야 합니다"
+		}
+	case "CAA":
+		parts := strings.Fields(content)
+		if len(parts) < 3 {
+			return "CAA 레코드의 content는 flags tag value 형식이어야 합니다"
+		}
+		if _, err := strconv.ParseUint(parts[0], 10, 8); err != nil {
+			return "CAA 레코드의 flags는 0~255 숫자여야 합니다"
+		}
+		if parts[1] == "" {
+			return "CAA 레코드의 tag는 필수입니다"
+		}
+	}
+	return ""
+}
+
+func validateRecordPriority(recordType string, priority int64) string {
+	if priority < 0 {
+		return "priority는 0 이상이어야 합니다"
+	}
+	switch strings.ToUpper(recordType) {
+	case "MX", "SRV":
+		if priority > 65535 {
+			return "MX/SRV 레코드의 priority는 0~65535 숫자여야 합니다"
 		}
 	}
 	return ""
@@ -200,7 +256,7 @@ func (api *API) createRecord(c *gin.Context) {
 		return
 	}
 	if !validateRecordType(req.Type) {
-		respondBadRequest(c, "type은 A, AAAA, CNAME, MX, TXT, NS, SRV, PTR, CAA 중 하나여야 합니다")
+		respondBadRequest(c, validRecordTypeError)
 		return
 	}
 	if strings.TrimSpace(req.Content) == "" {
@@ -215,8 +271,8 @@ func (api *API) createRecord(c *gin.Context) {
 		respondBadRequest(c, "TTL은 0 이상이어야 합니다")
 		return
 	}
-	if req.Priority < 0 {
-		respondBadRequest(c, "priority는 0 이상이어야 합니다")
+	if msg := validateRecordPriority(req.Type, req.Priority); msg != "" {
+		respondBadRequest(c, msg)
 		return
 	}
 
@@ -281,7 +337,7 @@ func (api *API) updateRecord(c *gin.Context) {
 		return
 	}
 	if !validateRecordType(req.Type) {
-		respondBadRequest(c, "type은 A, AAAA, CNAME, MX, TXT, NS, SRV, PTR, CAA 중 하나여야 합니다")
+		respondBadRequest(c, validRecordTypeError)
 		return
 	}
 	if strings.TrimSpace(req.Content) == "" {
@@ -296,8 +352,8 @@ func (api *API) updateRecord(c *gin.Context) {
 		respondBadRequest(c, "TTL은 0 이상이어야 합니다")
 		return
 	}
-	if req.Priority < 0 {
-		respondBadRequest(c, "priority는 0 이상이어야 합니다")
+	if msg := validateRecordPriority(req.Type, req.Priority); msg != "" {
+		respondBadRequest(c, msg)
 		return
 	}
 

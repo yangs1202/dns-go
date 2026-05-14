@@ -512,6 +512,101 @@ func TestWorker_InsertUpstream(t *testing.T) {
 	assert.Equal(t, "Test DNS", name)
 }
 
+func TestWorker_InsertAdblockSourceAndDomainsBatch(t *testing.T) {
+	db := setupTestDB(t)
+	defer func() { _ = db.Close() }()
+
+	worker := NewWorker("http://dummy", db, 1*time.Second)
+	tx, err := db.Writer.Begin()
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback() }()
+
+	sourceData := map[string]interface{}{
+		"id":            7,
+		"name":          "AdGuard",
+		"url":           "https://example.com/filter.txt",
+		"enabled":       1,
+		"last_sync":     "2026-05-14T10:00:00Z",
+		"last_modified": "etag-7",
+		"rule_count":    2,
+		"created_at":    "2026-05-14T10:00:00Z",
+		"updated_at":    "2026-05-14T10:00:00Z",
+	}
+	require.NoError(t, worker.insertAdblockSource(tx, sourceData))
+	require.NoError(t, worker.insertAdblockDomainsBatch(tx, []map[string]interface{}{
+		{"domain": "ads.example.com", "source_id": 7},
+		{"domain": "track.example.com", "source_id": 7},
+		{"domain": "ads.example.com", "source_id": 7},
+	}))
+	require.NoError(t, tx.Commit())
+
+	var name string
+	require.NoError(t, db.Writer.QueryRow("SELECT name FROM adblock_sources WHERE id = 7").Scan(&name))
+	assert.Equal(t, "AdGuard", name)
+
+	var count int
+	require.NoError(t, db.Writer.QueryRow("SELECT COUNT(*) FROM adblock_domains WHERE source_id = 7").Scan(&count))
+	assert.Equal(t, 2, count)
+}
+
+func TestWorker_FullSync_WithAdblockData(t *testing.T) {
+	db := setupTestDB(t)
+	defer func() { _ = db.Close() }()
+
+	_, err := db.Writer.Exec(`INSERT INTO adblock_sources (id, name, url, enabled) VALUES (99, 'old', 'https://old.example', 1)`)
+	require.NoError(t, err)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/api/sync/full", r.URL.Path)
+		response := map[string]interface{}{
+			"version":  int64(3),
+			"checksum": "adblock",
+			"data": map[string]interface{}{
+				"zones":         []map[string]interface{}{},
+				"records":       []map[string]interface{}{},
+				"gslb_policies": []map[string]interface{}{},
+				"gslb_pools":    []map[string]interface{}{},
+				"gslb_members":  []map[string]interface{}{},
+				"health_checks": []map[string]interface{}{},
+				"adblock_sources": []map[string]interface{}{
+					{
+						"id":            1,
+						"name":          "New Filter",
+						"url":           "https://example.com/filter.txt",
+						"enabled":       1,
+						"last_sync":     "2026-05-14T10:00:00Z",
+						"last_modified": "etag-new",
+						"rule_count":    2,
+						"created_at":    "2026-05-14T10:00:00Z",
+						"updated_at":    "2026-05-14T10:00:00Z",
+					},
+				},
+				"adblock_domains": []map[string]interface{}{
+					{"domain": "ads.example.com", "source_id": 1},
+					{"domain": "track.example.com", "source_id": 1},
+				},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	worker := NewWorker(server.URL, db, 1*time.Second)
+	require.NoError(t, worker.fullSync())
+
+	var oldCount int
+	require.NoError(t, db.Writer.QueryRow("SELECT COUNT(*) FROM adblock_sources WHERE id = 99").Scan(&oldCount))
+	assert.Equal(t, 0, oldCount)
+
+	var sourceName string
+	require.NoError(t, db.Writer.QueryRow("SELECT name FROM adblock_sources WHERE id = 1").Scan(&sourceName))
+	assert.Equal(t, "New Filter", sourceName)
+
+	var domainCount int
+	require.NoError(t, db.Writer.QueryRow("SELECT COUNT(*) FROM adblock_domains WHERE source_id = 1").Scan(&domainCount))
+	assert.Equal(t, 2, domainCount)
+}
+
 func TestWorker_StartStop(t *testing.T) {
 	db := setupTestDB(t)
 	defer func() { _ = db.Close() }()

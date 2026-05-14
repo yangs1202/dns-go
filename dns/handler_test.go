@@ -789,6 +789,76 @@ func TestRecordToRR(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "SOA 레코드 - trailing dot 없는 mname/rname 정규화",
+			record: &model.Record{
+				Name:    "example.com.",
+				Type:    "SOA",
+				Content: "ns1.example.com admin.example.com 1 3600 900 86400 300",
+				TTL:     3600,
+			},
+			checkFn: func(t *testing.T, rr dns.RR) {
+				soa, ok := rr.(*dns.SOA)
+				if !ok {
+					t.Fatal("SOA 레코드가 아님")
+				}
+				if soa.Ns != "ns1.example.com." {
+					t.Errorf("예상 NS: ns1.example.com., 실제: %s", soa.Ns)
+				}
+				if soa.Mbox != "admin.example.com." {
+					t.Errorf("예상 Mbox: admin.example.com., 실제: %s", soa.Mbox)
+				}
+				buf := make([]byte, dns.Len(soa))
+				if _, err := dns.PackRR(soa, buf, 0, nil, false); err != nil {
+					t.Errorf("SOA pack 실패: %v", err)
+				}
+			},
+		},
+		{
+			name: "MX 레코드 - trailing dot 없는 target 정규화",
+			record: &model.Record{
+				Name:     "example.com.",
+				Type:     "MX",
+				Content:  "mail.example.com",
+				Priority: 10,
+				TTL:     3600,
+			},
+			checkFn: func(t *testing.T, rr dns.RR) {
+				mx, ok := rr.(*dns.MX)
+				if !ok {
+					t.Fatal("MX 레코드가 아님")
+				}
+				if mx.Mx != "mail.example.com." {
+					t.Errorf("예상 Mx: mail.example.com., 실제: %s", mx.Mx)
+				}
+				buf := make([]byte, dns.Len(mx))
+				if _, err := dns.PackRR(mx, buf, 0, nil, false); err != nil {
+					t.Errorf("MX pack 실패: %v", err)
+				}
+			},
+		},
+		{
+			name: "NS 레코드 - trailing dot 없는 target 정규화",
+			record: &model.Record{
+				Name:    "example.com.",
+				Type:    "NS",
+				Content: "ns2.example.com",
+				TTL:     3600,
+			},
+			checkFn: func(t *testing.T, rr dns.RR) {
+				ns, ok := rr.(*dns.NS)
+				if !ok {
+					t.Fatal("NS 레코드가 아님")
+				}
+				if ns.Ns != "ns2.example.com." {
+					t.Errorf("예상 NS: ns2.example.com., 실제: %s", ns.Ns)
+				}
+				buf := make([]byte, dns.Len(ns))
+				if _, err := dns.PackRR(ns, buf, 0, nil, false); err != nil {
+					t.Errorf("NS pack 실패: %v", err)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {

@@ -24,6 +24,9 @@ func (api *API) getQueryLogs(c *gin.Context) {
 		Page:           parseIntParam(c, "page", 1),
 		PageSize:       parseIntParam(c, "page_size", 50),
 	}
+	if filter.PageSize > 200 {
+		filter.PageSize = 200
+	}
 
 	if start := c.Query("start_time"); start != "" {
 		if t, err := time.Parse(time.RFC3339, start); err == nil {

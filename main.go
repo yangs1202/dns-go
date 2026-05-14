@@ -17,21 +17,33 @@ import (
 )
 
 func main() {
+	if err := run("config.yaml", waitForShutdownSignal); err != nil {
+		log.Fatalf("%v", err)
+	}
+}
+
+type shutdownWaiter func(<-chan os.Signal) os.Signal
+
+func waitForShutdownSignal(sigChan <-chan os.Signal) os.Signal {
+	return <-sigChan
+}
+
+func run(configPath string, waitForSignal shutdownWaiter) error {
 	// 설정 로드
-	cfg, err := config.Load("config.yaml")
+	cfg, err := config.Load(configPath)
 	if err != nil {
-		log.Fatalf("설정 로드 실패: %v", err)
+		return fmt.Errorf("설정 로드 실패: %w", err)
 	}
 
 	// 설정 검증
 	if err := cfg.Validate(); err != nil {
-		log.Fatalf("설정 검증 실패: %v", err)
+		return fmt.Errorf("설정 검증 실패: %w", err)
 	}
 
 	// 데이터베이스 연결
 	db, err := storage.NewDatabase(cfg.Database.Path)
 	if err != nil {
-		log.Fatalf("데이터베이스 연결 실패: %v", err)
+		return fmt.Errorf("데이터베이스 연결 실패: %w", err)
 	}
 	defer func() { _ = db.Close() }()
 
@@ -125,7 +137,7 @@ func main() {
 		queryLogWriter,
 	)
 	if err != nil {
-		log.Fatalf("DNS 핸들러 초기화 실패: %v", err)
+		return fmt.Errorf("DNS 핸들러 초기화 실패: %w", err)
 	}
 	defer handler.Stop()
 
@@ -135,7 +147,7 @@ func main() {
 	server := dns.NewServer(&cfg.DNS, handler)
 
 	if err := server.Start(); err != nil {
-		log.Fatalf("DNS 서버 시작 실패: %v", err)
+		return fmt.Errorf("DNS 서버 시작 실패: %w", err)
 	}
 
 	log.Printf("DNS 서버 시작 성공: %s", server.GetAddr())
@@ -200,7 +212,7 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	sig := <-sigChan
+	sig := waitForSignal(sigChan)
 	log.Printf("종료 신호 수신: %v", sig)
 
 	// 서버 종료
@@ -212,6 +224,7 @@ func main() {
 	}
 
 	log.Println("서버 종료 완료")
+	return nil
 }
 
 // Version 정보

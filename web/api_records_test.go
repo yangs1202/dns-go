@@ -532,7 +532,20 @@ func TestValidateRecordContent(t *testing.T) {
 		{name: "Valid TXT", recordType: "TXT", content: "v=spf1 include:example.com ~all", wantError: false},
 
 		// SRV records (no specific validation)
-		{name: "Valid SRV", recordType: "SRV", content: "10 5 443 server.example.com", wantError: false},
+		{name: "Valid SRV with explicit priority", recordType: "SRV", content: "10 5 443 server.example.com", wantError: false},
+		{name: "Valid SRV using record priority", recordType: "SRV", content: "5 443 server.example.com", wantError: false},
+		{name: "Invalid SRV missing fields", recordType: "SRV", content: "443 server.example.com", wantError: true},
+		{name: "Invalid SRV non-numeric port", recordType: "SRV", content: "10 5 port server.example.com", wantError: true},
+
+		// SOA records
+		{name: "Valid SOA", recordType: "SOA", content: "ns1.example.com. admin.example.com. 1 3600 900 86400 300", wantError: false},
+		{name: "Invalid SOA missing fields", recordType: "SOA", content: "ns1.example.com. admin.example.com.", wantError: true},
+		{name: "Invalid SOA non-numeric serial", recordType: "SOA", content: "ns1.example.com. admin.example.com. serial 3600 900 86400 300", wantError: true},
+
+		// CAA records
+		{name: "Valid CAA", recordType: "CAA", content: "0 issue letsencrypt.org", wantError: false},
+		{name: "Invalid CAA missing fields", recordType: "CAA", content: "0 issue", wantError: true},
+		{name: "Invalid CAA flag", recordType: "CAA", content: "999 issue letsencrypt.org", wantError: true},
 	}
 
 	for _, tt := range tests {
@@ -591,6 +604,16 @@ func TestCreateRecord_ContentValidation(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 		},
 		{
+			name:       "Overflow MX priority",
+			body:       recordRequest{Name: "test.example.com", Type: "MX", Content: "mail.example.com.", Priority: 65536},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "Overflow SRV priority",
+			body:       recordRequest{Name: "_sip._tcp.example.com", Type: "SRV", Content: "5 5060 sip.example.com.", Priority: 65536},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
 			name:       "Zone not found",
 			body:       recordRequest{Name: "test.example.com", Type: "A", Content: "192.0.2.1"},
 			wantStatus: http.StatusNotFound,
@@ -619,6 +642,36 @@ func TestCreateRecord_ContentValidation(t *testing.T) {
 			assert.Equal(t, tt.wantStatus, w.Code)
 		})
 	}
+}
+
+func TestRecordTypeValidationMessageIncludesSOA(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	api, db := setupTestAPI(t)
+	zoneID := storage.InsertTestZone(t, db, "example.com.")
+	recordID := storage.InsertTestRecord(t, db, zoneID, "test.example.com.", "A", "192.0.2.1")
+
+	body, _ := json.Marshal(recordRequest{Name: "test.example.com", Type: "INVALID", Content: "test"})
+
+	createRecorder := httptest.NewRecorder()
+	createContext, _ := gin.CreateTestContext(createRecorder)
+	createContext.Request = httptest.NewRequest("POST", "/api/zones/1/records", bytes.NewReader(body))
+	createContext.Request.Header.Set("Content-Type", "application/json")
+	createContext.Params = gin.Params{gin.Param{Key: "id", Value: fmt.Sprintf("%d", zoneID)}}
+	api.createRecord(createContext)
+
+	assert.Equal(t, http.StatusBadRequest, createRecorder.Code)
+	assert.Contains(t, createRecorder.Body.String(), "SOA")
+
+	updateRecorder := httptest.NewRecorder()
+	updateContext, _ := gin.CreateTestContext(updateRecorder)
+	updateContext.Request = httptest.NewRequest("PUT", "/api/records/1", bytes.NewReader(body))
+	updateContext.Request.Header.Set("Content-Type", "application/json")
+	updateContext.Params = gin.Params{gin.Param{Key: "id", Value: fmt.Sprintf("%d", recordID)}}
+	api.updateRecord(updateContext)
+
+	assert.Equal(t, http.StatusBadRequest, updateRecorder.Code)
+	assert.Contains(t, updateRecorder.Body.String(), "SOA")
 }
 
 func TestUpdateRecord_ContentValidation(t *testing.T) {
@@ -657,6 +710,16 @@ func TestUpdateRecord_ContentValidation(t *testing.T) {
 		{
 			name:       "Negative priority",
 			body:       recordRequest{Name: "test.example.com", Type: "A", Content: "1.2.3.4", Priority: -1},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "Overflow MX priority",
+			body:       recordRequest{Name: "test.example.com", Type: "MX", Content: "mail.example.com.", Priority: 65536},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "Overflow SRV priority",
+			body:       recordRequest{Name: "_sip._tcp.example.com", Type: "SRV", Content: "5 5060 sip.example.com.", Priority: 65536},
 			wantStatus: http.StatusBadRequest,
 		},
 		{

@@ -45,3 +45,6 @@ server.log
 # Temporary files
 tmp/
 temp/
+
+# Local agent runtime state
+.omc/
