@@ -11,10 +11,10 @@ import (
 
 // DNSCacheEntry represents a cached DNS response
 type DNSCacheEntry struct {
-	RRs              []dns.RR  // DNS 응답 레코드
-	Expiry           time.Time // 만료 시간
-	PrefetchTime     time.Time // Prefetch 트리거 시간 (TTL의 90%)
-	IsNegative       bool      // NXDOMAIN 여부
+	RRs               []dns.RR  // DNS 응답 레코드
+	Expiry            time.Time // 만료 시간
+	PrefetchTime      time.Time // Prefetch 트리거 시간 (TTL의 90%)
+	IsNegative        bool      // NXDOMAIN 여부
 	prefetchTriggered uint32    // Atomic flag for prefetch (0 = not triggered, 1 = triggered)
 }
 
@@ -45,18 +45,18 @@ type cacheItem struct {
 
 // DNSCache implements an L1 cache for DNS responses
 type DNSCache struct {
-	entries         sync.Map              // key: "domain:qtype" (예: "example.com.:A")
-	maxSize         int64                 // 최대 캐시 항목 수
-	defaultTTL      int64                 // 기본 TTL (초)
-	negativeTTL     int64                 // Negative 캐시 TTL (초)
-	prefetchTrigger float64               // Prefetch 트리거 비율 (0.9 = 90%)
-	stats           CacheStats            // 히트율 통계
+	entries         sync.Map                   // key: "domain:qtype" (예: "example.com.:A")
+	maxSize         int64                      // 최대 캐시 항목 수
+	defaultTTL      int64                      // 기본 TTL (초)
+	negativeTTL     int64                      // Negative 캐시 TTL (초)
+	prefetchTrigger float64                    // Prefetch 트리거 비율 (0.9 = 90%)
+	stats           CacheStats                 // 히트율 통계
 	prefetchFn      func(domain, qtype string) // Prefetch 콜백 함수
-	mu              sync.RWMutex          // items 맵 보호용
-	items           map[string]*cacheItem // LRU 추적용
-	stopCh          chan struct{}         // cleanup goroutine 중지용
-	doneCh          chan struct{}         // cleanup goroutine 종료 대기용
-	stopOnce        sync.Once             // Stop이 한 번만 실행되도록 보장
+	mu              sync.RWMutex               // items 맵 보호용
+	items           map[string]*cacheItem      // LRU 추적용
+	stopCh          chan struct{}              // cleanup goroutine 중지용
+	doneCh          chan struct{}              // cleanup goroutine 종료 대기용
+	stopOnce        sync.Once                  // Stop이 한 번만 실행되도록 보장
 }
 
 // NewDNSCache creates a new DNS cache
@@ -94,42 +94,50 @@ func (c *DNSCache) Stop() {
 func (c *DNSCache) Get(domain, qtype string) (*DNSCacheEntry, bool) {
 	key := makeKey(domain, qtype)
 
-	value, ok := c.entries.Load(key)
-	if !ok {
-		atomic.AddUint64(&c.stats.Misses, 1)
-		metrics.CacheMissesTotal.Inc()
-		return nil, false
-	}
+	for {
+		value, ok := c.entries.Load(key)
+		if !ok {
+			atomic.AddUint64(&c.stats.Misses, 1)
+			metrics.CacheMissesTotal.Inc()
+			return nil, false
+		}
 
-	entry := value.(*DNSCacheEntry)
+		entry := value.(*DNSCacheEntry)
 
-	// Check if expired
-	if entry.IsExpired() {
-		c.entries.Delete(key)
+		// Check if expired. Delete only the same entry we loaded so a
+		// concurrent refresh cannot be removed by an older reader.
+		if entry.IsExpired() {
+			c.mu.Lock()
+			current, exists := c.entries.Load(key)
+			if exists && current == value {
+				c.entries.Delete(key)
+				delete(c.items, key)
+				atomic.AddUint64(&c.stats.Size, ^uint64(0)) // Decrement
+				metrics.CacheSize.Set(float64(atomic.LoadUint64(&c.stats.Size)))
+				c.mu.Unlock()
+				atomic.AddUint64(&c.stats.Misses, 1)
+				metrics.CacheMissesTotal.Inc()
+				return nil, false
+			}
+			c.mu.Unlock()
+			continue
+		}
+
+		// Update last access time for LRU
 		c.mu.Lock()
-		delete(c.items, key)
+		if item, exists := c.items[key]; exists && item.entry == entry {
+			item.lastAccess = time.Now()
+		}
 		c.mu.Unlock()
-		atomic.AddUint64(&c.stats.Size, ^uint64(0)) // Decrement
-		atomic.AddUint64(&c.stats.Misses, 1)
-		metrics.CacheMissesTotal.Inc()
-		metrics.CacheSize.Set(float64(atomic.LoadUint64(&c.stats.Size)))
-		return nil, false
+
+		atomic.AddUint64(&c.stats.Hits, 1)
+		metrics.CacheHitsTotal.Inc()
+
+		// Check if prefetch should be triggered
+		c.checkPrefetch(entry, domain, qtype)
+
+		return entry, true
 	}
-
-	// Update last access time for LRU
-	c.mu.Lock()
-	if item, exists := c.items[key]; exists {
-		item.lastAccess = time.Now()
-	}
-	c.mu.Unlock()
-
-	atomic.AddUint64(&c.stats.Hits, 1)
-	metrics.CacheHitsTotal.Inc()
-
-	// Check if prefetch should be triggered
-	c.checkPrefetch(entry, domain, qtype)
-
-	return entry, true
 }
 
 // Set stores a DNS response in the cache
@@ -158,29 +166,27 @@ func (c *DNSCache) Set(domain, qtype string, rrs []dns.RR, ttl int64, isNegative
 		IsNegative:   isNegative,
 	}
 
-	// Check if we need to evict before adding
-	currentSize := atomic.LoadUint64(&c.stats.Size)
-	if currentSize >= uint64(c.maxSize) {
-		c.evictOldest()
+	c.mu.Lock()
+	_, exists := c.entries.Load(key)
+
+	// Check if we need to evict before adding a new entry.
+	if !exists && int64(len(c.items)) >= c.maxSize {
+		c.evictOldestLocked()
 	}
 
-	// Store in sync.Map
-	_, exists := c.entries.LoadOrStore(key, entry)
-
-	// Update LRU tracking
-	c.mu.Lock()
+	c.entries.Store(key, entry)
 	c.items[key] = &cacheItem{
 		entry:      entry,
 		key:        key,
 		lastAccess: now,
 	}
-	c.mu.Unlock()
 
 	// Increment size only if it's a new entry
 	if !exists {
 		atomic.AddUint64(&c.stats.Size, 1)
 		metrics.CacheSize.Set(float64(atomic.LoadUint64(&c.stats.Size)))
 	}
+	c.mu.Unlock()
 }
 
 // Delete removes all cache entries for a specific domain
@@ -259,11 +265,7 @@ func (c *DNSCache) checkPrefetch(entry *DNSCacheEntry, domain, qtype string) {
 	}
 }
 
-// evictOldest removes the least recently used cache entry
-func (c *DNSCache) evictOldest() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
+func (c *DNSCache) evictOldestLocked() {
 	if len(c.items) == 0 {
 		return
 	}

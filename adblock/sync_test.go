@@ -167,6 +167,73 @@ func TestNewSyncer(t *testing.T) {
 	}
 }
 
+type mockVersionIncrementer struct {
+	calls int32
+	err   error
+}
+
+func (m *mockVersionIncrementer) IncrementVersion(tx *sql.Tx) error {
+	atomic.AddInt32(&m.calls, 1)
+	return m.err
+}
+
+func TestSyncer_SetVersionIncrementer(t *testing.T) {
+	syncer := NewSyncer(&mockSyncStorage{}, &mockSyncLoader{}, &mockSyncFilter{}, time.Hour)
+	incrementer := &mockVersionIncrementer{}
+
+	syncer.SetVersionIncrementer(incrementer)
+
+	if syncer.versionIncrementer != incrementer {
+		t.Fatal("version incrementer not set")
+	}
+}
+
+func TestSyncer_SyncAllIncrementsVersionWhenChanged(t *testing.T) {
+	storage := &mockSyncStorage{
+		sources: []*model.AdblockSource{{
+			ID:      1,
+			Name:    "Source",
+			URL:     "http://example.com/filter.txt",
+			Enabled: true,
+		}},
+	}
+	loader := &mockSyncLoader{rules: []string{"example.com"}, lastModified: "etag"}
+	filter := &mockSyncFilter{}
+	incrementer := &mockVersionIncrementer{}
+	syncer := NewSyncer(storage, loader, filter, time.Hour)
+	syncer.SetVersionIncrementer(incrementer)
+
+	if err := syncer.SyncAll(); err != nil {
+		t.Fatalf("SyncAll() error = %v", err)
+	}
+	if atomic.LoadInt32(&incrementer.calls) != 1 {
+		t.Fatalf("expected version increment once, got %d", incrementer.calls)
+	}
+}
+
+func TestSyncer_SyncAllVersionIncrementErrorDoesNotFail(t *testing.T) {
+	storage := &mockSyncStorage{
+		sources: []*model.AdblockSource{{
+			ID:      1,
+			Name:    "Source",
+			URL:     "http://example.com/filter.txt",
+			Enabled: true,
+		}},
+	}
+	loader := &mockSyncLoader{rules: []string{"example.com"}, lastModified: "etag"}
+	filter := &mockSyncFilter{}
+	incrementer := &mockVersionIncrementer{err: errors.New("version failed")}
+	syncer := NewSyncer(storage, loader, filter, time.Hour)
+	syncer.SetVersionIncrementer(incrementer)
+
+	if err := syncer.SyncAll(); err != nil {
+		t.Fatalf("SyncAll() error = %v", err)
+	}
+	if atomic.LoadInt32(&incrementer.calls) != 1 {
+		t.Fatalf("expected version increment once, got %d", incrementer.calls)
+	}
+}
+
 func TestSyncer_SyncAll(t *testing.T) {
 	storage := &mockSyncStorage{
 		sources: []*model.AdblockSource{

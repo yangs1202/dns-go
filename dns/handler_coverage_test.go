@@ -904,20 +904,74 @@ func TestBuildSOA_WithoutDot(t *testing.T) {
 // recordToRR - additional record type tests
 // =============================================================================
 
-func TestRecordToRR_UnsupportedType(t *testing.T) {
+func TestRecordToRR_SRV(t *testing.T) {
 	handler, _, cleanup := setupTestHandler(t)
 	defer cleanup()
 
 	record := &model.Record{
-		Name:    "test.example.com.",
-		Type:    "SRV",
-		Content: "0 5 80 www.example.com.",
-		TTL:     300,
+		Name:     "_http._tcp.example.com.",
+		Type:     "SRV",
+		Content:  "5 80 www.example.com.",
+		TTL:      300,
+		Priority: 10,
 	}
 
 	rr := handler.recordToRR(record)
-	if rr != nil {
-		t.Error("Expected nil for unsupported record type SRV")
+	srv, ok := rr.(*dns.SRV)
+	if !ok {
+		t.Fatalf("Expected SRV RR, got %T", rr)
+	}
+	if srv.Priority != 10 || srv.Weight != 5 || srv.Port != 80 || srv.Target != "www.example.com." {
+		t.Fatalf("Unexpected SRV: %+v", srv)
+	}
+}
+
+func TestRecordToRR_ExtendedTypes(t *testing.T) {
+	handler, _, cleanup := setupTestHandler(t)
+	defer cleanup()
+
+	srvFull := handler.recordToRR(&model.Record{
+		Name:    "_sip._tcp.example.com.",
+		Type:    "SRV",
+		Content: "20 7 5060 sip.example.com",
+		TTL:     300,
+	})
+	srv, ok := srvFull.(*dns.SRV)
+	if !ok {
+		t.Fatalf("Expected SRV RR, got %T", srvFull)
+	}
+	if srv.Priority != 20 || srv.Weight != 7 || srv.Port != 5060 || srv.Target != "sip.example.com." {
+		t.Fatalf("Unexpected SRV RR: %+v", srv)
+	}
+
+	if rr := handler.recordToRR(&model.Record{Name: "_bad._tcp.example.com.", Type: "SRV", Content: "5060", TTL: 60}); rr != nil {
+		t.Fatalf("Expected nil for invalid SRV content, got %v", rr)
+	}
+
+	ptrRR := handler.recordToRR(&model.Record{Name: "1.2.0.192.in-addr.arpa.", Type: "PTR", Content: "host.example.com", TTL: 60})
+	ptr, ok := ptrRR.(*dns.PTR)
+	if !ok {
+		t.Fatalf("Expected PTR RR, got %T", ptrRR)
+	}
+	if ptr.Ptr != "host.example.com." {
+		t.Fatalf("Expected PTR target with trailing dot, got %s", ptr.Ptr)
+	}
+
+	caaRR := handler.recordToRR(&model.Record{Name: "example.com.", Type: "CAA", Content: "0 issue ca.example", TTL: 60})
+	caa, ok := caaRR.(*dns.CAA)
+	if !ok {
+		t.Fatalf("Expected CAA RR, got %T", caaRR)
+	}
+	if caa.Flag != 0 || caa.Tag != "issue" || caa.Value != "ca.example" {
+		t.Fatalf("Unexpected CAA RR: %+v", caa)
+	}
+
+	if rr := handler.recordToRR(&model.Record{Name: "example.com.", Type: "CAA", Content: "0 issue", TTL: 60}); rr != nil {
+		t.Fatalf("Expected nil for invalid CAA content, got %v", rr)
+	}
+
+	if got := parseUint16("bad"); got != 0 {
+		t.Fatalf("Expected parseUint16 bad input to return 0, got %d", got)
 	}
 }
 
@@ -1004,14 +1058,16 @@ func TestRecordToRR_AllTypes(t *testing.T) {
 			record: &model.Record{Name: "t.com.", Type: "SOA", Content: "ns1.t.com. admin.t.com. 1 3600 900 86400 300", TTL: 3600},
 		},
 		{
-			name:      "PTR record (unsupported)",
-			record:    &model.Record{Name: "1.2.3.4.in-addr.arpa.", Type: "PTR", Content: "host.t.com.", TTL: 60},
-			expectNil: true,
+			name:   "SRV record",
+			record: &model.Record{Name: "_sip._tcp.t.com.", Type: "SRV", Content: "5 5060 sip.t.com.", TTL: 60, Priority: 10},
 		},
 		{
-			name:      "CAA record (unsupported)",
-			record:    &model.Record{Name: "t.com.", Type: "CAA", Content: "0 issue letsencrypt.org", TTL: 60},
-			expectNil: true,
+			name:   "PTR record",
+			record: &model.Record{Name: "1.2.3.4.in-addr.arpa.", Type: "PTR", Content: "host.t.com.", TTL: 60},
+		},
+		{
+			name:   "CAA record",
+			record: &model.Record{Name: "t.com.", Type: "CAA", Content: "0 issue letsencrypt.org", TTL: 60},
 		},
 	}
 

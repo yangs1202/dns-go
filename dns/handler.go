@@ -10,7 +10,10 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/miekg/dns"
@@ -18,11 +21,12 @@ import (
 
 // Handler는 DNS 쿼리를 처리하는 핸들러입니다
 type Handler struct {
+	cacheMu          sync.RWMutex
 	cache            *DNSCache              // L1 DNS 응답 캐시
 	zoneStorage      *storage.ZoneStorage   // Zone 저장소 (L2 캐시)
 	recordStorage    *storage.RecordStorage // Record 저장소 (L2 캐시)
 	lastQueryTracker *lastQueryTracker
-	queryLogWriter   *QueryLogWriter        // DNS 쿼리 로그 라이터
+	queryLogWriter   *QueryLogWriter   // DNS 쿼리 로그 라이터
 	resolver         *Resolver         // 업스트림 리졸버
 	cacheSettings    *storage.Database // 캐시 설정 조회용
 	stats            *QueryStats
@@ -36,6 +40,15 @@ type Handler struct {
 }
 
 const maxCNAMEChainDepth = 8
+
+var dnsDebugLogsEnabled = strings.EqualFold(os.Getenv("DNS_GO_DEBUG_LOGS"), "true") ||
+	os.Getenv("DNS_GO_DEBUG_LOGS") == "1"
+
+func debugLogf(format string, args ...interface{}) {
+	if dnsDebugLogsEnabled {
+		log.Printf(format, args...)
+	}
+}
 
 // NewHandler는 새로운 DNS 핸들러를 생성합니다
 func NewHandler(
@@ -91,8 +104,8 @@ func NewHandler(
 
 // Stop는 핸들러 내부 백그라운드 작업을 종료합니다.
 func (h *Handler) Stop() {
-	if h.cache != nil {
-		h.cache.Stop()
+	if cache := h.GetCache(); cache != nil {
+		cache.Stop()
 	}
 	if h.lastQueryTracker != nil {
 		h.lastQueryTracker.Stop()
@@ -182,8 +195,8 @@ func summarizeAnswers(rrs []dns.RR) string {
 
 // ClearCache는 모든 DNS 캐시를 클리어합니다 (동기화 시 호출)
 func (h *Handler) ClearCache() {
-	if h.cache != nil {
-		h.cache.Clear()
+	if cache := h.GetCache(); cache != nil {
+		cache.Clear()
 		log.Println("DNS L1 캐시 클리어 완료")
 	}
 
@@ -354,7 +367,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	domain := strings.ToLower(question.Name)
 	qtype := dns.TypeToString[question.Qtype]
 
-	log.Printf("[DNS] Query: %s %s (class: %s)", domain, qtype, dns.ClassToString[question.Qclass])
+	debugLogf("[DNS] Query: %s %s (class: %s)", domain, qtype, dns.ClassToString[question.Qclass])
 
 	// CHAOS 클래스 처리 (version.bind, hostname.bind 등)
 	if question.Qclass == dns.ClassCHAOS {
@@ -364,7 +377,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 
 	// ANY 쿼리 차단 (RFC 8482 - DDoS 증폭 공격 방지)
 	if question.Qtype == dns.TypeANY {
-		log.Printf("[DNS] ANY query blocked: %s (RFC 8482)", domain)
+		debugLogf("[DNS] ANY query blocked: %s (RFC 8482)", domain)
 		resp.Rcode = dns.RcodeNotImplemented
 		metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeNotImplemented]).Inc()
 		h.logQuery(w, req, resp, "blocked", start)
@@ -378,8 +391,9 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	}
 
 	// 1. L1 캐시 확인
-	if entry, ok := h.cache.Get(domain, qtype); ok {
-		log.Printf("[DNS] L1 Cache HIT: %s %s", domain, qtype)
+	cache := h.GetCache()
+	if entry, ok := cache.Get(domain, qtype); ok {
+		debugLogf("[DNS] L1 Cache HIT: %s %s", domain, qtype)
 		if h.stats != nil {
 			h.stats.IncL1Hit()
 		}
@@ -402,7 +416,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 		return
 	}
 
-	log.Printf("[DNS] L1 Cache MISS: %s %s", domain, qtype)
+	debugLogf("[DNS] L1 Cache MISS: %s %s", domain, qtype)
 	if h.stats != nil {
 		h.stats.IncL1Miss()
 	}
@@ -430,7 +444,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 				resp.Rcode = dns.RcodeNameError
 				zoneName := h.extractDomain(domain)
 				resp.Ns = []dns.RR{h.buildSOA(zoneName)}
-				h.cache.Set(domain, qtype, nil, 0, true)
+				cache.Set(domain, qtype, nil, 0, true)
 				metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeNameError]).Inc()
 				metrics.QueryDurationSeconds.WithLabelValues("adblock").Observe(time.Since(start).Seconds())
 				h.logQuery(w, req, resp, "adblock", start)
@@ -440,7 +454,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 			if qtype == "A" {
 				resp.Answer = []dns.RR{&dns.A{Hdr: dns.RR_Header{Name: domain, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60}, A: net.ParseIP("0.0.0.0")}}
 				resp.Rcode = dns.RcodeSuccess
-				h.cache.Set(domain, qtype, resp.Answer, 60, false)
+				cache.Set(domain, qtype, resp.Answer, 60, false)
 				metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeSuccess]).Inc()
 				metrics.QueryDurationSeconds.WithLabelValues("adblock").Observe(time.Since(start).Seconds())
 				h.logQuery(w, req, resp, "adblock", start)
@@ -450,7 +464,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 			if qtype == "AAAA" {
 				resp.Answer = []dns.RR{&dns.AAAA{Hdr: dns.RR_Header{Name: domain, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 60}, AAAA: net.ParseIP("::")}}
 				resp.Rcode = dns.RcodeSuccess
-				h.cache.Set(domain, qtype, resp.Answer, 60, false)
+				cache.Set(domain, qtype, resp.Answer, 60, false)
 				metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeSuccess]).Inc()
 				metrics.QueryDurationSeconds.WithLabelValues("adblock").Observe(time.Since(start).Seconds())
 				h.logQuery(w, req, resp, "adblock", start)
@@ -460,7 +474,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 			resp.Rcode = dns.RcodeNameError
 			zoneName := h.extractDomain(domain)
 			resp.Ns = []dns.RR{h.buildSOA(zoneName)}
-			h.cache.Set(domain, qtype, nil, 0, true)
+			cache.Set(domain, qtype, nil, 0, true)
 			metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeNameError]).Inc()
 			metrics.QueryDurationSeconds.WithLabelValues("adblock").Observe(time.Since(start).Seconds())
 			h.logQuery(w, req, resp, "adblock", start)
@@ -517,11 +531,11 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 		// GSLB 도메인이지만 해당 qtype에 맞는 레코드가 없는 경우 (예: A만 있고 AAAA 쿼리)
 		// RFC 4074: 도메인이 존재하면 NOERROR (빈 응답) 반환, NXDOMAIN 아님
 		if h.gslbEngine.HasDomain(domain) {
-			log.Printf("[DNS] GSLB domain %s exists but no %s record, returning NOERROR (RFC 4074)", domain, qtype)
+			debugLogf("[DNS] GSLB domain %s exists but no %s record, returning NOERROR (RFC 4074)", domain, qtype)
 			resp.Rcode = dns.RcodeSuccess
 			zoneName := h.extractDomain(domain)
 			resp.Ns = []dns.RR{h.buildSOA(zoneName)}
-			h.cache.Set(domain, qtype, nil, 0, false) // 빈 응답도 캐시 (AAAA 반복 쿼리 방지)
+			cache.Set(domain, qtype, nil, 0, false) // 빈 응답도 캐시 (AAAA 반복 쿼리 방지)
 			metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeSuccess]).Inc()
 			metrics.QueryDurationSeconds.WithLabelValues("gslb").Observe(time.Since(start).Seconds())
 			h.logQuery(w, req, resp, "gslb", start)
@@ -544,7 +558,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 
 	// Zone이 존재하면 Record 조회
 	if zone != nil {
-		log.Printf("[DNS] Zone found: %s (ID: %d)", zone.Name, zone.ID)
+		debugLogf("[DNS] Zone found: %s (ID: %d)", zone.Name, zone.ID)
 
 		// Record 조회 (L2 캐시 활용)
 		records, err := h.recordStorage.GetRecordsByNameAndZone(zone.ID, domain, qtype)
@@ -572,7 +586,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 
 		// 레코드가 있으면 응답 생성
 		if len(records) > 0 {
-			log.Printf("[DNS] Records found: %d records", len(records))
+			debugLogf("[DNS] Records found: %d records", len(records))
 
 			// RFC 1035: Zone에서 직접 응답하는 경우 Authoritative
 			resp.Authoritative = true
@@ -596,7 +610,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 
 			// L1 캐시에 저장 (GSLB 경유 응답은 캐시하지 않음)
 			if cnameResolvedViaGSLB {
-				log.Printf("[DNS] Skipping L1 cache for %s %s (CNAME target resolved via GSLB)", domain, qtype)
+				debugLogf("[DNS] Skipping L1 cache for %s %s (CNAME target resolved via GSLB)", domain, qtype)
 			} else {
 				minTTL := int64(300) // 기본값
 				if len(records) > 0 {
@@ -607,7 +621,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 						}
 					}
 				}
-				h.cache.Set(domain, qtype, resp.Answer, minTTL, false)
+				cache.Set(domain, qtype, resp.Answer, minTTL, false)
 			}
 
 			metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeSuccess]).Inc()
@@ -628,7 +642,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 
 			if !domainExists {
 				// 도메인 자체가 존재하지 않음 → NXDOMAIN
-				log.Printf("[DNS] Domain %s does not exist in zone %s (authoritative), returning NXDOMAIN", domain, zone.Name)
+				debugLogf("[DNS] Domain %s does not exist in zone %s (authoritative), returning NXDOMAIN", domain, zone.Name)
 				resp.Rcode = dns.RcodeNameError
 				resp.Ns = []dns.RR{h.buildSOA(zoneName)}
 				metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeNameError]).Inc()
@@ -639,10 +653,10 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 			}
 
 			// 도메인은 존재하지만 해당 타입의 레코드가 없음 → NOERROR (빈 응답)
-			log.Printf("[DNS] Domain %s exists but no %s record, returning NOERROR", domain, qtype)
+			debugLogf("[DNS] Domain %s exists but no %s record, returning NOERROR", domain, qtype)
 			resp.Rcode = dns.RcodeSuccess
 			resp.Ns = []dns.RR{h.buildSOA(zoneName)}
-			h.cache.Set(domain, qtype, nil, 0, false) // 빈 응답도 캐시 (AAAA 반복 쿼리 방지)
+			cache.Set(domain, qtype, nil, 0, false) // 빈 응답도 캐시 (AAAA 반복 쿼리 방지)
 			metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeSuccess]).Inc()
 			metrics.QueryDurationSeconds.WithLabelValues("zone").Observe(time.Since(start).Seconds())
 			h.logQuery(w, req, resp, "zone", start)
@@ -658,11 +672,11 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 			log.Printf("[DNS] Failed to check domain existence: %v", err)
 		}
 		if domainExists {
-			log.Printf("[DNS] Domain %s exists in zone %s but no %s record, returning NOERROR (RFC 4074)", domain, zone.Name, qtype)
+			debugLogf("[DNS] Domain %s exists in zone %s but no %s record, returning NOERROR (RFC 4074)", domain, zone.Name, qtype)
 			resp.Authoritative = true
 			resp.Rcode = dns.RcodeSuccess
 			resp.Ns = []dns.RR{h.buildSOA(zoneName)}
-			h.cache.Set(domain, qtype, nil, 0, false) // 빈 응답도 캐시 (AAAA 반복 쿼리 방지)
+			cache.Set(domain, qtype, nil, 0, false) // 빈 응답도 캐시 (AAAA 반복 쿼리 방지)
 			metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeSuccess]).Inc()
 			metrics.QueryDurationSeconds.WithLabelValues("zone").Observe(time.Since(start).Seconds())
 			h.logQuery(w, req, resp, "zone", start)
@@ -671,13 +685,13 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 		}
 
 		// 도메인 자체가 없으면 Upstream으로 포워딩
-		log.Printf("[DNS] Zone %s exists but domain %s not found, falling back to upstream", zone.Name, domain)
+		debugLogf("[DNS] Zone %s exists but domain %s not found, falling back to upstream", zone.Name, domain)
 	}
 
 	// 5. Zone 또는 Record가 없으면 업스트림 포워딩
 	// RFC 1035: RD=0(+norecurse)이면 재귀 처리 안 함
 	if !req.RecursionDesired {
-		log.Printf("[DNS] Recursion not desired (RD=0), returning REFUSED")
+		debugLogf("[DNS] Recursion not desired (RD=0), returning REFUSED")
 		resp.Rcode = dns.RcodeRefused
 		metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeRefused]).Inc()
 		h.logQuery(w, req, resp, "refused", start)
@@ -685,7 +699,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 		return
 	}
 
-	log.Printf("[DNS] Forwarding to upstream: %s %s", domain, qtype)
+	debugLogf("[DNS] Forwarding to upstream: %s %s", domain, qtype)
 	upstreamResp, err := h.resolver.Forward(req)
 	if err != nil {
 		log.Printf("[DNS] Upstream forwarding failed: %v", err)
@@ -694,7 +708,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 		resp.Rcode = dns.RcodeNameError
 		zoneName := h.extractDomain(domain)
 		resp.Ns = []dns.RR{h.buildSOA(zoneName)}
-		h.cache.Set(domain, qtype, nil, 0, true)
+		cache.Set(domain, qtype, nil, 0, true)
 		metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeNameError]).Inc()
 		metrics.QueryDurationSeconds.WithLabelValues("upstream").Observe(time.Since(start).Seconds())
 		h.logQuery(w, req, resp, "upstream", start)
@@ -717,11 +731,11 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 			}
 		}
 
-		h.cache.Set(domain, qtype, upstreamResp.Answer, minTTL, false)
-		log.Printf("[DNS] Cached upstream response: %s %s (TTL: %d)", domain, qtype, minTTL)
+		cache.Set(domain, qtype, upstreamResp.Answer, minTTL, false)
+		debugLogf("[DNS] Cached upstream response: %s %s (TTL: %d)", domain, qtype, minTTL)
 	} else if upstreamResp.Rcode == dns.RcodeNameError {
 		// NXDOMAIN 캐싱
-		h.cache.Set(domain, qtype, nil, 0, true)
+		cache.Set(domain, qtype, nil, 0, true)
 	}
 
 	// 6. 응답 반환
@@ -779,7 +793,7 @@ func (h *Handler) resolveCNAMEChain(zoneID int64, domain, qtype string, clientIP
 					return records, false, err
 				}
 				if len(cnameRecords) > 0 {
-					log.Printf("[DNS] Cross-zone CNAME found: %s in zone %s", current, currentZoneName)
+					debugLogf("[DNS] Cross-zone CNAME found: %s in zone %s", current, currentZoneName)
 				}
 			}
 		}
@@ -789,7 +803,7 @@ func (h *Handler) resolveCNAMEChain(zoneID int64, domain, qtype string, clientIP
 
 		cname := cnameRecords[0]
 		records = append(records, cname)
-		log.Printf("[DNS] CNAME found: %s -> %s", current, cname.Content)
+		debugLogf("[DNS] CNAME found: %s -> %s", current, cname.Content)
 
 		target := cname.Content
 		if !strings.HasSuffix(target, ".") {
@@ -801,7 +815,7 @@ func (h *Handler) resolveCNAMEChain(zoneID int64, domain, qtype string, clientIP
 			return records, false, err
 		}
 		if len(targetRecords) > 0 {
-			log.Printf("[DNS] CNAME target records found: %d records (viaGSLB: %v)", len(targetRecords), viaGSLB)
+			debugLogf("[DNS] CNAME target records found: %d records (viaGSLB: %v)", len(targetRecords), viaGSLB)
 			records = append(records, targetRecords...)
 			resolvedViaGSLB = viaGSLB
 			return records, resolvedViaGSLB, nil
@@ -820,7 +834,7 @@ func (h *Handler) resolveTargetRecords(zoneID int64, target, qtype string, clien
 	if h.gslbEngine != nil {
 		ips, _, err := h.gslbEngine.Resolve(target, qtype, clientIP)
 		if err == nil && len(ips) > 0 {
-			log.Printf("[DNS] CNAME target is GSLB domain: %s, resolved %d IPs", target, len(ips))
+			debugLogf("[DNS] CNAME target is GSLB domain: %s, resolved %d IPs", target, len(ips))
 			records := make([]*model.Record, 0, len(ips))
 			for _, ip := range ips {
 				if ip == nil {
@@ -873,7 +887,7 @@ func (h *Handler) resolveTargetRecords(zoneID int64, target, qtype string, clien
 			return nil, false, err
 		}
 		if len(records) > 0 {
-			log.Printf("[DNS] Cross-zone resolution: found %s record for %s in zone %s", qtype, target, targetZoneName)
+			debugLogf("[DNS] Cross-zone resolution: found %s record for %s in zone %s", qtype, target, targetZoneName)
 			return records, false, nil
 		}
 	}
@@ -912,7 +926,7 @@ func (h *Handler) resolveTargetRecords(zoneID int64, target, qtype string, clien
 				}
 			}
 			if len(records) > 0 {
-				log.Printf("[DNS] Upstream resolution: found %d %s record(s) for %s", len(records), qtype, target)
+				debugLogf("[DNS] Upstream resolution: found %d %s record(s) for %s", len(records), qtype, target)
 				return records, false, nil
 			}
 		}
@@ -990,6 +1004,57 @@ func (h *Handler) recordToRR(record *model.Record) dns.RR {
 			}
 		}
 
+	case "SRV":
+		parts := strings.Fields(record.Content)
+		priority := uint16(record.Priority)
+		var weight, port uint16
+		var target string
+		switch {
+		case len(parts) >= 4:
+			priority = parseUint16(parts[0])
+			weight = parseUint16(parts[1])
+			port = parseUint16(parts[2])
+			target = parts[3]
+		case len(parts) >= 3:
+			weight = parseUint16(parts[0])
+			port = parseUint16(parts[1])
+			target = parts[2]
+		default:
+			return nil
+		}
+		if !strings.HasSuffix(target, ".") {
+			target += "."
+		}
+		return &dns.SRV{
+			Hdr:      header,
+			Priority: priority,
+			Weight:   weight,
+			Port:     port,
+			Target:   target,
+		}
+
+	case "PTR":
+		ptr := record.Content
+		if !strings.HasSuffix(ptr, ".") {
+			ptr += "."
+		}
+		return &dns.PTR{
+			Hdr: header,
+			Ptr: ptr,
+		}
+
+	case "CAA":
+		parts := strings.Fields(record.Content)
+		if len(parts) < 3 {
+			return nil
+		}
+		return &dns.CAA{
+			Hdr:   header,
+			Flag:  uint8(parseUint16(parts[0])),
+			Tag:   parts[1],
+			Value: strings.Join(parts[2:], " "),
+		}
+
 	default:
 		log.Printf("[DNS] Unsupported record type: %s", record.Type)
 		return nil
@@ -1030,7 +1095,7 @@ func (h *Handler) extractDomain(fqdn string) string {
 
 // handlePrefetch는 Prefetch 콜백 함수입니다 (백그라운드 갱신)
 func (h *Handler) handlePrefetch(domain, qtype string) {
-	log.Printf("[DNS] Prefetch triggered: %s %s", domain, qtype)
+	debugLogf("[DNS] Prefetch triggered: %s %s", domain, qtype)
 
 	// 백그라운드에서 레코드 갱신
 	// 1. Zone 조회
@@ -1067,8 +1132,8 @@ func (h *Handler) handlePrefetch(domain, qtype string) {
 		}
 
 		// 캐시 갱신
-		h.cache.Set(domain, qtype, answer.Answer, minTTL, false)
-		log.Printf("[DNS] Prefetch completed: %s %s (%d records)", domain, qtype, len(records))
+		h.GetCache().Set(domain, qtype, answer.Answer, minTTL, false)
+		debugLogf("[DNS] Prefetch completed: %s %s (%d records)", domain, qtype, len(records))
 	} else {
 		// 레코드가 없으면 업스트림 조회
 		req := new(dns.Msg)
@@ -1090,8 +1155,8 @@ func (h *Handler) handlePrefetch(domain, qtype string) {
 				}
 			}
 
-			h.cache.Set(domain, qtype, upstreamResp.Answer, minTTL, false)
-			log.Printf("[DNS] Prefetch from upstream completed: %s %s", domain, qtype)
+			h.GetCache().Set(domain, qtype, upstreamResp.Answer, minTTL, false)
+			debugLogf("[DNS] Prefetch from upstream completed: %s %s", domain, qtype)
 		}
 	}
 }
@@ -1103,8 +1168,18 @@ func parseUint32(s string) uint32 {
 	return result
 }
 
+func parseUint16(s string) uint16 {
+	n, err := strconv.ParseUint(s, 10, 16)
+	if err != nil {
+		return 0
+	}
+	return uint16(n)
+}
+
 // GetCache는 L1 캐시를 반환합니다 (테스트용)
 func (h *Handler) GetCache() *DNSCache {
+	h.cacheMu.RLock()
+	defer h.cacheMu.RUnlock()
 	return h.cache
 }
 
@@ -1115,5 +1190,11 @@ func (h *Handler) ReconfigureCache(settings *model.CacheSettings) {
 	}
 	cache := NewDNSCache(settings.MaxSize, settings.DefaultTTL, settings.NegativeTTL, settings.PrefetchTrigger)
 	cache.SetPrefetchFunc(h.handlePrefetch)
+	h.cacheMu.Lock()
+	oldCache := h.cache
 	h.cache = cache
+	h.cacheMu.Unlock()
+	if oldCache != nil {
+		oldCache.Stop()
+	}
 }

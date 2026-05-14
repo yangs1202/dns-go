@@ -8,16 +8,22 @@ import (
 
 // InitDB는 초기 데이터를 데이터베이스에 삽입합니다
 func InitDB() {
+	if err := initDB("config.yaml"); err != nil {
+		log.Fatalf("%v", err)
+	}
+}
+
+func initDB(configPath string) error {
 	// 설정 로드
-	cfg, err := config.Load("config.yaml")
+	cfg, err := config.Load(configPath)
 	if err != nil {
-		log.Fatalf("설정 로드 실패: %v", err)
+		return err
 	}
 
 	// 데이터베이스 연결
 	db, err := storage.NewDatabase(cfg.Database.Path)
 	if err != nil {
-		log.Fatalf("데이터베이스 연결 실패: %v", err)
+		return err
 	}
 	defer func() { _ = db.Close() }()
 
@@ -94,4 +100,6 @@ func InitDB() {
 			log.Printf("광고차단 소스 추가: %s", s.name)
 		}
 	}
+
+	return nil
 }

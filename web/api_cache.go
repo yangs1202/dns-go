@@ -9,12 +9,12 @@ import (
 )
 
 type cacheSettingsRequest struct {
-	Enabled         *bool   `json:"enabled"`
-	MaxSize         *int64  `json:"max_size"`
-	DefaultTTL      *int64  `json:"default_ttl"`
-	MinTTL          *int64  `json:"min_ttl"`
-	MaxTTL          *int64  `json:"max_ttl"`
-	NegativeTTL     *int64  `json:"negative_ttl"`
+	Enabled         *bool    `json:"enabled"`
+	MaxSize         *int64   `json:"max_size"`
+	DefaultTTL      *int64   `json:"default_ttl"`
+	MinTTL          *int64   `json:"min_ttl"`
+	MaxTTL          *int64   `json:"max_ttl"`
+	NegativeTTL     *int64   `json:"negative_ttl"`
 	PrefetchTrigger *float64 `json:"prefetch_trigger"`
 }
 
@@ -90,7 +90,7 @@ func (api *API) clearCache(c *gin.Context) {
 		return
 	}
 
-	api.dnsHandler.GetCache().Clear()
+	api.dnsHandler.ClearCache()
 	respondSuccess(c, http.StatusOK, gin.H{"message": "캐시 전체 초기화 완료"})
 }
 

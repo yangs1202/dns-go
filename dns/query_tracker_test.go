@@ -57,6 +57,46 @@ func TestLastQueryTracker_FlushLatestPerDomain(t *testing.T) {
 	assert.Equal(t, t3.Unix(), writer.lastData["api.example.com."].Unix())
 }
 
+func TestLastQueryTracker_DefaultsAndIgnoredRecords(t *testing.T) {
+	assert.Nil(t, newLastQueryTracker(nil, time.Hour))
+
+	writer := &mockLastQueryWriter{}
+	tracker := newLastQueryTracker(writer, 0)
+	require.NotNil(t, tracker)
+	defer tracker.Stop()
+	assert.Equal(t, defaultLastQueryFlushInterval, tracker.flushInterval)
+
+	t1 := time.Date(2026, 2, 7, 12, 0, 0, 0, time.UTC)
+	t2 := t1.Add(-time.Minute)
+	tracker.Record("", t1)
+	tracker.Record("www.example.com.", t1)
+	tracker.Record("www.example.com.", t2)
+	(*lastQueryTracker)(nil).Record("ignored.example.", t1)
+	(*lastQueryTracker)(nil).Stop()
+
+	pending := tracker.takePending()
+	require.Len(t, pending, 1)
+	assert.Equal(t, t1.Unix(), pending["www.example.com."].Unix())
+	assert.Nil(t, tracker.takePending())
+}
+
+func TestLastQueryTracker_RequeueKeepsNewest(t *testing.T) {
+	writer := &mockLastQueryWriter{}
+	tracker := newLastQueryTracker(writer, time.Hour)
+	require.NotNil(t, tracker)
+	defer tracker.Stop()
+
+	t1 := time.Date(2026, 2, 7, 12, 0, 0, 0, time.UTC)
+	t2 := t1.Add(time.Minute)
+	tracker.Record("www.example.com.", t2)
+	tracker.requeue(map[string]time.Time{"www.example.com.": t1, "api.example.com.": t1})
+
+	pending := tracker.takePending()
+	require.Len(t, pending, 2)
+	assert.Equal(t, t2.Unix(), pending["www.example.com."].Unix())
+	assert.Equal(t, t1.Unix(), pending["api.example.com."].Unix())
+}
+
 func TestLastQueryTracker_FlushFailureRequeue(t *testing.T) {
 	writer := &mockLastQueryWriter{fail: true}
 	tracker := newLastQueryTracker(writer, time.Hour)

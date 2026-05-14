@@ -1,6 +1,7 @@
 package dns
 
 import (
+	"net"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -18,7 +19,7 @@ func createTestRR(domain string, ip string) dns.RR {
 			Class:  dns.ClassINET,
 			Ttl:    300,
 		},
-		A: []byte(ip),
+		A: net.ParseIP(ip),
 	}
 	return rr
 }
@@ -65,6 +66,61 @@ func TestGetSetBasic(t *testing.T) {
 	}
 	if stats.Size != 1 {
 		t.Errorf("Expected size 1, got %d", stats.Size)
+	}
+}
+
+func TestSetReplacesExistingEntry(t *testing.T) {
+	cache := NewDNSCache(100, 300, 60, 0.9)
+	defer cache.Stop()
+
+	domain := "replace.example."
+	qtype := "A"
+	cache.Set(domain, qtype, []dns.RR{createTestRR(domain, "1.2.3.4")}, 300, false)
+	cache.Set(domain, qtype, []dns.RR{createTestRR(domain, "5.6.7.8")}, 120, false)
+
+	entry, found := cache.Get(domain, qtype)
+	if !found {
+		t.Fatal("Expected cache hit after replacement")
+	}
+	if cache.Size() != 1 {
+		t.Fatalf("Expected replacement to keep size 1, got %d", cache.Size())
+	}
+	a, ok := entry.RRs[0].(*dns.A)
+	if !ok {
+		t.Fatalf("Expected A record, got %T", entry.RRs[0])
+	}
+	if got := a.A.String(); got != "5.6.7.8" {
+		t.Fatalf("Expected replacement IP 5.6.7.8, got %s", got)
+	}
+}
+
+func TestSetConcurrentSameKeyKeepsSizeStable(t *testing.T) {
+	cache := NewDNSCache(100, 300, 60, 0.9)
+	defer cache.Stop()
+
+	domain := "same-key.example."
+	qtype := "A"
+	rrs := []dns.RR{createTestRR(domain, "192.0.2.10")}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 64; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			cache.Set(domain, qtype, rrs, 300, false)
+		}()
+	}
+	wg.Wait()
+
+	if cache.Size() != 1 {
+		t.Fatalf("Expected one logical cache entry, got size %d", cache.Size())
+	}
+	stats := cache.GetStats()
+	if stats.Size != 1 {
+		t.Fatalf("Expected stats size 1, got %d", stats.Size)
+	}
+	if _, ok := cache.Get(domain, qtype); !ok {
+		t.Fatal("Expected cache entry to be readable")
 	}
 }
 
