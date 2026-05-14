@@ -968,10 +968,14 @@ func (h *Handler) recordToRR(record *model.Record) dns.RR {
 		}
 
 	case "MX":
+		mx := record.Content
+		if !strings.HasSuffix(mx, ".") {
+			mx += "."
+		}
 		return &dns.MX{
 			Hdr:        header,
 			Preference: uint16(record.Priority),
-			Mx:         record.Content,
+			Mx:         mx,
 		}
 
 	case "TXT":
@@ -981,9 +985,13 @@ func (h *Handler) recordToRR(record *model.Record) dns.RR {
 		}
 
 	case "NS":
+		ns := record.Content
+		if !strings.HasSuffix(ns, ".") {
+			ns += "."
+		}
 		return &dns.NS{
 			Hdr: header,
-			Ns:  record.Content,
+			Ns:  ns,
 		}
 
 	case "SOA":
@@ -992,10 +1000,18 @@ func (h *Handler) recordToRR(record *model.Record) dns.RR {
 		// Content 포맷: "mname rname serial refresh retry expire minimum"
 		parts := strings.Fields(record.Content)
 		if len(parts) >= 7 {
+			ns := parts[0]
+			if !strings.HasSuffix(ns, ".") {
+				ns += "."
+			}
+			mbox := parts[1]
+			if !strings.HasSuffix(mbox, ".") {
+				mbox += "."
+			}
 			return &dns.SOA{
 				Hdr:     header,
-				Ns:      parts[0],
-				Mbox:    parts[1],
+				Ns:      ns,
+				Mbox:    mbox,
 				Serial:  parseUint32(parts[2]),
 				Refresh: parseUint32(parts[3]),
 				Retry:   parseUint32(parts[4]),
