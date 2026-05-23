@@ -56,28 +56,39 @@ func (l *Loader) Download(url, lastModified string) ([]string, string, error) {
 }
 
 func (l *Loader) ParseRules(content string) []string {
-	var domains []string
+	rules := make([]string, 0)
+	active := make(map[string]int)
 	scanner := bufio.NewScanner(strings.NewReader(content))
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "!") {
+		parsedRules, ok, err := parseRuleLines(scanner.Text())
+		if err != nil || !ok {
 			continue
 		}
-		if strings.Contains(line, "$") {
-			line = strings.Split(line, "$")[0]
+
+		for _, rule := range parsedRules {
+			if rule.BadFilter {
+				key := badFilterKey(rule)
+				if idx, exists := active[key]; exists {
+					rules[idx] = ""
+					delete(active, key)
+				}
+				continue
+			}
+
+			if oldIdx, exists := active[rule.Raw]; exists {
+				rules[oldIdx] = ""
+			}
+			active[rule.Raw] = len(rules)
+			rules = append(rules, rule.Raw)
 		}
-		line = strings.TrimPrefix(line, "||")
-		line = strings.TrimSuffix(line, "^")
-		line = strings.TrimPrefix(line, "|")
-		line = strings.TrimPrefix(line, "@@")
-		if line == "" || strings.Contains(line, "/") {
-			continue
-		}
-		domain := normalizeDomain(line)
-		if domain == "" {
-			continue
-		}
-		domains = append(domains, domain)
 	}
-	return domains
+
+	compact := rules[:0]
+	for _, rule := range rules {
+		if rule == "" {
+			continue
+		}
+		compact = append(compact, rule)
+	}
+	return compact
 }

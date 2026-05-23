@@ -1,8 +1,12 @@
 package adblock
 
 import (
+	"bufio"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -31,7 +35,7 @@ func TestLoader_ParseRules(t *testing.T) {
 			content: `||example.com^
 ||test.com^
 ||blocked.net^`,
-			expected: []string{"example.com", "test.com", "blocked.net"},
+			expected: []string{"||example.com^", "||test.com^", "||blocked.net^"},
 		},
 		{
 			name: "Rules with comments",
@@ -39,20 +43,20 @@ func TestLoader_ParseRules(t *testing.T) {
 ||example.com^
 ! Another comment
 ||test.com^`,
-			expected: []string{"example.com", "test.com"},
+			expected: []string{"||example.com^", "||test.com^"},
 		},
 		{
 			name: "Rules with options",
 			content: `||ads.example.com^$third-party
 ||tracker.com^$script,domain=example.com`,
-			expected: []string{"ads.example.com", "tracker.com"},
+			expected: []string{"||ads.example.com^", "||tracker.com^"},
 		},
 		{
 			name: "Rules with various formats",
 			content: `||example.com^
 @@||whitelist.com^
 example.net`,
-			expected: []string{"example.com", "||whitelist.com", "example.net"},
+			expected: []string{"||example.com^", "@@||whitelist.com^", "example.net"},
 		},
 		{
 			name: "Empty lines and spaces",
@@ -61,14 +65,14 @@ example.net`,
 
   ||test.com^
 `,
-			expected: []string{"example.com", "test.com"},
+			expected: []string{"||example.com^", "||test.com^"},
 		},
 		{
-			name: "Rules with paths (should be filtered out)",
+			name: "Rules with paths",
 			content: `||example.com^
 ||test.com/path/to/resource
 ||valid.net^`,
-			expected: []string{"example.com", "valid.net"},
+			expected: []string{"||example.com^", "||test.com/path/to/resource", "||valid.net^"},
 		},
 		{
 			name:     "Empty content",
@@ -87,13 +91,13 @@ example.net`,
 			content: `||EXAMPLE.COM^
 ||TeSt.CoM^
 ||blocked.NET^`,
-			expected: []string{"example.com", "test.com", "blocked.net"},
+			expected: []string{"||example.com^", "||test.com^", "||blocked.net^"},
 		},
 		{
 			name: "Domains with trailing dots",
 			content: `||example.com.^
 ||test.com.^`,
-			expected: []string{"example.com", "test.com"},
+			expected: []string{"||example.com.^", "||test.com.^"},
 		},
 		{
 			name: "Complex adblock rules",
@@ -104,7 +108,25 @@ example.net`,
 ||malware.net^$popup
 /banner.js
 ||cdn.ads.com^`,
-			expected: []string{"ads.example.com", "tracker.test.com", "malware.net", "cdn.ads.com"},
+			expected: []string{"||ads.example.com^", "||tracker.test.com^", "||malware.net^", "/banner.js", "||cdn.ads.com^"},
+		},
+		{
+			name: "Badfilter removes matching rule",
+			content: `||blocked.example^
+||removed.example^
+||removed.example^$badfilter
+@@||allowed.example^
+# host-list comment`,
+			expected: []string{"||blocked.example^", "@@||allowed.example^"},
+		},
+		{
+			name: "Hosts file entries",
+			content: `127.0.0.1 0022a601.pphost.net
+0.0.0.0 ads.example.com tracker.example.com # comment
+::1 ipv6-blocked.example
+192.0.2.1 not-a-block-entry.example
+127.0.0.1 localhost`,
+			expected: []string{"0022a601.pphost.net", "ads.example.com", "tracker.example.com", "ipv6-blocked.example"},
 		},
 	}
 
@@ -127,6 +149,53 @@ example.net`,
 			for _, expected := range tt.expected {
 				if !resultMap[expected] {
 					t.Errorf("Expected domain %q not found in result: %v", expected, result)
+				}
+			}
+		})
+	}
+}
+
+func TestLoader_ParseRules_SupportedFormats(t *testing.T) {
+	tests := []struct {
+		name     string
+		content  string
+		expected []string
+	}{
+		{
+			name:     "Normal domain",
+			content:  "plain.example.com",
+			expected: []string{"plain.example.com"},
+		},
+		{
+			name:     "AdGuard domain rule",
+			content:  "||adguard.example.com^",
+			expected: []string{"||adguard.example.com^"},
+		},
+		{
+			name:     "Hosts file rule",
+			content:  "127.0.0.1 hostfile.example.com",
+			expected: []string{"hostfile.example.com"},
+		},
+		{
+			name: "Mixed formats",
+			content: `plain.example.com
+||adguard.example.com^
+127.0.0.1 hostfile.example.com`,
+			expected: []string{"plain.example.com", "||adguard.example.com^", "hostfile.example.com"},
+		},
+	}
+
+	loader := NewLoader()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := loader.ParseRules(tt.content)
+			if len(result) != len(tt.expected) {
+				t.Fatalf("ParseRules() returned %d rules, want %d\nGot: %v\nWant: %v",
+					len(result), len(tt.expected), result, tt.expected)
+			}
+			for i, expected := range tt.expected {
+				if result[i] != expected {
+					t.Fatalf("ParseRules()[%d] = %q, want %q; all=%v", i, result[i], expected, result)
 				}
 			}
 		})
@@ -239,6 +308,52 @@ func TestLoader_Download(t *testing.T) {
 	}
 }
 
+func TestLoader_ParseCurrentAdGuardDNSFilterFile(t *testing.T) {
+	path := os.Getenv("ADGUARD_FILTER_FILE")
+	if path == "" {
+		t.Skip("set ADGUARD_FILTER_FILE to validate a downloaded AdGuard SDNS filter")
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+
+	active := make(map[string]struct{})
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	lineNo := 0
+	parsed := 0
+	for scanner.Scan() {
+		lineNo++
+		line := scanner.Text()
+		rules, ok, err := parseRuleLines(line)
+		if err != nil {
+			t.Fatalf("line %d parse error: %v", lineNo, err)
+		}
+		if !ok {
+			trimmed := strings.TrimSpace(line)
+			if trimmed != "" && !strings.HasPrefix(trimmed, "!") && !strings.HasPrefix(trimmed, "#") {
+				t.Fatalf("line %d was not parsed: %q", lineNo, line)
+			}
+			continue
+		}
+		for _, rule := range rules {
+			if rule.BadFilter {
+				delete(active, badFilterKey(rule))
+				continue
+			}
+			active[rule.Raw] = struct{}{}
+			parsed++
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("scanner error = %v", err)
+	}
+	if parsed == 0 || len(active) == 0 {
+		t.Fatalf("expected parsed rules from %s", path)
+	}
+}
+
 func TestLoader_Download_InvalidURL(t *testing.T) {
 	loader := NewLoader()
 	_, _, err := loader.Download("://invalid-url", "")
@@ -324,7 +439,7 @@ func TestLoader_Download_LargeResponse(t *testing.T) {
 	// Generate large filter list
 	largeContent := ""
 	for i := 0; i < 10000; i++ {
-		largeContent += "||example" + string(rune('a'+i%26)) + string(rune('a'+(i/26)%26)) + ".com^\n"
+		largeContent += "||example" + strconv.Itoa(i) + ".com^\n"
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

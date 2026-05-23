@@ -101,7 +101,7 @@ func TestFilter_IsBlocked(t *testing.T) {
 		{
 			name:        "Blocked domain",
 			enabled:     true,
-			domains:     []string{"example.com", "test.com"},
+			domains:     []string{"||example.com^", "||test.com^"},
 			blockedSet:  map[string]bool{"example.com": true, "test.com": true},
 			query:       "example.com",
 			wantBlocked: true,
@@ -110,7 +110,7 @@ func TestFilter_IsBlocked(t *testing.T) {
 		{
 			name:        "Not blocked domain",
 			enabled:     true,
-			domains:     []string{"example.com"},
+			domains:     []string{"||example.com^"},
 			blockedSet:  map[string]bool{"example.com": true},
 			query:       "google.com",
 			wantBlocked: false,
@@ -119,7 +119,7 @@ func TestFilter_IsBlocked(t *testing.T) {
 		{
 			name:        "Filter disabled",
 			enabled:     false,
-			domains:     []string{"example.com"},
+			domains:     []string{"||example.com^"},
 			blockedSet:  map[string]bool{"example.com": true},
 			query:       "example.com",
 			wantBlocked: false,
@@ -128,7 +128,7 @@ func TestFilter_IsBlocked(t *testing.T) {
 		{
 			name:        "Domain with trailing dot",
 			enabled:     true,
-			domains:     []string{"example.com"},
+			domains:     []string{"||example.com^"},
 			blockedSet:  map[string]bool{"example.com": true},
 			query:       "example.com.",
 			wantBlocked: true,
@@ -137,7 +137,7 @@ func TestFilter_IsBlocked(t *testing.T) {
 		{
 			name:        "Domain with uppercase",
 			enabled:     true,
-			domains:     []string{"example.com"},
+			domains:     []string{"||example.com^"},
 			blockedSet:  map[string]bool{"example.com": true},
 			query:       "EXAMPLE.COM",
 			wantBlocked: true,
@@ -146,7 +146,7 @@ func TestFilter_IsBlocked(t *testing.T) {
 		{
 			name:        "Domain with spaces",
 			enabled:     true,
-			domains:     []string{"example.com"},
+			domains:     []string{"||example.com^"},
 			blockedSet:  map[string]bool{"example.com": true},
 			query:       "  example.com  ",
 			wantBlocked: true,
@@ -170,6 +170,102 @@ func TestFilter_IsBlocked(t *testing.T) {
 			}
 			if blocked != tt.wantBlocked {
 				t.Errorf("IsBlocked() = %v, want %v", blocked, tt.wantBlocked)
+			}
+		})
+	}
+}
+
+func TestFilter_IsBlocked_AdGuardDNSRules(t *testing.T) {
+	mock := &mockStorage{
+		domains: []string{
+			"||safeframe.googlesyndication.com^",
+			"||ad-host-backup-*.aliyuncs.com^",
+			"@@||allowed.safeframe.googlesyndication.com^",
+			"||forced.example.com^$important",
+			"@@||forced.example.com^",
+			"/^anon1.gt\\d{6}.com$/",
+			"://mine.torrent.pw^",
+			".bbelements.com^",
+			"/^139\\.45\\.197\\.2(4[0-9]|5[0-4]):/",
+			"/^https:\\/\\/a\\.[0-9a-f]{4}\\.com$/",
+			"0022a601.pphost.net",
+		},
+		blockedSet: map[string]bool{},
+	}
+
+	filter := NewFilter(mock, true)
+	tests := []struct {
+		domain string
+		want   bool
+	}{
+		{"safeframe.googlesyndication.com", true},
+		{"random.safeframe.googlesyndication.com", true},
+		{"944fdb7e15b82ff7d3caf28787e82ba0.safeframe.googlesyndication.com.", true},
+		{"evil-safeframe.googlesyndication.com.example.com", false},
+		{"notgooglesyndication.com", false},
+		{"ad-host-backup-1.aliyuncs.com", true},
+		{"x.ad-host-backup-prod.aliyuncs.com", true},
+		{"allowed.safeframe.googlesyndication.com", false},
+		{"sub.allowed.safeframe.googlesyndication.com", false},
+		{"forced.example.com", true},
+		{"anon1.gt123456.com", true},
+		{"mine.torrent.pw", true},
+		{"sub.bbelements.com", true},
+		{"bbelements.com", false},
+		{"139.45.197.240", true},
+		{"a.1a2b.com", true},
+		{"0022a601.pphost.net", true},
+		{"sub.0022a601.pphost.net", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.domain, func(t *testing.T) {
+			got, err := filter.IsBlocked(tt.domain)
+			if err != nil {
+				t.Fatalf("IsBlocked() error = %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("IsBlocked() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFilter_IsBlocked_MixedSupportedFormatsFromLoader(t *testing.T) {
+	loader := NewLoader()
+	rules := loader.ParseRules(`plain.example.com
+||adguard.example.com^
+127.0.0.1 hostfile.example.com`)
+
+	mock := &mockStorage{
+		domains:    rules,
+		blockedSet: map[string]bool{},
+	}
+	filter := NewFilter(mock, true)
+
+	tests := []struct {
+		name   string
+		domain string
+		want   bool
+	}{
+		{name: "normal exact", domain: "plain.example.com", want: true},
+		{name: "normal suffix", domain: "sub.plain.example.com", want: true},
+		{name: "adguard exact", domain: "adguard.example.com", want: true},
+		{name: "adguard suffix", domain: "sub.adguard.example.com", want: true},
+		{name: "hostfile exact", domain: "hostfile.example.com", want: true},
+		{name: "hostfile suffix", domain: "sub.hostfile.example.com", want: true},
+		{name: "boundary false", domain: "evilhostfile.example.com", want: false},
+		{name: "unrelated false", domain: "example.org", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := filter.IsBlocked(tt.domain)
+			if err != nil {
+				t.Fatalf("IsBlocked() error = %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("IsBlocked(%q) = %v, want %v; rules=%v", tt.domain, got, tt.want, rules)
 			}
 		})
 	}

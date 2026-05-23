@@ -215,7 +215,7 @@ func (s *AdblockStorage) DeleteAdblockSource(id int64) error {
 }
 
 func (s *AdblockStorage) AddBlockedDomain(sourceID int64, domain string) error {
-	domain = normalizeDomain(domain)
+	domain = normalizeAdblockEntry(domain)
 	query := `INSERT OR IGNORE INTO adblock_domains (domain, source_id) VALUES (?, ?)`
 	_, err := s.db.Writer.Exec(query, domain, sourceID)
 	if err != nil {
@@ -238,7 +238,7 @@ func (s *AdblockStorage) AddBlockedDomainsBatch(sourceID int64, domains []string
 	defer func() { _ = stmt.Close() }()
 
 	for _, domain := range domains {
-		domain = normalizeDomain(domain)
+		domain = normalizeAdblockEntry(domain)
 		if _, err := stmt.Exec(domain, sourceID); err != nil {
 			return fmt.Errorf("차단 도메인 추가 실패: %w", err)
 		}
@@ -342,4 +342,20 @@ func normalizeDomain(domain string) string {
 	domain = strings.ToLower(domain)
 	domain = strings.TrimSuffix(domain, ".")
 	return domain
+}
+
+func normalizeAdblockEntry(entry string) string {
+	entry = strings.TrimSpace(entry)
+	entry = strings.ToLower(entry)
+	if isPlainAdblockDomain(entry) {
+		entry = strings.TrimSuffix(entry, ".")
+	}
+	return entry
+}
+
+func isPlainAdblockDomain(entry string) bool {
+	if entry == "" || strings.ContainsAny(entry, "|^*/:$") || strings.HasPrefix(entry, "@@") {
+		return false
+	}
+	return true
 }
