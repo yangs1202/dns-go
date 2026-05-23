@@ -50,6 +50,12 @@ func debugLogf(format string, args ...interface{}) {
 	}
 }
 
+func setCache(cache *DNSCache, domain, qtype string, rrs []dns.RR, ttl int64, isNegative bool) {
+	if cache != nil {
+		cache.Set(domain, qtype, rrs, ttl, isNegative)
+	}
+}
+
 // NewHandler는 새로운 DNS 핸들러를 생성합니다
 func NewHandler(
 	zoneStorage *storage.ZoneStorage,
@@ -76,7 +82,10 @@ func NewHandler(
 	}
 
 	// L1 캐시 초기화
-	cache := NewDNSCache(maxSize, defaultTTL, negativeTTL, prefetchTrigger)
+	var cache *DNSCache
+	if enabled != 0 {
+		cache = NewDNSCache(maxSize, defaultTTL, negativeTTL, prefetchTrigger)
+	}
 
 	handler := &Handler{
 		cache:            cache,
@@ -97,7 +106,9 @@ func NewHandler(
 	}
 
 	// Prefetch 콜백 함수 설정
-	cache.SetPrefetchFunc(handler.handlePrefetch)
+	if cache != nil {
+		cache.SetPrefetchFunc(handler.handlePrefetch)
+	}
 
 	return handler, nil
 }
@@ -392,28 +403,30 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 
 	// 1. L1 캐시 확인
 	cache := h.GetCache()
-	if entry, ok := cache.Get(domain, qtype); ok {
-		debugLogf("[DNS] L1 Cache HIT: %s %s", domain, qtype)
-		if h.stats != nil {
-			h.stats.IncL1Hit()
-		}
+	if cache != nil {
+		if entry, ok := cache.Get(domain, qtype); ok {
+			debugLogf("[DNS] L1 Cache HIT: %s %s", domain, qtype)
+			if h.stats != nil {
+				h.stats.IncL1Hit()
+			}
 
-		if entry.IsNegative {
-			// NXDOMAIN 캐시
-			resp.Rcode = dns.RcodeNameError
-			zoneName := h.extractDomain(domain)
-			resp.Ns = []dns.RR{h.buildSOA(zoneName)}
-		} else {
-			// 정상 응답 캐시
-			resp.Answer = entry.RRs
-			resp.Rcode = dns.RcodeSuccess
-		}
+			if entry.IsNegative {
+				// NXDOMAIN 캐시
+				resp.Rcode = dns.RcodeNameError
+				zoneName := h.extractDomain(domain)
+				resp.Ns = []dns.RR{h.buildSOA(zoneName)}
+			} else {
+				// 정상 응답 캐시
+				resp.Answer = entry.RRs
+				resp.Rcode = dns.RcodeSuccess
+			}
 
-		metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[resp.Rcode]).Inc()
-		metrics.QueryDurationSeconds.WithLabelValues("cache").Observe(time.Since(start).Seconds())
-		h.logQuery(w, req, resp, "cache", start)
-		_ = w.WriteMsg(resp)
-		return
+			metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[resp.Rcode]).Inc()
+			metrics.QueryDurationSeconds.WithLabelValues("cache").Observe(time.Since(start).Seconds())
+			h.logQuery(w, req, resp, "cache", start)
+			_ = w.WriteMsg(resp)
+			return
+		}
 	}
 
 	debugLogf("[DNS] L1 Cache MISS: %s %s", domain, qtype)
@@ -444,7 +457,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 				resp.Rcode = dns.RcodeNameError
 				zoneName := h.extractDomain(domain)
 				resp.Ns = []dns.RR{h.buildSOA(zoneName)}
-				cache.Set(domain, qtype, nil, 0, true)
+				setCache(cache, domain, qtype, nil, 0, true)
 				metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeNameError]).Inc()
 				metrics.QueryDurationSeconds.WithLabelValues("adblock").Observe(time.Since(start).Seconds())
 				h.logQuery(w, req, resp, "adblock", start)
@@ -454,7 +467,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 			if qtype == "A" {
 				resp.Answer = []dns.RR{&dns.A{Hdr: dns.RR_Header{Name: domain, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60}, A: net.ParseIP("0.0.0.0")}}
 				resp.Rcode = dns.RcodeSuccess
-				cache.Set(domain, qtype, resp.Answer, 60, false)
+				setCache(cache, domain, qtype, resp.Answer, 60, false)
 				metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeSuccess]).Inc()
 				metrics.QueryDurationSeconds.WithLabelValues("adblock").Observe(time.Since(start).Seconds())
 				h.logQuery(w, req, resp, "adblock", start)
@@ -464,7 +477,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 			if qtype == "AAAA" {
 				resp.Answer = []dns.RR{&dns.AAAA{Hdr: dns.RR_Header{Name: domain, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 60}, AAAA: net.ParseIP("::")}}
 				resp.Rcode = dns.RcodeSuccess
-				cache.Set(domain, qtype, resp.Answer, 60, false)
+				setCache(cache, domain, qtype, resp.Answer, 60, false)
 				metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeSuccess]).Inc()
 				metrics.QueryDurationSeconds.WithLabelValues("adblock").Observe(time.Since(start).Seconds())
 				h.logQuery(w, req, resp, "adblock", start)
@@ -474,7 +487,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 			resp.Rcode = dns.RcodeNameError
 			zoneName := h.extractDomain(domain)
 			resp.Ns = []dns.RR{h.buildSOA(zoneName)}
-			cache.Set(domain, qtype, nil, 0, true)
+			setCache(cache, domain, qtype, nil, 0, true)
 			metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeNameError]).Inc()
 			metrics.QueryDurationSeconds.WithLabelValues("adblock").Observe(time.Since(start).Seconds())
 			h.logQuery(w, req, resp, "adblock", start)
@@ -535,7 +548,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 			resp.Rcode = dns.RcodeSuccess
 			zoneName := h.extractDomain(domain)
 			resp.Ns = []dns.RR{h.buildSOA(zoneName)}
-			cache.Set(domain, qtype, nil, 0, false) // 빈 응답도 캐시 (AAAA 반복 쿼리 방지)
+			setCache(cache, domain, qtype, nil, 0, false) // 빈 응답도 캐시 (AAAA 반복 쿼리 방지)
 			metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeSuccess]).Inc()
 			metrics.QueryDurationSeconds.WithLabelValues("gslb").Observe(time.Since(start).Seconds())
 			h.logQuery(w, req, resp, "gslb", start)
@@ -621,7 +634,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 						}
 					}
 				}
-				cache.Set(domain, qtype, resp.Answer, minTTL, false)
+				setCache(cache, domain, qtype, resp.Answer, minTTL, false)
 			}
 
 			metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeSuccess]).Inc()
@@ -656,7 +669,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 			debugLogf("[DNS] Domain %s exists but no %s record, returning NOERROR", domain, qtype)
 			resp.Rcode = dns.RcodeSuccess
 			resp.Ns = []dns.RR{h.buildSOA(zoneName)}
-			cache.Set(domain, qtype, nil, 0, false) // 빈 응답도 캐시 (AAAA 반복 쿼리 방지)
+			setCache(cache, domain, qtype, nil, 0, false) // 빈 응답도 캐시 (AAAA 반복 쿼리 방지)
 			metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeSuccess]).Inc()
 			metrics.QueryDurationSeconds.WithLabelValues("zone").Observe(time.Since(start).Seconds())
 			h.logQuery(w, req, resp, "zone", start)
@@ -676,7 +689,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 			resp.Authoritative = true
 			resp.Rcode = dns.RcodeSuccess
 			resp.Ns = []dns.RR{h.buildSOA(zoneName)}
-			cache.Set(domain, qtype, nil, 0, false) // 빈 응답도 캐시 (AAAA 반복 쿼리 방지)
+			setCache(cache, domain, qtype, nil, 0, false) // 빈 응답도 캐시 (AAAA 반복 쿼리 방지)
 			metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeSuccess]).Inc()
 			metrics.QueryDurationSeconds.WithLabelValues("zone").Observe(time.Since(start).Seconds())
 			h.logQuery(w, req, resp, "zone", start)
@@ -708,7 +721,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 		resp.Rcode = dns.RcodeNameError
 		zoneName := h.extractDomain(domain)
 		resp.Ns = []dns.RR{h.buildSOA(zoneName)}
-		cache.Set(domain, qtype, nil, 0, true)
+		setCache(cache, domain, qtype, nil, 0, true)
 		metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeNameError]).Inc()
 		metrics.QueryDurationSeconds.WithLabelValues("upstream").Observe(time.Since(start).Seconds())
 		h.logQuery(w, req, resp, "upstream", start)
@@ -731,11 +744,11 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 			}
 		}
 
-		cache.Set(domain, qtype, upstreamResp.Answer, minTTL, false)
+		setCache(cache, domain, qtype, upstreamResp.Answer, minTTL, false)
 		debugLogf("[DNS] Cached upstream response: %s %s (TTL: %d)", domain, qtype, minTTL)
 	} else if upstreamResp.Rcode == dns.RcodeNameError {
 		// NXDOMAIN 캐싱
-		cache.Set(domain, qtype, nil, 0, true)
+		setCache(cache, domain, qtype, nil, 0, true)
 	}
 
 	// 6. 응답 반환
@@ -946,15 +959,25 @@ func (h *Handler) recordToRR(record *model.Record) dns.RR {
 
 	switch record.Type {
 	case "A":
+		ip := net.ParseIP(record.Content)
+		if ip == nil || ip.To4() == nil {
+			log.Printf("[DNS] Invalid A record content: name=%s content=%s", record.Name, record.Content)
+			return nil
+		}
 		return &dns.A{
 			Hdr: header,
-			A:   net.ParseIP(record.Content),
+			A:   ip.To4(),
 		}
 
 	case "AAAA":
+		ip := net.ParseIP(record.Content)
+		if ip == nil || ip.To4() != nil {
+			log.Printf("[DNS] Invalid AAAA record content: name=%s content=%s", record.Name, record.Content)
+			return nil
+		}
 		return &dns.AAAA{
 			Hdr:  header,
-			AAAA: net.ParseIP(record.Content),
+			AAAA: ip,
 		}
 
 	case "CNAME":
@@ -1000,6 +1023,31 @@ func (h *Handler) recordToRR(record *model.Record) dns.RR {
 		// Content 포맷: "mname rname serial refresh retry expire minimum"
 		parts := strings.Fields(record.Content)
 		if len(parts) >= 7 {
+			serial, err := parseUint32Strict(parts[2])
+			if err != nil {
+				log.Printf("[DNS] Invalid SOA serial: name=%s content=%s error=%v", record.Name, record.Content, err)
+				return nil
+			}
+			refresh, err := parseUint32Strict(parts[3])
+			if err != nil {
+				log.Printf("[DNS] Invalid SOA refresh: name=%s content=%s error=%v", record.Name, record.Content, err)
+				return nil
+			}
+			retry, err := parseUint32Strict(parts[4])
+			if err != nil {
+				log.Printf("[DNS] Invalid SOA retry: name=%s content=%s error=%v", record.Name, record.Content, err)
+				return nil
+			}
+			expire, err := parseUint32Strict(parts[5])
+			if err != nil {
+				log.Printf("[DNS] Invalid SOA expire: name=%s content=%s error=%v", record.Name, record.Content, err)
+				return nil
+			}
+			minTTL, err := parseUint32Strict(parts[6])
+			if err != nil {
+				log.Printf("[DNS] Invalid SOA minimum TTL: name=%s content=%s error=%v", record.Name, record.Content, err)
+				return nil
+			}
 			ns := parts[0]
 			if !strings.HasSuffix(ns, ".") {
 				ns += "."
@@ -1012,13 +1060,14 @@ func (h *Handler) recordToRR(record *model.Record) dns.RR {
 				Hdr:     header,
 				Ns:      ns,
 				Mbox:    mbox,
-				Serial:  parseUint32(parts[2]),
-				Refresh: parseUint32(parts[3]),
-				Retry:   parseUint32(parts[4]),
-				Expire:  parseUint32(parts[5]),
-				Minttl:  parseUint32(parts[6]),
+				Serial:  serial,
+				Refresh: refresh,
+				Retry:   retry,
+				Expire:  expire,
+				Minttl:  minTTL,
 			}
 		}
+		log.Printf("[DNS] Invalid SOA record content: name=%s content=%s", record.Name, record.Content)
 
 	case "SRV":
 		parts := strings.Fields(record.Content)
@@ -1027,15 +1076,38 @@ func (h *Handler) recordToRR(record *model.Record) dns.RR {
 		var target string
 		switch {
 		case len(parts) >= 4:
-			priority = parseUint16(parts[0])
-			weight = parseUint16(parts[1])
-			port = parseUint16(parts[2])
+			var err error
+			priority, err = parseUint16Strict(parts[0])
+			if err != nil {
+				log.Printf("[DNS] Invalid SRV priority: name=%s content=%s error=%v", record.Name, record.Content, err)
+				return nil
+			}
+			weight, err = parseUint16Strict(parts[1])
+			if err != nil {
+				log.Printf("[DNS] Invalid SRV weight: name=%s content=%s error=%v", record.Name, record.Content, err)
+				return nil
+			}
+			port, err = parseUint16Strict(parts[2])
+			if err != nil {
+				log.Printf("[DNS] Invalid SRV port: name=%s content=%s error=%v", record.Name, record.Content, err)
+				return nil
+			}
 			target = parts[3]
 		case len(parts) >= 3:
-			weight = parseUint16(parts[0])
-			port = parseUint16(parts[1])
+			var err error
+			weight, err = parseUint16Strict(parts[0])
+			if err != nil {
+				log.Printf("[DNS] Invalid SRV weight: name=%s content=%s error=%v", record.Name, record.Content, err)
+				return nil
+			}
+			port, err = parseUint16Strict(parts[1])
+			if err != nil {
+				log.Printf("[DNS] Invalid SRV port: name=%s content=%s error=%v", record.Name, record.Content, err)
+				return nil
+			}
 			target = parts[2]
 		default:
+			log.Printf("[DNS] Invalid SRV record content: name=%s content=%s", record.Name, record.Content)
 			return nil
 		}
 		if !strings.HasSuffix(target, ".") {
@@ -1062,11 +1134,17 @@ func (h *Handler) recordToRR(record *model.Record) dns.RR {
 	case "CAA":
 		parts := strings.Fields(record.Content)
 		if len(parts) < 3 {
+			log.Printf("[DNS] Invalid CAA record content: name=%s content=%s", record.Name, record.Content)
+			return nil
+		}
+		flag, err := parseUint16Strict(parts[0])
+		if err != nil || flag > 255 {
+			log.Printf("[DNS] Invalid CAA flag: name=%s content=%s error=%v", record.Name, record.Content, err)
 			return nil
 		}
 		return &dns.CAA{
 			Hdr:   header,
-			Flag:  uint8(parseUint16(parts[0])),
+			Flag:  uint8(flag),
 			Tag:   parts[1],
 			Value: strings.Join(parts[2:], " "),
 		}
@@ -1148,7 +1226,7 @@ func (h *Handler) handlePrefetch(domain, qtype string) {
 		}
 
 		// 캐시 갱신
-		h.GetCache().Set(domain, qtype, answer.Answer, minTTL, false)
+		setCache(h.GetCache(), domain, qtype, answer.Answer, minTTL, false)
 		debugLogf("[DNS] Prefetch completed: %s %s (%d records)", domain, qtype, len(records))
 	} else {
 		// 레코드가 없으면 업스트림 조회
@@ -1171,7 +1249,7 @@ func (h *Handler) handlePrefetch(domain, qtype string) {
 				}
 			}
 
-			h.GetCache().Set(domain, qtype, upstreamResp.Answer, minTTL, false)
+			setCache(h.GetCache(), domain, qtype, upstreamResp.Answer, minTTL, false)
 			debugLogf("[DNS] Prefetch from upstream completed: %s %s", domain, qtype)
 		}
 	}
@@ -1179,17 +1257,35 @@ func (h *Handler) handlePrefetch(domain, qtype string) {
 
 // parseUint32는 문자열을 uint32로 파싱합니다
 func parseUint32(s string) uint32 {
-	var result uint32
-	_, _ = fmt.Sscanf(s, "%d", &result)
+	result, err := parseUint32Strict(s)
+	if err != nil {
+		return 0
+	}
 	return result
 }
 
 func parseUint16(s string) uint16 {
-	n, err := strconv.ParseUint(s, 10, 16)
+	n, err := parseUint16Strict(s)
 	if err != nil {
 		return 0
 	}
-	return uint16(n)
+	return n
+}
+
+func parseUint32Strict(s string) (uint32, error) {
+	n, err := strconv.ParseUint(s, 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("parse uint32 %q: %w", s, err)
+	}
+	return uint32(n), nil
+}
+
+func parseUint16Strict(s string) (uint16, error) {
+	n, err := strconv.ParseUint(s, 10, 16)
+	if err != nil {
+		return 0, fmt.Errorf("parse uint16 %q: %w", s, err)
+	}
+	return uint16(n), nil
 }
 
 // GetCache는 L1 캐시를 반환합니다 (테스트용)
@@ -1204,8 +1300,11 @@ func (h *Handler) ReconfigureCache(settings *model.CacheSettings) {
 	if settings == nil {
 		return
 	}
-	cache := NewDNSCache(settings.MaxSize, settings.DefaultTTL, settings.NegativeTTL, settings.PrefetchTrigger)
-	cache.SetPrefetchFunc(h.handlePrefetch)
+	var cache *DNSCache
+	if settings.Enabled {
+		cache = NewDNSCache(settings.MaxSize, settings.DefaultTTL, settings.NegativeTTL, settings.PrefetchTrigger)
+		cache.SetPrefetchFunc(h.handlePrefetch)
+	}
 	h.cacheMu.Lock()
 	oldCache := h.cache
 	h.cache = cache

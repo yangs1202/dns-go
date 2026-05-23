@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"dns-go/metrics"
 	"dns-go/model"
+	"fmt"
 	"log"
 	"strconv"
 	"sync"
@@ -87,7 +88,7 @@ func (s *Syncer) Stop() {
 func (s *Syncer) SyncAll() error {
 	sources, err := s.storage.GetEnabledAdblockSources()
 	if err != nil {
-		return err
+		return fmt.Errorf("enabled adblock sources 조회 실패: %w", err)
 	}
 	changed := false
 	for _, src := range sources {
@@ -111,7 +112,7 @@ func (s *Syncer) SyncAll() error {
 func (s *Syncer) SyncSource(id int64) error {
 	src, err := s.storage.GetAdblockSource(id)
 	if err != nil {
-		return err
+		return fmt.Errorf("adblock source 조회 실패 (id=%d): %w", id, err)
 	}
 	if src == nil {
 		return nil
@@ -121,7 +122,7 @@ func (s *Syncer) SyncSource(id int64) error {
 	}
 	updated, err := s.syncSource(src)
 	if err != nil {
-		return err
+		return fmt.Errorf("adblock source 동기화 실패 (id=%d, name=%s): %w", src.ID, src.Name, err)
 	}
 	if updated && s.versionIncrementer != nil {
 		if err := s.versionIncrementer.IncrementVersion(nil); err != nil {
@@ -138,16 +139,16 @@ func (s *Syncer) syncSource(src *model.AdblockSource) (bool, error) {
 	}
 	rules, lastModified, err := s.loader.Download(src.URL, lastMod)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("rule 다운로드 실패 (source_id=%d, name=%s): %w", src.ID, src.Name, err)
 	}
 
 	updated := false
 	if rules != nil {
 		if err := s.storage.RemoveBlockedDomains(src.ID); err != nil {
-			return false, err
+			return false, fmt.Errorf("기존 차단 도메인 제거 실패 (source_id=%d): %w", src.ID, err)
 		}
 		if err := s.storage.AddBlockedDomainsBatch(src.ID, rules); err != nil {
-			return false, err
+			return false, fmt.Errorf("차단 도메인 배치 추가 실패 (source_id=%d, rules=%d): %w", src.ID, len(rules), err)
 		}
 		src.RuleCount = int64(len(rules))
 		updated = true
@@ -161,5 +162,8 @@ func (s *Syncer) syncSource(src *model.AdblockSource) (bool, error) {
 	metrics.AdblockSourceLastSync.WithLabelValues(srcID, src.Name).SetToCurrentTime()
 	metrics.AdblockLastSyncTimestamp.SetToCurrentTime()
 
-	return updated, s.storage.UpdateAdblockSource(src)
+	if err := s.storage.UpdateAdblockSource(src); err != nil {
+		return false, fmt.Errorf("adblock source 업데이트 실패 (source_id=%d): %w", src.ID, err)
+	}
+	return updated, nil
 }

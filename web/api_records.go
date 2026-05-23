@@ -217,9 +217,7 @@ func (api *API) listRecords(c *gin.Context) {
 func (api *API) createRecord(c *gin.Context) {
 	// Read-Only 모드 체크
 	if api.readOnly {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "Read-Only mode (Secondary server)",
-		})
+		respondReadOnly(c)
 		return
 	}
 
@@ -309,9 +307,7 @@ func (api *API) createRecord(c *gin.Context) {
 func (api *API) updateRecord(c *gin.Context) {
 	// Read-Only 모드 체크
 	if api.readOnly {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "Read-Only mode (Secondary server)",
-		})
+		respondReadOnly(c)
 		return
 	}
 
@@ -405,9 +401,7 @@ func (api *API) updateRecord(c *gin.Context) {
 func (api *API) deleteRecord(c *gin.Context) {
 	// Read-Only 모드 체크
 	if api.readOnly {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "Read-Only mode (Secondary server)",
-		})
+		respondReadOnly(c)
 		return
 	}
 

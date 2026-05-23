@@ -61,7 +61,10 @@ func (s *QueryLogStorage) BatchInsert(logs []*model.QueryLog) error {
 		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("query log batch commit 실패: %w", err)
+	}
+	return nil
 }
 
 // QueryLogFilter는 쿼리 로그 검색 필터입니다
@@ -159,7 +162,10 @@ func (s *QueryLogStorage) Query(filter QueryLogFilter) ([]*model.QueryLog, int64
 		logs = append(logs, &l)
 	}
 
-	return logs, total, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("query log 행 반복 실패: %w", err)
+	}
+	return logs, total, nil
 }
 
 // DeleteBefore는 지정 시각 이전의 로그를 배치 삭제합니다

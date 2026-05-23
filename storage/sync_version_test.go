@@ -75,7 +75,7 @@ func TestSyncVersion_GetAllAdblockSourcesAndDomains(t *testing.T) {
 	assert.Equal(t, int(sourceID), domains[0]["source_id"])
 }
 
-func TestSyncVersion_GetAllAdblockSourcesSkipsBadRows(t *testing.T) {
+func TestSyncVersion_GetAllAdblockSourcesReportsBadRows(t *testing.T) {
 	db := setupTestDB(t)
 	defer func() { _ = db.Close() }()
 
@@ -86,9 +86,9 @@ func TestSyncVersion_GetAllAdblockSourcesSkipsBadRows(t *testing.T) {
 	require.NoError(t, err)
 
 	sv := NewSyncVersion(db)
-	sources, err := sv.GetAllAdblockSources()
-	require.NoError(t, err)
-	assert.Empty(t, sources)
+	_, err = sv.GetAllAdblockSources()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "adblock source export 스캔 실패")
 }
 
 func TestSyncVersion_GetVersion(t *testing.T) {

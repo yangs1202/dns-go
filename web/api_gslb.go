@@ -49,9 +49,7 @@ func (api *API) listPolicies(c *gin.Context) {
 func (api *API) createPolicy(c *gin.Context) {
 	// Read-Only 모드 체크
 	if api.readOnly {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "Read-Only mode (Secondary server)",
-		})
+		respondReadOnly(c)
 		return
 	}
 
@@ -117,9 +115,7 @@ func (api *API) createPolicy(c *gin.Context) {
 func (api *API) updatePolicy(c *gin.Context) {
 	// Read-Only 모드 체크
 	if api.readOnly {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "Read-Only mode (Secondary server)",
-		})
+		respondReadOnly(c)
 		return
 	}
 
@@ -190,9 +186,7 @@ func (api *API) updatePolicy(c *gin.Context) {
 func (api *API) deletePolicy(c *gin.Context) {
 	// Read-Only 모드 체크
 	if api.readOnly {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "Read-Only mode (Secondary server)",
-		})
+		respondReadOnly(c)
 		return
 	}
 
@@ -233,9 +227,7 @@ func (api *API) listPools(c *gin.Context) {
 func (api *API) createPool(c *gin.Context) {
 	// Read-Only 모드 체크
 	if api.readOnly {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "Read-Only mode (Secondary server)",
-		})
+		respondReadOnly(c)
 		return
 	}
 
@@ -309,9 +301,7 @@ func (api *API) createPool(c *gin.Context) {
 func (api *API) updatePool(c *gin.Context) {
 	// Read-Only 모드 체크
 	if api.readOnly {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "Read-Only mode (Secondary server)",
-		})
+		respondReadOnly(c)
 		return
 	}
 
@@ -383,9 +373,7 @@ func (api *API) updatePool(c *gin.Context) {
 func (api *API) deletePool(c *gin.Context) {
 	// Read-Only 모드 체크
 	if api.readOnly {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "Read-Only mode (Secondary server)",
-		})
+		respondReadOnly(c)
 		return
 	}
 
@@ -426,9 +414,7 @@ func (api *API) listMembers(c *gin.Context) {
 func (api *API) createMember(c *gin.Context) {
 	// Read-Only 모드 체크
 	if api.readOnly {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "Read-Only mode (Secondary server)",
-		})
+		respondReadOnly(c)
 		return
 	}
 
@@ -489,9 +475,7 @@ func (api *API) createMember(c *gin.Context) {
 func (api *API) updateMember(c *gin.Context) {
 	// Read-Only 모드 체크
 	if api.readOnly {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "Read-Only mode (Secondary server)",
-		})
+		respondReadOnly(c)
 		return
 	}
 
@@ -562,9 +546,7 @@ func (api *API) updateMember(c *gin.Context) {
 func (api *API) deleteMember(c *gin.Context) {
 	// Read-Only 모드 체크
 	if api.readOnly {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "Read-Only mode (Secondary server)",
-		})
+		respondReadOnly(c)
 		return
 	}
 

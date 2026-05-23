@@ -243,7 +243,10 @@ func (s *AdblockStorage) AddBlockedDomainsBatch(sourceID int64, domains []string
 			return fmt.Errorf("차단 도메인 추가 실패: %w", err)
 		}
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("차단 도메인 배치 커밋 실패: %w", err)
+	}
+	return nil
 }
 
 func (s *AdblockStorage) RemoveBlockedDomains(sourceID int64) error {

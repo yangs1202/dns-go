@@ -220,10 +220,10 @@ func TestGetChanges(t *testing.T) {
 			wantHasChanges: false,
 		},
 		{
-			name:           "Invalid version (treated as 0)",
+			name:           "Invalid version",
 			sinceVersion:   "invalid",
 			setup:          func(db *storage.Database) {},
-			wantStatus:     http.StatusOK,
+			wantStatus:     http.StatusBadRequest,
 			wantHasChanges: false,
 		},
 	}
@@ -245,9 +245,14 @@ func TestGetChanges(t *testing.T) {
 			err := json.Unmarshal(w.Body.Bytes(), &response)
 			require.NoError(t, err)
 
-			assert.Contains(t, response, "current_version")
-			assert.Contains(t, response, "has_changes")
-			assert.Equal(t, tt.wantHasChanges, response["has_changes"])
+			if tt.wantStatus == http.StatusOK {
+				assert.Contains(t, response, "current_version")
+				assert.Contains(t, response, "has_changes")
+				assert.Equal(t, tt.wantHasChanges, response["has_changes"])
+			} else {
+				assert.Equal(t, false, response["success"])
+				assert.Equal(t, "VALIDATION_ERROR", response["code"])
+			}
 		})
 	}
 }
@@ -277,7 +282,7 @@ func TestGetChanges_QueryParam(t *testing.T) {
 		{
 			name:       "With invalid query parameter",
 			queryParam: "?since_version=abc",
-			wantStatus: http.StatusOK,
+			wantStatus: http.StatusBadRequest,
 		},
 	}
 
@@ -295,8 +300,13 @@ func TestGetChanges_QueryParam(t *testing.T) {
 			err := json.Unmarshal(w.Body.Bytes(), &response)
 			require.NoError(t, err)
 
-			assert.Contains(t, response, "current_version")
-			assert.Contains(t, response, "has_changes")
+			if tt.wantStatus == http.StatusOK {
+				assert.Contains(t, response, "current_version")
+				assert.Contains(t, response, "has_changes")
+			} else {
+				assert.Equal(t, false, response["success"])
+				assert.Equal(t, "VALIDATION_ERROR", response["code"])
+			}
 		})
 	}
 }

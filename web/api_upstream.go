@@ -1,6 +1,7 @@
 package web
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 	"strconv"
@@ -9,8 +10,8 @@ import (
 
 	"dns-go/model"
 
-	"github.com/miekg/dns"
 	"github.com/gin-gonic/gin"
+	"github.com/miekg/dns"
 )
 
 type upstreamRequest struct {
@@ -238,7 +239,7 @@ func queryUpstream(address, protocol string) (*dns.Msg, error) {
 
 	resp, _, err := client.Exchange(msg, address)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query upstream %s over %s: %w", address, protocol, err)
 	}
 
 	return resp, nil

@@ -12,10 +12,10 @@ import (
 
 func TestLoad(t *testing.T) {
 	tests := []struct {
-		name      string
-		yaml      string
-		wantErr   bool
-		validate  func(*testing.T, *Config)
+		name     string
+		yaml     string
+		wantErr  bool
+		validate func(*testing.T, *Config)
 	}{
 		{
 			name: "유효한 설정",
@@ -53,6 +53,7 @@ logging:
 				assert.Equal(t, 53, cfg.DNS.Port)
 				assert.True(t, cfg.DNS.TCP)
 				assert.True(t, cfg.DNS.UDP)
+				assert.Equal(t, SyncModePrimary, cfg.Sync.Mode)
 				assert.Equal(t, 5*time.Second, cfg.Upstream.Timeout)
 				assert.Equal(t, 8080, cfg.Web.Port)
 				assert.Equal(t, "./test.db", cfg.Database.Path)
@@ -60,6 +61,7 @@ logging:
 				assert.Equal(t, 1*time.Hour, cfg.Adblock.SyncInterval)
 				assert.Equal(t, "0.0.0.0", cfg.Adblock.BlockResponse)
 				assert.Equal(t, "info", cfg.Logging.Level)
+				assert.Equal(t, SyncModePrimary, cfg.Sync.Mode)
 			},
 		},
 		{
@@ -139,6 +141,9 @@ func TestValidate(t *testing.T) {
 				},
 				Adblock: AdblockConfig{
 					BlockResponse: "0.0.0.0",
+				},
+				Sync: SyncConfig{
+					Mode: SyncModePrimary,
 				},
 			},
 			wantErr: false,
@@ -239,8 +244,34 @@ func TestValidate(t *testing.T) {
 				Adblock: AdblockConfig{
 					BlockResponse: "NXDOMAIN",
 				},
+				Sync: SyncConfig{
+					Mode: SyncModePrimary,
+				},
 			},
 			wantErr: false,
+		},
+		{
+			name: "잘못된 Sync 모드",
+			config: Config{
+				DNS: DNSConfig{
+					Port: 53,
+					UDP:  true,
+				},
+				Web: WebConfig{
+					Port: 8080,
+				},
+				Database: DatabaseConfig{
+					Path: "./test.db",
+				},
+				Adblock: AdblockConfig{
+					BlockResponse: "NXDOMAIN",
+				},
+				Sync: SyncConfig{
+					Mode: "standalone",
+				},
+			},
+			wantErr: true,
+			errMsg:  "잘못된 Sync 모드",
 		},
 	}
 

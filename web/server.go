@@ -2,7 +2,9 @@ package web
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"time"
 )
@@ -30,6 +32,25 @@ func NewServer(listen string, port int, api *API, syncAPI *SyncAPI, serverInfoAP
 
 func (s *Server) Start() error {
 	return s.http.ListenAndServe()
+}
+
+func (s *Server) StartAsync() (<-chan error, error) {
+	listener, err := net.Listen("tcp", s.addr)
+	if err != nil {
+		return nil, fmt.Errorf("listen %s: %w", s.addr, err)
+	}
+
+	s.addr = listener.Addr().String()
+	s.http.Addr = s.addr
+
+	errCh := make(chan error, 1)
+	go func() {
+		defer close(errCh)
+		if err := s.http.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- err
+		}
+	}()
+	return errCh, nil
 }
 
 func (s *Server) Stop() error {

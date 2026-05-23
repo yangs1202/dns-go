@@ -22,13 +22,13 @@ type Config struct {
 
 // DNSConfig는 DNS 서버 설정입니다
 type DNSConfig struct {
-	Listen    string `yaml:"listen"`
-	Port      int    `yaml:"port"`
-	TCP       bool   `yaml:"tcp"`
-	UDP       bool   `yaml:"udp"`
-	UDPSize   int    `yaml:"udp_size"`   // EDNS0 UDP 버퍼 크기 (기본: 1232)
-	NSID      string `yaml:"nsid"`       // EDNS0 NSID (Name Server Identifier)
-	Version   string `yaml:"version"`    // CHAOS TXT version.bind 응답
+	Listen  string `yaml:"listen"`
+	Port    int    `yaml:"port"`
+	TCP     bool   `yaml:"tcp"`
+	UDP     bool   `yaml:"udp"`
+	UDPSize int    `yaml:"udp_size"` // EDNS0 UDP 버퍼 크기 (기본: 1232)
+	NSID    string `yaml:"nsid"`     // EDNS0 NSID (Name Server Identifier)
+	Version string `yaml:"version"`  // CHAOS TXT version.bind 응답
 }
 
 // UpstreamConfig는 업스트림 리졸버 설정입니다
@@ -59,9 +59,25 @@ type AdblockConfig struct {
 	BlockResponse string        `yaml:"block_response"`
 }
 
+type SyncMode string
+
+const (
+	SyncModePrimary   SyncMode = "primary"
+	SyncModeSecondary SyncMode = "secondary"
+)
+
+func (m SyncMode) Valid() bool {
+	switch m {
+	case SyncModePrimary, SyncModeSecondary:
+		return true
+	default:
+		return false
+	}
+}
+
 // SyncConfig는 Primary/Secondary 동기화 설정입니다
 type SyncConfig struct {
-	Mode       string        `yaml:"mode"`        // "primary" | "secondary"
+	Mode       SyncMode      `yaml:"mode"`        // "primary" | "secondary"
 	PrimaryURL string        `yaml:"primary_url"` // Secondary가 연결할 Primary URL
 	Interval   time.Duration `yaml:"interval"`    // 동기화 주기 (기본: 1초)
 	ReadOnly   bool          `yaml:"readonly"`    // Write API 차단 여부
@@ -136,7 +152,7 @@ func Load(path string) (*Config, error) {
 		cfg.Logging.QueryLog.BufferSize = 1000
 	}
 	if cfg.Sync.Mode == "" {
-		cfg.Sync.Mode = "primary"
+		cfg.Sync.Mode = SyncModePrimary
 	}
 	if cfg.Sync.Interval == 0 {
 		cfg.Sync.Interval = 1 * time.Second // 기본 1초
@@ -165,6 +181,10 @@ func (c *Config) Validate() error {
 
 	if c.Adblock.BlockResponse != "0.0.0.0" && c.Adblock.BlockResponse != "NXDOMAIN" {
 		return fmt.Errorf("잘못된 차단 응답 타입: %s (0.0.0.0 또는 NXDOMAIN)", c.Adblock.BlockResponse)
+	}
+
+	if !c.Sync.Mode.Valid() {
+		return fmt.Errorf("잘못된 Sync 모드: %s (primary 또는 secondary)", c.Sync.Mode)
 	}
 
 	return nil
