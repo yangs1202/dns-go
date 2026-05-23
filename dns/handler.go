@@ -1255,15 +1255,6 @@ func (h *Handler) handlePrefetch(domain, qtype string) {
 	}
 }
 
-// parseUint32는 문자열을 uint32로 파싱합니다
-func parseUint32(s string) uint32 {
-	result, err := parseUint32Strict(s)
-	if err != nil {
-		return 0
-	}
-	return result
-}
-
 func parseUint16(s string) uint16 {
 	n, err := parseUint16Strict(s)
 	if err != nil {
