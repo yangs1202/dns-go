@@ -111,14 +111,20 @@ func run(configPath string, waitForSignal shutdownWaiter) error {
 	queryStats := dns.NewQueryStats()
 
 	// 쿼리 로그 초기화
-	var queryLogStorage *storage.QueryLogStorage
+	var queryLogStorage storage.QueryLogRepository
 	var queryLogWriter *dns.QueryLogWriter
 	if cfg.Logging.QueryLog.Enabled {
-		queryLogStorage = storage.NewQueryLogStorage(db)
+		queryLogStorage, err = storage.NewPartitionedQueryLogStorage(cfg.Logging.QueryLog.Dir)
+		if err != nil {
+			return fmt.Errorf("쿼리 로그 저장소 초기화 실패: %w", err)
+		}
+		if closer, ok := queryLogStorage.(interface{ Close() error }); ok {
+			defer func() { _ = closer.Close() }()
+		}
 		queryLogWriter = dns.NewQueryLogWriter(queryLogStorage, cfg.Logging.QueryLog.FlushInterval, cfg.Logging.QueryLog.BufferSize)
 		queryLogCleaner := dns.NewQueryLogCleaner(queryLogStorage, cfg.Logging.QueryLog.RetentionDays)
 		defer queryLogCleaner.Stop()
-		log.Printf("쿼리 로그 활성화 (보관: %d일, 플러시: %v)", cfg.Logging.QueryLog.RetentionDays, cfg.Logging.QueryLog.FlushInterval)
+		log.Printf("쿼리 로그 활성화 (dir: %s, 보관: %d일, 플러시: %v)", cfg.Logging.QueryLog.Dir, cfg.Logging.QueryLog.RetentionDays, cfg.Logging.QueryLog.FlushInterval)
 	}
 
 	// DNS 핸들러 초기화

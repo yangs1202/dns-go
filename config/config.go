@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -92,6 +93,7 @@ type LoggingConfig struct {
 // QueryLogConfig는 DNS 쿼리 로그 설정입니다
 type QueryLogConfig struct {
 	Enabled       bool          `yaml:"enabled"`
+	Dir           string        `yaml:"dir"`
 	RetentionDays int           `yaml:"retention_days"`
 	FlushInterval time.Duration `yaml:"flush_interval"`
 	BufferSize    int           `yaml:"buffer_size"`
@@ -144,6 +146,9 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Logging.QueryLog.RetentionDays == 0 {
 		cfg.Logging.QueryLog.RetentionDays = 7
+	}
+	if cfg.Logging.QueryLog.Dir == "" && cfg.Database.Path != "" {
+		cfg.Logging.QueryLog.Dir = filepath.Join(filepath.Dir(cfg.Database.Path), "query-logs")
 	}
 	if cfg.Logging.QueryLog.FlushInterval == 0 {
 		cfg.Logging.QueryLog.FlushInterval = 2 * time.Second

@@ -61,6 +61,7 @@ logging:
 				assert.Equal(t, 1*time.Hour, cfg.Adblock.SyncInterval)
 				assert.Equal(t, "0.0.0.0", cfg.Adblock.BlockResponse)
 				assert.Equal(t, "info", cfg.Logging.Level)
+				assert.Equal(t, "query-logs", cfg.Logging.QueryLog.Dir)
 				assert.Equal(t, SyncModePrimary, cfg.Sync.Mode)
 			},
 		},
