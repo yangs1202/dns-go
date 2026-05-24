@@ -81,6 +81,50 @@ func TestBatchUpdateLastQueryAt_EmptyAndUnknown(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestBatchUpdateLastQueryAt_WildcardMatch(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewRecordStorage(db)
+
+	zoneID := insertTestZone(t, db, "yangs.sh.")
+	recordID := insertTestRecord(t, db, zoneID, "*.gs.kube.yangs.sh.", "A", "10.0.0.1")
+	queriedAt := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
+
+	err := storage.BatchUpdateLastQueryAt(map[string]time.Time{
+		"lb.gs.kube.yangs.sh.": queriedAt,
+	})
+	require.NoError(t, err)
+
+	record, err := storage.GetRecord(recordID)
+	require.NoError(t, err)
+	require.NotNil(t, record)
+	require.NotNil(t, record.LastQueryAt)
+	assert.Equal(t, queriedAt.Unix(), record.LastQueryAt.Unix())
+}
+
+func TestBatchUpdateLastQueryAt_ExactMatchDoesNotUpdateWildcard(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewRecordStorage(db)
+
+	zoneID := insertTestZone(t, db, "yangs.sh.")
+	wildcardID := insertTestRecord(t, db, zoneID, "*.gs.kube.yangs.sh.", "A", "10.0.0.1")
+	exactID := insertTestRecord(t, db, zoneID, "lb.gs.kube.yangs.sh.", "A", "10.0.0.2")
+	queriedAt := time.Date(2026, 5, 24, 13, 5, 0, 0, time.UTC)
+
+	err := storage.BatchUpdateLastQueryAt(map[string]time.Time{
+		"lb.gs.kube.yangs.sh.": queriedAt,
+	})
+	require.NoError(t, err)
+
+	exactRecord, err := storage.GetRecord(exactID)
+	require.NoError(t, err)
+	require.NotNil(t, exactRecord.LastQueryAt)
+	assert.Equal(t, queriedAt.Unix(), exactRecord.LastQueryAt.Unix())
+
+	wildcardRecord, err := storage.GetRecord(wildcardID)
+	require.NoError(t, err)
+	assert.Nil(t, wildcardRecord.LastQueryAt)
+}
+
 // TestGetRecordsByZone은 특정 Zone의 모든 Record를 조회하는 테스트입니다 (L2 캐시 활용)
 func TestGetRecordsByZone(t *testing.T) {
 	db := setupTestDB(t)

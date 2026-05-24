@@ -166,6 +166,27 @@ func hasWildcardMatch(recordName, queryName string) bool {
 	return !strings.Contains(prefix, ".")
 }
 
+func wildcardQueryCandidates(queryName string) []string {
+	if queryName == "" || queryName == "." {
+		return nil
+	}
+
+	trimmedName := strings.TrimSuffix(queryName, ".")
+	labels := strings.Split(trimmedName, ".")
+	if len(labels) < 2 {
+		return nil
+	}
+
+	candidates := make([]string, 0, len(labels)-1)
+	for i := 1; i < len(labels); i++ {
+		wildcardLabels := make([]string, len(labels)-i+1)
+		wildcardLabels[0] = "*"
+		copy(wildcardLabels[1:], labels[i:])
+		candidates = append(candidates, strings.Join(wildcardLabels, ".")+".")
+	}
+	return candidates
+}
+
 // RecordStorage는 Record 저장소입니다
 type RecordStorage struct {
 	db    *Database
@@ -439,13 +460,43 @@ func (s *RecordStorage) BatchUpdateLastQueryAt(lastQueries map[string]time.Time)
 	}
 	defer func() { _ = stmt.Close() }()
 
+	wildcardStmt, err := tx.Prepare(`UPDATE records SET last_query_at = ? WHERE name = ? AND enabled = 1`)
+	if err != nil {
+		return fmt.Errorf("와일드카드 쿼리 준비 실패: %w", err)
+	}
+	defer func() { _ = wildcardStmt.Close() }()
+
 	for domain, queriedAt := range lastQueries {
 		if domain == "" {
 			continue
 		}
 
-		if _, err := stmt.Exec(queriedAt.UTC(), domain); err != nil {
+		result, err := stmt.Exec(queriedAt.UTC(), domain)
+		if err != nil {
 			return fmt.Errorf("last_query_at 업데이트 실패: %w", err)
+		}
+
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("last_query_at 업데이트 결과 확인 실패: %w", err)
+		}
+		if rowsAffected > 0 {
+			continue
+		}
+
+		for _, candidate := range wildcardQueryCandidates(domain) {
+			result, err := wildcardStmt.Exec(queriedAt.UTC(), candidate)
+			if err != nil {
+				return fmt.Errorf("와일드카드 last_query_at 업데이트 실패: %w", err)
+			}
+
+			rowsAffected, err := result.RowsAffected()
+			if err != nil {
+				return fmt.Errorf("와일드카드 last_query_at 업데이트 결과 확인 실패: %w", err)
+			}
+			if rowsAffected > 0 {
+				break
+			}
 		}
 	}
 
