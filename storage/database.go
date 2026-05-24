@@ -3,6 +3,7 @@ package storage
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -16,14 +17,14 @@ type Database struct {
 // NewDatabase는 새로운 데이터베이스 연결을 생성합니다
 func NewDatabase(path string) (*Database, error) {
 	// Writer 연결 (단일 연결)
-	writer, err := sql.Open("sqlite", path+"?_journal_mode=WAL&_synchronous=NORMAL&_foreign_keys=ON")
+	writer, err := sql.Open("sqlite", sqliteDSN(path))
 	if err != nil {
 		return nil, fmt.Errorf("writer 연결 실패: %w", err)
 	}
 	writer.SetMaxOpenConns(1) // SQLite 쓰기 직렬화
 
 	// Reader 연결 (다중 연결)
-	reader, err := sql.Open("sqlite", path+"?_journal_mode=WAL&_synchronous=NORMAL&_foreign_keys=ON")
+	reader, err := sql.Open("sqlite", sqliteDSN(path))
 	if err != nil {
 		_ = writer.Close()
 		return nil, fmt.Errorf("reader 연결 실패: %w", err)
@@ -62,6 +63,19 @@ func NewDatabase(path string) (*Database, error) {
 	return db, nil
 }
 
+func sqliteDSN(path string) string {
+	separator := "?"
+	if strings.Contains(path, "?") {
+		separator = "&"
+	}
+
+	return path + separator +
+		"_pragma=journal_mode(WAL)" +
+		"&_pragma=synchronous(NORMAL)" +
+		"&_pragma=foreign_keys(ON)" +
+		"&_pragma=busy_timeout(5000)"
+}
+
 // configurePragmas는 SQLite PRAGMA 설정을 확인합니다
 func (db *Database) configurePragmas() error {
 	// WAL 모드 활성화
@@ -73,10 +87,16 @@ func (db *Database) configurePragmas() error {
 	if _, err := db.Writer.Exec("PRAGMA foreign_keys=ON"); err != nil {
 		return fmt.Errorf("외래 키 활성화 실패: %w", err)
 	}
+	if _, err := db.Writer.Exec("PRAGMA busy_timeout=5000"); err != nil {
+		return fmt.Errorf("writer busy_timeout 설정 실패: %w", err)
+	}
 
 	// Reader도 동일 설정
 	if _, err := db.Reader.Exec("PRAGMA foreign_keys=ON"); err != nil {
 		return fmt.Errorf("reader 외래 키 활성화 실패: %w", err)
+	}
+	if _, err := db.Reader.Exec("PRAGMA busy_timeout=5000"); err != nil {
+		return fmt.Errorf("reader busy_timeout 설정 실패: %w", err)
 	}
 
 	return nil

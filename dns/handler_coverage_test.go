@@ -8,7 +8,9 @@ import (
 	"dns-go/storage"
 	"net"
 	"os"
+	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -66,6 +68,46 @@ func setupTestHandlerWithGSLBEnv(t *testing.T) (*Handler, *storage.Database, *gs
 	return handler, db, env, cleanup
 }
 
+func startCountingPTRUpstream(t *testing.T, requests *atomic.Int64) (string, func()) {
+	t.Helper()
+
+	packetConn, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("upstream listen failed: %v", err)
+	}
+
+	server := &dns.Server{
+		PacketConn: packetConn,
+		Handler: dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
+			requests.Add(1)
+			resp := new(dns.Msg)
+			resp.SetReply(r)
+			if len(r.Question) > 0 && r.Question[0].Qtype == dns.TypePTR {
+				resp.Answer = append(resp.Answer, &dns.PTR{
+					Hdr: dns.RR_Header{
+						Name:   r.Question[0].Name,
+						Rrtype: dns.TypePTR,
+						Class:  dns.ClassINET,
+						Ttl:    60,
+					},
+					Ptr: "public.example.",
+				})
+			}
+			_ = w.WriteMsg(resp)
+		}),
+	}
+
+	go func() {
+		if err := server.ActivateAndServe(); err != nil {
+			t.Logf("counting upstream stopped: %v", err)
+		}
+	}()
+
+	return packetConn.LocalAddr().String(), func() {
+		_ = server.Shutdown()
+	}
+}
+
 // mockAdblockStorage implements adblock.AdblockStorageInterface for testing.
 type mockAdblockStorage struct {
 	blockedDomains map[string]bool
@@ -120,6 +162,38 @@ func setupTestHandlerWithAdblock(t *testing.T, blockedDomains []string, response
 		_ = os.Remove(dbPath)
 	}
 
+	return handler, db, cleanup
+}
+
+func setupTestHandlerWithDisabledCache(t *testing.T) (*Handler, *storage.Database, func()) {
+	t.Helper()
+
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	db, err := storage.NewDatabase(dbPath)
+	if err != nil {
+		t.Fatalf("DB creation failed: %v", err)
+	}
+	if _, err := db.Writer.Exec("UPDATE cache_settings SET enabled = 0 WHERE id = 1"); err != nil {
+		_ = db.Close()
+		t.Fatalf("cache setting update failed: %v", err)
+	}
+
+	zoneStorage := storage.NewZoneStorage(db)
+	recordStorage := storage.NewRecordStorage(db)
+	upstreamStorage := storage.NewUpstreamStorage(db)
+	resolver := NewResolver(upstreamStorage, 5*time.Second)
+	stats := NewQueryStats()
+
+	handler, err := NewHandler(zoneStorage, recordStorage, resolver, db, stats, nil, nil, nil, "0.0.0.0", "test-server", "DNS-Go Test v1.0", nil)
+	if err != nil {
+		_ = db.Close()
+		t.Fatalf("Handler creation failed: %v", err)
+	}
+
+	cleanup := func() {
+		handler.Stop()
+		_ = db.Close()
+	}
 	return handler, db, cleanup
 }
 
@@ -1759,6 +1833,269 @@ func TestServeDNS_UpstreamNXDOMAIN(t *testing.T) {
 	}
 	if !entry.IsNegative {
 		t.Error("Expected IsNegative=true")
+	}
+}
+
+func TestServeDNS_PrivateReverseDoesNotForwardUpstream(t *testing.T) {
+	handler, db, cleanup := setupTestHandler(t)
+	defer cleanup()
+
+	var upstreamRequests atomic.Int64
+	upstreamAddr, stopUpstream := startCountingPTRUpstream(t, &upstreamRequests)
+	defer stopUpstream()
+
+	upstreamStorage := storage.NewUpstreamStorage(db)
+	createTestServer(t, upstreamStorage, "Counting PTR", upstreamAddr, "udp", 1, true)
+
+	req := new(dns.Msg)
+	req.SetQuestion("5.1.96.10.in-addr.arpa.", dns.TypePTR)
+	req.RecursionDesired = true
+	w := newMockWriter("192.0.2.100")
+	handler.ServeDNS(w, req)
+
+	if !w.written {
+		t.Fatal("Response not written")
+	}
+	if w.msg.Rcode != dns.RcodeNameError {
+		t.Fatalf("Expected private reverse NXDOMAIN, got: %s", dns.RcodeToString[w.msg.Rcode])
+	}
+	if upstreamRequests.Load() != 0 {
+		t.Fatalf("Private reverse query leaked to upstream: %d requests", upstreamRequests.Load())
+	}
+	if len(w.msg.Ns) == 0 || w.msg.Ns[0].Header().Name != "10.in-addr.arpa." {
+		t.Fatalf("Expected 10.in-addr.arpa. SOA authority, got %#v", w.msg.Ns)
+	}
+}
+
+func TestPrivateIPv4ReverseZone_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name     string
+		query    string
+		wantZone string
+		wantOK   bool
+	}{
+		{name: "10 slash 8", query: "5.1.96.10.in-addr.arpa.", wantZone: "10.in-addr.arpa.", wantOK: true},
+		{name: "192 168 slash 16", query: "20.1.168.192.in-addr.arpa.", wantZone: "168.192.in-addr.arpa.", wantOK: true},
+		{name: "172 lower bound", query: "1.0.16.172.in-addr.arpa.", wantZone: "16.172.in-addr.arpa.", wantOK: true},
+		{name: "172 upper bound", query: "1.0.31.172.in-addr.arpa.", wantZone: "31.172.in-addr.arpa.", wantOK: true},
+		{name: "172 below range", query: "1.0.15.172.in-addr.arpa.", wantOK: false},
+		{name: "172 above range", query: "1.0.32.172.in-addr.arpa.", wantOK: false},
+		{name: "public reverse", query: "8.8.8.8.in-addr.arpa.", wantOK: false},
+		{name: "shared address space is not RFC1918", query: "1.64.100.in-addr.arpa.", wantOK: false},
+		{name: "malformed reverse", query: "not-reverse.example.", wantOK: false},
+		{name: "ipv6 reverse", query: "1.0.0.127.ip6.arpa.", wantOK: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotZone, gotOK := privateIPv4ReverseZone(tt.query)
+			if gotOK != tt.wantOK {
+				t.Fatalf("ok mismatch: got %v want %v", gotOK, tt.wantOK)
+			}
+			if gotZone != tt.wantZone {
+				t.Fatalf("zone mismatch: got %q want %q", gotZone, tt.wantZone)
+			}
+		})
+	}
+}
+
+func TestServeDNS_PublicReverseStillForwardsUpstream(t *testing.T) {
+	handler, db, cleanup := setupTestHandler(t)
+	defer cleanup()
+
+	var upstreamRequests atomic.Int64
+	upstreamAddr, stopUpstream := startCountingPTRUpstream(t, &upstreamRequests)
+	defer stopUpstream()
+
+	upstreamStorage := storage.NewUpstreamStorage(db)
+	createTestServer(t, upstreamStorage, "Counting PTR", upstreamAddr, "udp", 1, true)
+
+	req := new(dns.Msg)
+	req.SetQuestion("8.8.8.8.in-addr.arpa.", dns.TypePTR)
+	req.RecursionDesired = true
+	w := newMockWriter("192.0.2.100")
+	handler.ServeDNS(w, req)
+
+	if !w.written {
+		t.Fatal("Response not written")
+	}
+	if w.msg.Rcode != dns.RcodeSuccess {
+		t.Fatalf("Expected public reverse NOERROR, got: %s", dns.RcodeToString[w.msg.Rcode])
+	}
+	if upstreamRequests.Load() != 1 {
+		t.Fatalf("Expected public reverse to forward once, got: %d", upstreamRequests.Load())
+	}
+	if len(w.msg.Answer) != 1 {
+		t.Fatalf("Expected one upstream PTR answer, got %d", len(w.msg.Answer))
+	}
+}
+
+func TestLocalUseResponse_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name        string
+		domain      string
+		qtype       string
+		wantOK      bool
+		wantZone    string
+		wantAnswers int
+		wantA       string
+		wantAAAA    string
+	}{
+		{name: "localhost A", domain: "localhost.", qtype: "A", wantOK: true, wantZone: "localhost.", wantAnswers: 1, wantA: "127.0.0.1"},
+		{name: "localhost AAAA uppercase", domain: "LOCALHOST.", qtype: "AAAA", wantOK: true, wantZone: "localhost.", wantAnswers: 1, wantAAAA: "::1"},
+		{name: "localhost other type empty noerror", domain: "localhost.", qtype: "MX", wantOK: true, wantZone: "localhost.", wantAnswers: 0},
+		{name: "dot local suffix", domain: "printer.local.", qtype: "A", wantOK: true, wantZone: "local.", wantAnswers: 0},
+		{name: "single label", domain: "ix-truenas.", qtype: "A", wantOK: true, wantZone: "ix-truenas.", wantAnswers: 0},
+		{name: "normal fqdn", domain: "example.com.", qtype: "A", wantOK: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			answers, zone, ok := localUseResponse(tt.domain, tt.qtype)
+			if ok != tt.wantOK {
+				t.Fatalf("ok mismatch: got %v want %v", ok, tt.wantOK)
+			}
+			if zone != tt.wantZone {
+				t.Fatalf("zone mismatch: got %q want %q", zone, tt.wantZone)
+			}
+			if len(answers) != tt.wantAnswers {
+				t.Fatalf("answer count mismatch: got %d want %d", len(answers), tt.wantAnswers)
+			}
+			if tt.wantA != "" {
+				a, ok := answers[0].(*dns.A)
+				if !ok || a.A.String() != tt.wantA {
+					t.Fatalf("A answer mismatch: %#v", answers[0])
+				}
+			}
+			if tt.wantAAAA != "" {
+				aaaa, ok := answers[0].(*dns.AAAA)
+				if !ok || aaaa.AAAA.String() != tt.wantAAAA {
+					t.Fatalf("AAAA answer mismatch: %#v", answers[0])
+				}
+			}
+		})
+	}
+}
+
+func TestServeDNS_LocalhostHandledLocally(t *testing.T) {
+	handler, db, cleanup := setupTestHandler(t)
+	defer cleanup()
+
+	var upstreamRequests atomic.Int64
+	upstreamAddr, stopUpstream := startCountingPTRUpstream(t, &upstreamRequests)
+	defer stopUpstream()
+
+	upstreamStorage := storage.NewUpstreamStorage(db)
+	createTestServer(t, upstreamStorage, "Counting Localhost", upstreamAddr, "udp", 1, true)
+
+	req := new(dns.Msg)
+	req.SetQuestion("localhost.", dns.TypeA)
+	req.RecursionDesired = true
+	w := newMockWriter("192.0.2.100")
+	handler.ServeDNS(w, req)
+
+	if !w.written {
+		t.Fatal("Response not written")
+	}
+	if w.msg.Rcode != dns.RcodeSuccess {
+		t.Fatalf("Expected localhost NOERROR, got: %s", dns.RcodeToString[w.msg.Rcode])
+	}
+	if upstreamRequests.Load() != 0 {
+		t.Fatalf("localhost query leaked to upstream: %d requests", upstreamRequests.Load())
+	}
+	if len(w.msg.Answer) != 1 {
+		t.Fatalf("Expected one localhost answer, got %d", len(w.msg.Answer))
+	}
+	a, ok := w.msg.Answer[0].(*dns.A)
+	if !ok || a.A.String() != "127.0.0.1" {
+		t.Fatalf("Expected localhost A 127.0.0.1, got %#v", w.msg.Answer[0])
+	}
+}
+
+func TestServeDNS_LocalUsePathsWorkWithDisabledCache(t *testing.T) {
+	handler, db, cleanup := setupTestHandlerWithDisabledCache(t)
+	defer cleanup()
+	if handler.cache != nil {
+		t.Fatal("expected cache to be disabled")
+	}
+
+	var upstreamRequests atomic.Int64
+	upstreamAddr, stopUpstream := startCountingPTRUpstream(t, &upstreamRequests)
+	defer stopUpstream()
+
+	upstreamStorage := storage.NewUpstreamStorage(db)
+	createTestServer(t, upstreamStorage, "Counting Disabled Cache Local", upstreamAddr, "udp", 1, true)
+
+	tests := []struct {
+		name   string
+		domain string
+		qtype  uint16
+		rcode  int
+	}{
+		{name: "private reverse", domain: "1.0.16.172.in-addr.arpa.", qtype: dns.TypePTR, rcode: dns.RcodeNameError},
+		{name: "localhost AAAA", domain: "localhost.", qtype: dns.TypeAAAA, rcode: dns.RcodeSuccess},
+		{name: "dot local", domain: "printer.local.", qtype: dns.TypeA, rcode: dns.RcodeSuccess},
+		{name: "single label", domain: "ix-truenas.", qtype: dns.TypeMX, rcode: dns.RcodeSuccess},
+	}
+
+	for _, tt := range tests {
+		req := new(dns.Msg)
+		req.SetQuestion(tt.domain, tt.qtype)
+		req.RecursionDesired = true
+		w := newMockWriter("192.0.2.100")
+		handler.ServeDNS(w, req)
+
+		if !w.written {
+			t.Fatalf("%s: response not written", tt.name)
+		}
+		if w.msg.Rcode != tt.rcode {
+			t.Fatalf("%s: rcode mismatch: got %s want %s", tt.name, dns.RcodeToString[w.msg.Rcode], dns.RcodeToString[tt.rcode])
+		}
+	}
+	if upstreamRequests.Load() != 0 {
+		t.Fatalf("local-use queries leaked to upstream with disabled cache: %d requests", upstreamRequests.Load())
+	}
+}
+
+func TestServeDNS_LocalAndSingleLabelDoNotForwardUpstream(t *testing.T) {
+	tests := []struct {
+		name   string
+		domain string
+		qtype  uint16
+	}{
+		{name: "local suffix", domain: "ix-truenas.local.", qtype: dns.TypeA},
+		{name: "single label", domain: "ix-truenas.", qtype: dns.TypeA},
+	}
+
+	handler, db, cleanup := setupTestHandler(t)
+	defer cleanup()
+
+	var upstreamRequests atomic.Int64
+	upstreamAddr, stopUpstream := startCountingPTRUpstream(t, &upstreamRequests)
+	defer stopUpstream()
+
+	upstreamStorage := storage.NewUpstreamStorage(db)
+	createTestServer(t, upstreamStorage, "Counting Local", upstreamAddr, "udp", 1, true)
+
+	for _, tt := range tests {
+		req := new(dns.Msg)
+		req.SetQuestion(tt.domain, tt.qtype)
+		req.RecursionDesired = true
+		w := newMockWriter("192.0.2.100")
+		handler.ServeDNS(w, req)
+
+		if !w.written {
+			t.Fatalf("%s: response not written", tt.name)
+		}
+		if w.msg.Rcode != dns.RcodeSuccess {
+			t.Fatalf("%s: expected local-use NOERROR, got: %s", tt.name, dns.RcodeToString[w.msg.Rcode])
+		}
+		if upstreamRequests.Load() != 0 {
+			t.Fatalf("%s: local-use query leaked to upstream: %d requests", tt.name, upstreamRequests.Load())
+		}
+		if len(w.msg.Answer) != 0 {
+			t.Fatalf("%s: expected empty local-use answer, got %d", tt.name, len(w.msg.Answer))
+		}
 	}
 }
 

@@ -80,6 +80,9 @@ func (s *PartitionedQueryLogStorage) BatchInsert(logs []*model.QueryLog) error {
 			return err
 		}
 		if err := insertQueryLogBatch(db, grouped[day]); err != nil {
+			if closeErr := s.closeWriterLocked(); closeErr != nil {
+				return fmt.Errorf("query log shard insert 실패 (%s): %w (writer 재오픈 준비 실패: %v)", day, err, closeErr)
+			}
 			return fmt.Errorf("query log shard insert 실패 (%s): %w", day, err)
 		}
 	}
@@ -104,7 +107,7 @@ func (s *PartitionedQueryLogStorage) Query(filter QueryLogFilter) ([]*model.Quer
 	var total int64
 	candidates := make([]*model.QueryLog, 0, limit)
 	for _, shard := range shards {
-		db, err := sql.Open("sqlite", shard+"?mode=ro")
+		db, err := sql.Open("sqlite", queryLogShardReaderDSN(shard))
 		if err != nil {
 			return nil, 0, fmt.Errorf("query log shard 열기 실패 (%s): %w", shard, err)
 		}
@@ -175,7 +178,7 @@ func (s *PartitionedQueryLogStorage) writerForDayLocked(day string) (*sql.DB, er
 	}
 
 	path := s.shardPath(day)
-	db, err := sql.Open("sqlite", path+"?_journal_mode=WAL&_synchronous=NORMAL")
+	db, err := sql.Open("sqlite", queryLogShardWriterDSN(path))
 	if err != nil {
 		return nil, fmt.Errorf("query log shard writer 연결 실패 (%s): %w", path, err)
 	}
@@ -189,10 +192,30 @@ func (s *PartitionedQueryLogStorage) writerForDayLocked(day string) (*sql.DB, er
 		_ = db.Close()
 		return nil, err
 	}
+	if _, err := db.Exec("PRAGMA busy_timeout=5000"); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("query log shard busy_timeout 설정 실패 (%s): %w", path, err)
+	}
 
 	s.writerDay = day
 	s.writerDB = db
 	return db, nil
+}
+
+func queryLogShardWriterDSN(path string) string {
+	return sqliteDSN(path)
+}
+
+func queryLogShardReaderDSN(path string) string {
+	return appendSQLiteParams(path, "mode=ro", "_pragma=busy_timeout(5000)")
+}
+
+func appendSQLiteParams(path string, params ...string) string {
+	separator := "?"
+	if strings.Contains(path, "?") {
+		separator = "&"
+	}
+	return path + separator + strings.Join(params, "&")
 }
 
 func (s *PartitionedQueryLogStorage) closeWriterLocked() error {

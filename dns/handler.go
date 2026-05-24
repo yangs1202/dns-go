@@ -33,6 +33,7 @@ type Handler struct {
 	gslbEngine       *gslb.Engine
 	adblockFilter    *adblock.Filter
 	adblockStorage   *storage.AdblockStorage
+	adblockStats     *AdblockStatsWriter
 	adblockResponse  string
 	nsid             string // RFC 5001 NSID (Name Server Identifier)
 	version          string // CHAOS TXT version.bind 응답
@@ -99,6 +100,7 @@ func NewHandler(
 		gslbEngine:       gslbEngine,
 		adblockFilter:    adblockFilter,
 		adblockStorage:   adblockStorage,
+		adblockStats:     NewAdblockStatsWriter(adblockStorage, 2*time.Second, 1000),
 		adblockResponse:  adblockResponse,
 		nsid:             nsid,
 		version:          version,
@@ -123,6 +125,9 @@ func (h *Handler) Stop() {
 	}
 	if h.queryLogWriter != nil {
 		h.queryLogWriter.Stop()
+	}
+	if h.adblockStats != nil {
+		h.adblockStats.Stop()
 	}
 }
 
@@ -450,8 +455,8 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 					}
 				}
 			}
-			if h.adblockStorage != nil && clientIP != nil {
-				_ = h.adblockStorage.RecordBlockedQuery(domain, clientIP.String())
+			if h.adblockStats != nil && clientIP != nil {
+				h.adblockStats.Record(domain, clientIP.String())
 			}
 			if strings.ToUpper(h.adblockResponse) == "NXDOMAIN" {
 				resp.Rcode = dns.RcodeNameError
@@ -702,6 +707,30 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 	}
 
 	// 5. Zone 또는 Record가 없으면 업스트림 포워딩
+	if privateReverseZone, ok := privateIPv4ReverseZone(domain); ok {
+		debugLogf("[DNS] Private reverse query blocked from upstream: %s %s", domain, qtype)
+		resp.Rcode = dns.RcodeNameError
+		resp.Ns = []dns.RR{h.buildSOA(privateReverseZone)}
+		setCache(cache, domain, qtype, nil, 0, true)
+		metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeNameError]).Inc()
+		metrics.QueryDurationSeconds.WithLabelValues("local").Observe(time.Since(start).Seconds())
+		h.logQuery(w, req, resp, "local", start)
+		_ = w.WriteMsg(resp)
+		return
+	}
+	if answer, authorityZone, ok := localUseResponse(domain, qtype); ok {
+		debugLogf("[DNS] Local-use query handled without upstream: %s %s", domain, qtype)
+		resp.Rcode = dns.RcodeSuccess
+		resp.Answer = answer
+		resp.Ns = []dns.RR{h.buildSOA(authorityZone)}
+		setCache(cache, domain, qtype, answer, 300, false)
+		metrics.QueriesTotal.WithLabelValues(qtype, dns.RcodeToString[dns.RcodeSuccess]).Inc()
+		metrics.QueryDurationSeconds.WithLabelValues("local").Observe(time.Since(start).Seconds())
+		h.logQuery(w, req, resp, "local", start)
+		_ = w.WriteMsg(resp)
+		return
+	}
+
 	// RFC 1035: RD=0(+norecurse)이면 재귀 처리 안 함
 	if !req.RecursionDesired {
 		debugLogf("[DNS] Recursion not desired (RD=0), returning REFUSED")
@@ -775,6 +804,76 @@ func (h *Handler) buildResponse(question dns.Question, records []*model.Record) 
 	}
 
 	return resp
+}
+
+func localUseResponse(domain, qtype string) ([]dns.RR, string, bool) {
+	name := strings.ToLower(strings.TrimSuffix(domain, "."))
+	if name == "" {
+		return nil, "", false
+	}
+
+	switch {
+	case name == "localhost":
+		switch qtype {
+		case "A":
+			return []dns.RR{&dns.A{
+				Hdr: dns.RR_Header{Name: domain, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300},
+				A:   net.ParseIP("127.0.0.1"),
+			}}, "localhost.", true
+		case "AAAA":
+			return []dns.RR{&dns.AAAA{
+				Hdr:  dns.RR_Header{Name: domain, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 300},
+				AAAA: net.ParseIP("::1"),
+			}}, "localhost.", true
+		default:
+			return nil, "localhost.", true
+		}
+	case strings.HasSuffix(name, ".local"):
+		return nil, "local.", true
+	case !strings.Contains(name, "."):
+		return nil, domain, true
+	default:
+		return nil, "", false
+	}
+}
+
+// privateIPv4ReverseZone returns the RFC1918 reverse zone that contains name.
+// These zones are local-use only, so unresolved names must not leak to public
+// upstream resolvers.
+func privateIPv4ReverseZone(name string) (string, bool) {
+	name = strings.ToLower(strings.TrimSuffix(name, "."))
+	const suffix = ".in-addr.arpa"
+	if !strings.HasSuffix(name, suffix) {
+		return "", false
+	}
+
+	labels := strings.Split(strings.TrimSuffix(name, suffix), ".")
+	if len(labels) == 0 {
+		return "", false
+	}
+
+	last := labels[len(labels)-1]
+	if last == "10" {
+		return "10.in-addr.arpa.", true
+	}
+
+	if len(labels) < 2 {
+		return "", false
+	}
+
+	secondLast := labels[len(labels)-2]
+	if last == "192" && secondLast == "168" {
+		return "168.192.in-addr.arpa.", true
+	}
+
+	if last == "172" {
+		n, err := strconv.Atoi(secondLast)
+		if err == nil && n >= 16 && n <= 31 {
+			return secondLast + ".172.in-addr.arpa.", true
+		}
+	}
+
+	return "", false
 }
 
 // resolveCNAMEChain은 A/AAAA 질의 시 CNAME 체인을 최대 maxCNAMEChainDepth 단계까지 추적합니다.

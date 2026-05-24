@@ -48,6 +48,45 @@ func TestPartitionedQueryLogStorageBatchInsertQueryAndDeleteShard(t *testing.T) 
 	assert.FileExists(t, filepath.Join(dir, "query_logs_2026-05-24.db"))
 }
 
+func TestPartitionedQueryLogStorageBatchInsertSkipsNilAndUsesUTCShards(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewPartitionedQueryLogStorage(dir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+
+	kst := time.FixedZone("KST", 9*60*60)
+	localTime := time.Date(2026, 5, 24, 0, 30, 0, 0, kst)
+	utcTime := time.Date(2026, 5, 24, 1, 0, 0, 0, time.UTC)
+	require.NoError(t, store.BatchInsert([]*model.QueryLog{
+		nil,
+		{Timestamp: localTime, ClientIP: "192.0.2.1", Domain: "kst.example.", QueryType: "A", ResponseCode: "NOERROR", ResponseSource: "zone", LatencyMs: 1},
+		{Timestamp: utcTime, ClientIP: "192.0.2.2", Domain: "utc.example.", QueryType: "A", ResponseCode: "NOERROR", ResponseSource: "zone", LatencyMs: 1},
+	}))
+
+	assert.FileExists(t, filepath.Join(dir, "query_logs_2026-05-23.db"))
+	assert.FileExists(t, filepath.Join(dir, "query_logs_2026-05-24.db"))
+
+	got, total, err := store.Query(QueryLogFilter{Domain: "example", Page: 1, PageSize: 10})
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), total)
+	require.Len(t, got, 2)
+	assert.Equal(t, "utc.example.", got[0].Domain)
+	assert.Equal(t, "kst.example.", got[1].Domain)
+}
+
+func TestPartitionedQueryLogStorageBatchInsertAllNilDoesNotCreateShard(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewPartitionedQueryLogStorage(dir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+
+	require.NoError(t, store.BatchInsert([]*model.QueryLog{nil, nil}))
+
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	assert.Empty(t, entries)
+}
+
 func TestPartitionedQueryLogStorageDeleteClosesActiveOldWriter(t *testing.T) {
 	dir := t.TempDir()
 	store, err := NewPartitionedQueryLogStorage(dir)
@@ -163,4 +202,67 @@ func TestPartitionedQueryLogStorageQueryActiveWriterShard(t *testing.T) {
 	assert.Equal(t, int64(1), total)
 	require.Len(t, got, 1)
 	assert.Equal(t, "active.example.", got[0].Domain)
+}
+
+func TestPartitionedQueryLogStorageWriterUsesWALAndBusyTimeout(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewPartitionedQueryLogStorage(dir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+
+	now := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
+	require.NoError(t, store.BatchInsert([]*model.QueryLog{{
+		Timestamp: now, ClientIP: "192.0.2.1", Domain: "pragma.example.", QueryType: "A", ResponseCode: "NOERROR", ResponseSource: "cache", LatencyMs: 0.1,
+	}}))
+
+	store.mu.Lock()
+	db := store.writerDB
+	store.mu.Unlock()
+	require.NotNil(t, db)
+
+	var journalMode string
+	require.NoError(t, db.QueryRow("PRAGMA journal_mode").Scan(&journalMode))
+	assert.Equal(t, "wal", journalMode)
+
+	var busyTimeout int
+	require.NoError(t, db.QueryRow("PRAGMA busy_timeout").Scan(&busyTimeout))
+	assert.Equal(t, 5000, busyTimeout)
+}
+
+func TestPartitionedQueryLogStorageReopensWriterAfterInsertError(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewPartitionedQueryLogStorage(dir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+
+	now := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
+	require.NoError(t, store.BatchInsert([]*model.QueryLog{{
+		Timestamp: now, ClientIP: "192.0.2.1", Domain: "first.example.", QueryType: "A", ResponseCode: "NOERROR", ResponseSource: "cache", LatencyMs: 0.1,
+	}}))
+
+	store.mu.Lock()
+	require.NotNil(t, store.writerDB)
+	require.NoError(t, store.writerDB.Close())
+	store.mu.Unlock()
+
+	err = store.BatchInsert([]*model.QueryLog{{
+		Timestamp: now, ClientIP: "192.0.2.2", Domain: "failed.example.", QueryType: "A", ResponseCode: "NOERROR", ResponseSource: "cache", LatencyMs: 0.1,
+	}})
+	require.Error(t, err)
+
+	store.mu.Lock()
+	assert.Nil(t, store.writerDB)
+	assert.Empty(t, store.writerDay)
+	store.mu.Unlock()
+
+	require.NoError(t, store.BatchInsert([]*model.QueryLog{{
+		Timestamp: now, ClientIP: "192.0.2.3", Domain: "reopened.example.", QueryType: "A", ResponseCode: "NOERROR", ResponseSource: "cache", LatencyMs: 0.1,
+	}}))
+
+	got, total, err := store.Query(QueryLogFilter{Domain: "example", Page: 1, PageSize: 10})
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), total)
+	require.Len(t, got, 2)
+	assert.Equal(t, "reopened.example.", got[0].Domain)
+	assert.Equal(t, "first.example.", got[1].Domain)
 }

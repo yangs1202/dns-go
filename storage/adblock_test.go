@@ -491,6 +491,41 @@ func TestAdblockStorage_RecordBlockedQuery(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestAdblockStorage_BatchRecordBlockedQueries(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewAdblockStorage(db)
+
+	err := storage.BatchRecordBlockedQueries([]BlockedQueryRecord{
+		{Domain: "Ads.Example.Com.", ClientIP: "192.168.1.1"},
+		{Domain: "ads.example.com", ClientIP: "192.168.1.2"},
+		{Domain: " tracking.example.com ", ClientIP: "192.168.1.3"},
+		{Domain: " ", ClientIP: "192.168.1.4"},
+	})
+	require.NoError(t, err)
+
+	stats, err := storage.GetBlockedStats(10)
+	require.NoError(t, err)
+	require.Len(t, stats, 2)
+	assert.Equal(t, "ads.example.com", stats[0].Domain)
+	assert.Equal(t, int64(2), stats[0].Count)
+	assert.Equal(t, "tracking.example.com", stats[1].Domain)
+	assert.Equal(t, int64(1), stats[1].Count)
+}
+
+func TestAdblockStorage_BatchRecordBlockedQueries_EmptyAndDBError(t *testing.T) {
+	db := setupTestDB(t)
+	storage := NewAdblockStorage(db)
+
+	require.NoError(t, storage.BatchRecordBlockedQueries(nil))
+	require.NoError(t, storage.BatchRecordBlockedQueries([]BlockedQueryRecord{}))
+
+	require.NoError(t, db.Close())
+	err := storage.BatchRecordBlockedQueries([]BlockedQueryRecord{
+		{Domain: "ads.example.com", ClientIP: "192.168.1.1"},
+	})
+	require.Error(t, err)
+}
+
 func TestAdblockStorage_GetBlockedStats(t *testing.T) {
 	db := setupTestDB(t)
 	storage := NewAdblockStorage(db)

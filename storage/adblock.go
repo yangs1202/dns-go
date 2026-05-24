@@ -48,6 +48,11 @@ type AdblockStorage struct {
 	cache *AdblockCache
 }
 
+type BlockedQueryRecord struct {
+	Domain   string
+	ClientIP string
+}
+
 func NewAdblockStorage(db *Database) *AdblockStorage {
 	return &AdblockStorage{
 		db:    db,
@@ -305,6 +310,38 @@ func (s *AdblockStorage) RecordBlockedQuery(domain, clientIP string) error {
 	_, err := s.db.Writer.Exec(query, domain, clientIP)
 	if err != nil {
 		return fmt.Errorf("차단 통계 기록 실패: %w", err)
+	}
+	return nil
+}
+
+func (s *AdblockStorage) BatchRecordBlockedQueries(records []BlockedQueryRecord) error {
+	if len(records) == 0 {
+		return nil
+	}
+
+	tx, err := s.db.Writer.Begin()
+	if err != nil {
+		return fmt.Errorf("차단 통계 트랜잭션 시작 실패: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	stmt, err := tx.Prepare(`INSERT INTO adblock_stats (blocked_domain, client_ip) VALUES (?, ?)`)
+	if err != nil {
+		return fmt.Errorf("차단 통계 prepared statement 실패: %w", err)
+	}
+	defer func() { _ = stmt.Close() }()
+
+	for _, record := range records {
+		domain := normalizeDomain(record.Domain)
+		if domain == "" {
+			continue
+		}
+		if _, err := stmt.Exec(domain, record.ClientIP); err != nil {
+			return fmt.Errorf("차단 통계 기록 실패: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("차단 통계 배치 커밋 실패: %w", err)
 	}
 	return nil
 }
