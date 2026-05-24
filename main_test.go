@@ -174,6 +174,67 @@ sync:
 	assert.Contains(t, err.Error(), "DNS 서버 시작 실패")
 }
 
+func TestRunWebServerStartError(t *testing.T) {
+	tmpDir := t.TempDir()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer func() { _ = listener.Close() }()
+
+	cfgPath := filepath.Join(tmpDir, "config.yaml")
+	dbPath := filepath.Join(tmpDir, "dns-go.db")
+	require.NoError(t, os.WriteFile(cfgPath, []byte(`
+dns:
+  listen: "127.0.0.1"
+  port: `+strconv.Itoa(freeTCPPort(t))+`
+  tcp: true
+  udp: false
+web:
+  listen: "127.0.0.1"
+  port: `+strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)+`
+database:
+  path: "`+dbPath+`"
+adblock:
+  block_response: "0.0.0.0"
+sync:
+  mode: "primary"
+`), 0644))
+
+	err = run(cfgPath, func(<-chan os.Signal) os.Signal {
+		return syscall.SIGTERM
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Web 서버 시작 실패")
+}
+
+func TestRunInvalidSyncMode(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.yaml")
+	dbPath := filepath.Join(tmpDir, "dns-go.db")
+	require.NoError(t, os.WriteFile(cfgPath, []byte(`
+dns:
+  listen: "127.0.0.1"
+  port: `+strconv.Itoa(freeTCPPort(t))+`
+  tcp: true
+  udp: false
+web:
+  listen: "127.0.0.1"
+  port: `+strconv.Itoa(freeTCPPort(t))+`
+database:
+  path: "`+dbPath+`"
+adblock:
+  block_response: "0.0.0.0"
+sync:
+  mode: "invalid"
+`), 0644))
+
+	err := run(cfgPath, func(<-chan os.Signal) os.Signal {
+		return syscall.SIGTERM
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "설정 검증 실패")
+	assert.Contains(t, err.Error(), "잘못된 Sync 모드")
+}
+
 func TestInitDBSeedsDefaultsAndIsIdempotent(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfgPath := filepath.Join(tmpDir, "config.yaml")

@@ -20,6 +20,7 @@ type HealthCheckWorker struct {
 	poolStorage  *PoolStorage
 	healthStatus *sync.Map
 	stopCh       chan struct{}
+	stopOnce     sync.Once
 	wg           sync.WaitGroup
 	runners      sync.Map // map[int64]chan struct{} - 각 헬스체크의 종료 채널
 	running      sync.Map // map[int64]struct{} - 현재 실행 중인 체크 (중복 방지)
@@ -46,24 +47,33 @@ func (w *HealthCheckWorker) Start() {
 		if !check.Enabled {
 			continue
 		}
-		w.wg.Add(1)
-		go func(c *model.HealthCheck) {
-			defer w.wg.Done()
-			w.runCheckLoop(c)
-		}(check)
+		w.startCheck(check)
 	}
 }
 
 func (w *HealthCheckWorker) Stop() {
-	close(w.stopCh)
+	w.stopOnce.Do(func() {
+		close(w.stopCh)
+	})
 	w.wg.Wait()
 }
 
-func (w *HealthCheckWorker) runCheckLoop(check *model.HealthCheck) {
+func (w *HealthCheckWorker) startCheck(check *model.HealthCheck) {
 	stopCh := make(chan struct{})
-	w.runners.Store(check.ID, stopCh)
+	if _, loaded := w.runners.LoadOrStore(check.ID, stopCh); loaded {
+		log.Printf("헬스체크 이미 실행 중: check_id=%d", check.ID)
+		return
+	}
+	w.wg.Add(1)
+	go func() {
+		defer w.wg.Done()
+		w.runCheckLoop(check, stopCh)
+	}()
+}
+
+func (w *HealthCheckWorker) runCheckLoop(check *model.HealthCheck, stopCh chan struct{}) {
 	defer func() {
-		w.runners.Delete(check.ID)
+		w.runners.CompareAndDelete(check.ID, stopCh)
 	}()
 
 	ticker := time.NewTicker(time.Duration(check.IntervalSec) * time.Second)
@@ -330,22 +340,13 @@ func (w *HealthCheckWorker) AddCheck(check *model.HealthCheck) {
 	}
 
 	// 이미 실행 중인지 확인
-	if _, exists := w.runners.Load(check.ID); exists {
-		log.Printf("헬스체크 이미 실행 중: check_id=%d", check.ID)
-		return
-	}
-
 	log.Printf("헬스체크 추가: check_id=%d, policy_id=%d", check.ID, check.PolicyID)
-	w.wg.Add(1)
-	go func(c *model.HealthCheck) {
-		defer w.wg.Done()
-		w.runCheckLoop(c)
-	}(check)
+	w.startCheck(check)
 }
 
 // RemoveCheck는 실행 중인 헬스체크를 제거합니다
 func (w *HealthCheckWorker) RemoveCheck(checkID int64) {
-	if v, ok := w.runners.Load(checkID); ok {
+	if v, ok := w.runners.LoadAndDelete(checkID); ok {
 		if stopCh, ok := v.(chan struct{}); ok {
 			log.Printf("헬스체크 제거: check_id=%d", checkID)
 			close(stopCh)
@@ -356,7 +357,6 @@ func (w *HealthCheckWorker) RemoveCheck(checkID int64) {
 // UpdateCheck는 헬스체크를 업데이트합니다 (기존 제거 후 재시작)
 func (w *HealthCheckWorker) UpdateCheck(check *model.HealthCheck) {
 	w.RemoveCheck(check.ID)
-	time.Sleep(100 * time.Millisecond) // 기존 고루틴 종료 대기
 	w.AddCheck(check)
 }
 
@@ -366,14 +366,16 @@ func (w *HealthCheckWorker) Restart() {
 
 	// 모든 실행 중인 체크 종료
 	w.runners.Range(func(key, value interface{}) bool {
-		if stopCh, ok := value.(chan struct{}); ok {
-			close(stopCh)
+		if _, loaded := w.runners.LoadAndDelete(key); loaded {
+			if stopCh, ok := value.(chan struct{}); ok {
+				close(stopCh)
+			}
 		}
 		return true
 	})
 
 	// 기존 고루틴 종료 대기
-	time.Sleep(500 * time.Millisecond)
+	w.wg.Wait()
 
 	// 모든 헬스체크 재시작
 	checks, err := w.storage.ListHealthChecks()
@@ -387,10 +389,6 @@ func (w *HealthCheckWorker) Restart() {
 		if !check.Enabled {
 			continue
 		}
-		w.wg.Add(1)
-		go func(c *model.HealthCheck) {
-			defer w.wg.Done()
-			w.runCheckLoop(c)
-		}(check)
+		w.startCheck(check)
 	}
 }

@@ -25,9 +25,7 @@ func NewSyncAPI(syncVersion *storage.SyncVersion) *SyncAPI {
 func (a *SyncAPI) GetMetadata(c *gin.Context) {
 	state, err := a.syncVersion.GetSyncState()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "동기화 상태 조회 실패: " + err.Error(),
-		})
+		respondInternalError(c, "동기화 상태 조회 실패: "+err.Error())
 		return
 	}
 
@@ -42,89 +40,67 @@ func (a *SyncAPI) GetMetadata(c *gin.Context) {
 func (a *SyncAPI) GetFull(c *gin.Context) {
 	version, err := a.syncVersion.GetVersion()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "버전 조회 실패: " + err.Error(),
-		})
+		respondInternalError(c, "버전 조회 실패: "+err.Error())
 		return
 	}
 
 	checksum, err := a.syncVersion.CalculateChecksum()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "체크섬 계산 실패: " + err.Error(),
-		})
+		respondInternalError(c, "체크섬 계산 실패: "+err.Error())
 		return
 	}
 
 	zones, err := a.syncVersion.GetAllZones()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Zone 조회 실패: " + err.Error(),
-		})
+		respondInternalError(c, "Zone 조회 실패: "+err.Error())
 		return
 	}
 
 	records, err := a.syncVersion.GetAllRecords()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Record 조회 실패: " + err.Error(),
-		})
+		respondInternalError(c, "Record 조회 실패: "+err.Error())
 		return
 	}
 
 	upstreams, err := a.syncVersion.GetAllUpstreams()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Upstream 조회 실패: " + err.Error(),
-		})
+		respondInternalError(c, "Upstream 조회 실패: "+err.Error())
 		return
 	}
 
 	gslbPolicies, err := a.syncVersion.GetAllGSLBPolicies()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "GSLB Policy 조회 실패: " + err.Error(),
-		})
+		respondInternalError(c, "GSLB Policy 조회 실패: "+err.Error())
 		return
 	}
 
 	gslbPools, err := a.syncVersion.GetAllGSLBPools()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "GSLB Pool 조회 실패: " + err.Error(),
-		})
+		respondInternalError(c, "GSLB Pool 조회 실패: "+err.Error())
 		return
 	}
 
 	gslbMembers, err := a.syncVersion.GetAllGSLBMembers()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "GSLB Member 조회 실패: " + err.Error(),
-		})
+		respondInternalError(c, "GSLB Member 조회 실패: "+err.Error())
 		return
 	}
 
 	healthChecks, err := a.syncVersion.GetAllHealthChecks()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Health Check 조회 실패: " + err.Error(),
-		})
+		respondInternalError(c, "Health Check 조회 실패: "+err.Error())
 		return
 	}
 
 	adblockSources, err := a.syncVersion.GetAllAdblockSources()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Adblock Source 조회 실패: " + err.Error(),
-		})
+		respondInternalError(c, "Adblock Source 조회 실패: "+err.Error())
 		return
 	}
 
 	adblockDomains, err := a.syncVersion.GetAllAdblockDomains()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Adblock Domain 조회 실패: " + err.Error(),
-		})
+		respondInternalError(c, "Adblock Domain 조회 실패: "+err.Error())
 		return
 	}
 
@@ -149,13 +125,19 @@ func (a *SyncAPI) GetFull(c *gin.Context) {
 // GET /api/sync/changes?since_version=X
 func (a *SyncAPI) GetChanges(c *gin.Context) {
 	sinceVersionStr := c.Query("since_version")
-	sinceVersion, _ := strconv.ParseInt(sinceVersionStr, 10, 64)
+	var sinceVersion int64
+	if sinceVersionStr != "" {
+		parsed, err := strconv.ParseInt(sinceVersionStr, 10, 64)
+		if err != nil {
+			respondBadRequest(c, "since_version은 정수여야 합니다")
+			return
+		}
+		sinceVersion = parsed
+	}
 
 	currentVersion, err := a.syncVersion.GetVersion()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "버전 조회 실패: " + err.Error(),
-		})
+		respondInternalError(c, "버전 조회 실패: "+err.Error())
 		return
 	}
 

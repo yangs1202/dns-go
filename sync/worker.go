@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	syncpkg "sync"
 	"time"
 )
 
@@ -20,6 +21,8 @@ type Worker struct {
 	db             *storage.Database
 	interval       time.Duration
 	stopChan       chan struct{}
+	stopOnce       syncpkg.Once
+	wg             syncpkg.WaitGroup
 	httpClient     *http.Client
 	onSyncComplete SyncCallback // 동기화 완료 시 호출
 }
@@ -52,8 +55,16 @@ func (w *Worker) Start() {
 	log.Printf("Sync Worker 시작 (Primary: %s, Interval: %v)", w.primaryURL, w.interval)
 
 	// 최초 Full Sync
+	w.wg.Add(1)
 	go func() {
-		time.Sleep(2 * time.Second) // 서버 초기화 대기
+		defer w.wg.Done()
+		timer := time.NewTimer(2 * time.Second) // 서버 초기화 대기
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+		case <-w.stopChan:
+			return
+		}
 		if err := w.fullSync(); err != nil {
 			log.Printf("초기 Full Sync 실패: %v (계속 재시도)", err)
 		}
@@ -61,7 +72,10 @@ func (w *Worker) Start() {
 
 	// 주기적 Incremental Sync
 	ticker := time.NewTicker(w.interval)
+	w.wg.Add(1)
 	go func() {
+		defer w.wg.Done()
+		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
@@ -69,7 +83,6 @@ func (w *Worker) Start() {
 					log.Printf("Incremental Sync 실패: %v", err)
 				}
 			case <-w.stopChan:
-				ticker.Stop()
 				return
 			}
 		}
@@ -78,7 +91,10 @@ func (w *Worker) Start() {
 
 // Stop은 동기화 워커를 중지합니다
 func (w *Worker) Stop() {
-	close(w.stopChan)
+	w.stopOnce.Do(func() {
+		close(w.stopChan)
+	})
+	w.wg.Wait()
 }
 
 // fullSync는 전체 데이터를 동기화합니다

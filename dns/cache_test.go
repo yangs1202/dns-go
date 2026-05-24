@@ -244,6 +244,33 @@ func TestPrefetchTrigger(t *testing.T) {
 	}
 }
 
+func TestSetPrefetchFuncNilDisablesPrefetch(t *testing.T) {
+	cache := NewDNSCache(100, 300, 60, 0.5)
+	defer cache.Stop()
+
+	prefetchCalled := make(chan bool, 1)
+	cache.SetPrefetchFunc(func(domain, qtype string) {
+		prefetchCalled <- true
+	})
+	cache.SetPrefetchFunc(nil)
+
+	domain := "example.com."
+	qtype := "A"
+	cache.Set(domain, qtype, []dns.RR{createTestRR(domain, "1.2.3.4")}, 1, false)
+	time.Sleep(600 * time.Millisecond)
+
+	_, found := cache.Get(domain, qtype)
+	if !found {
+		t.Fatal("Expected cache hit")
+	}
+
+	select {
+	case <-prefetchCalled:
+		t.Fatal("Prefetch should be disabled")
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
 // TestLRUEviction tests that oldest entries are evicted when cache is full
 func TestLRUEviction(t *testing.T) {
 	cache := NewDNSCache(3, 300, 60, 0.9) // Small cache size

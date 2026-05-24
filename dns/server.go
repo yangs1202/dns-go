@@ -52,36 +52,38 @@ func NewServer(cfg *config.DNSConfig, handler dns.Handler) *Server {
 
 // Start는 DNS 서버를 시작합니다
 func (s *Server) Start() error {
-	errChan := make(chan error, 2)
-
 	if s.config.UDP {
+		packetConn, err := net.ListenPacket("udp", s.udp.Addr)
+		if err != nil {
+			return fmt.Errorf("UDP 서버 listen 실패: %w", err)
+		}
+		s.udp.PacketConn = packetConn
 		go func() {
 			log.Printf("UDP DNS 서버 시작: %s", s.udp.Addr)
-			if err := s.udp.ListenAndServe(); err != nil {
-				errChan <- fmt.Errorf("UDP 서버 실패: %w", err)
+			if err := s.udp.ActivateAndServe(); err != nil {
+				log.Printf("UDP 서버 실패: %v", err)
 			}
 		}()
 	}
 
 	if s.config.TCP {
+		listener, err := net.Listen("tcp", s.tcp.Addr)
+		if err != nil {
+			if s.config.UDP && s.udp != nil {
+				_ = s.udp.Shutdown()
+			}
+			return fmt.Errorf("TCP 서버 listen 실패: %w", err)
+		}
+		s.tcp.Listener = listener
 		go func() {
 			log.Printf("TCP DNS 서버 시작: %s", s.tcp.Addr)
-			if err := s.tcp.ListenAndServe(); err != nil {
-				errChan <- fmt.Errorf("TCP 서버 실패: %w", err)
+			if err := s.tcp.ActivateAndServe(); err != nil {
+				log.Printf("TCP 서버 실패: %v", err)
 			}
 		}()
 	}
 
-	// 서버 시작 대기 (짧은 시간)
-	time.Sleep(100 * time.Millisecond)
-
-	// 에러 확인
-	select {
-	case err := <-errChan:
-		return err
-	default:
-		return nil
-	}
+	return nil
 }
 
 // Stop는 DNS 서버를 중지합니다

@@ -54,9 +54,7 @@ func (api *API) listHealthChecks(c *gin.Context) {
 func (api *API) createHealthCheck(c *gin.Context) {
 	// Read-Only 모드 체크
 	if api.readOnly {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "Read-Only mode (Secondary server)",
-		})
+		respondReadOnly(c)
 		return
 	}
 
@@ -158,9 +156,7 @@ func (api *API) createHealthCheck(c *gin.Context) {
 func (api *API) updateHealthCheck(c *gin.Context) {
 	// Read-Only 모드 체크
 	if api.readOnly {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "Read-Only mode (Secondary server)",
-		})
+		respondReadOnly(c)
 		return
 	}
 
@@ -269,9 +265,7 @@ func (api *API) updateHealthCheck(c *gin.Context) {
 func (api *API) deleteHealthCheck(c *gin.Context) {
 	// Read-Only 모드 체크
 	if api.readOnly {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "Read-Only mode (Secondary server)",
-		})
+		respondReadOnly(c)
 		return
 	}
 

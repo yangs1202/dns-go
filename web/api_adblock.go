@@ -1,7 +1,7 @@
 package web
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -202,7 +202,7 @@ func (api *API) syncAdblockSource(c *gin.Context) {
 	// 비동기로 동기화 실행 (대량 도메인 다운로드로 시간이 오래 걸림)
 	go func() {
 		if err := api.adblockSyncer.SyncSource(id); err != nil {
-			log.Printf("[Adblock] source %d 동기화 실패: %v", id, err)
+			slog.Error("adblock source sync failed", "component", "adblock", "source_id", id, "error", err)
 		}
 	}()
 	respondSuccess(c, http.StatusAccepted, gin.H{"message": "동기화 시작됨"})

@@ -3,6 +3,7 @@ package main
 import (
 	"dns-go/config"
 	"dns-go/storage"
+	"fmt"
 	"log"
 )
 
@@ -17,13 +18,13 @@ func initDB(configPath string) error {
 	// 설정 로드
 	cfg, err := config.Load(configPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("설정 로드 실패: %w", err)
 	}
 
 	// 데이터베이스 연결
 	db, err := storage.NewDatabase(cfg.Database.Path)
 	if err != nil {
-		return err
+		return fmt.Errorf("데이터베이스 연결 실패: %w", err)
 	}
 	defer func() { _ = db.Close() }()
 

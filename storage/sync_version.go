@@ -37,7 +37,10 @@ func (s *SyncVersion) IncrementVersion(tx *sql.Tx) error {
 		    updated_at = CURRENT_TIMESTAMP
 		WHERE id = 1
 	`)
-	return err
+	if err != nil {
+		return fmt.Errorf("sync version 증가 실패: %w", err)
+	}
+	return nil
 }
 
 // GetVersion은 현재 동기화 버전을 조회합니다
@@ -46,7 +49,10 @@ func (s *SyncVersion) GetVersion() (int64, error) {
 	err := s.db.Reader.QueryRow(`
 		SELECT last_sync_version FROM sync_state WHERE id = 1
 	`).Scan(&version)
-	return version, err
+	if err != nil {
+		return 0, fmt.Errorf("sync version 조회 실패: %w", err)
+	}
+	return version, nil
 }
 
 // GetChecksum은 현재 저장된 체크섬을 조회합니다
@@ -56,7 +62,7 @@ func (s *SyncVersion) GetChecksum() (string, error) {
 		SELECT data_checksum FROM sync_state WHERE id = 1
 	`).Scan(&checksum)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("sync checksum 조회 실패: %w", err)
 	}
 	return checksum.String, nil
 }
@@ -143,7 +149,7 @@ func (s *SyncVersion) CalculateChecksum() (string, error) {
 func (s *SyncVersion) UpdateChecksum() error {
 	checksum, err := s.CalculateChecksum()
 	if err != nil {
-		return err
+		return fmt.Errorf("checksum 계산 실패: %w", err)
 	}
 
 	_, err = s.db.Writer.Exec(`
@@ -152,7 +158,10 @@ func (s *SyncVersion) UpdateChecksum() error {
 		    updated_at = CURRENT_TIMESTAMP
 		WHERE id = 1
 	`, checksum)
-	return err
+	if err != nil {
+		return fmt.Errorf("sync checksum 업데이트 실패: %w", err)
+	}
+	return nil
 }
 
 // GetSyncState는 동기화 상태 전체를 조회합니다
@@ -166,7 +175,7 @@ func (s *SyncVersion) GetSyncState() (map[string]interface{}, error) {
 		FROM sync_state WHERE id = 1
 	`).Scan(&version, &checksum, &lastSyncAt)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("sync state 조회 실패: %w", err)
 	}
 
 	state := map[string]interface{}{
@@ -191,7 +200,7 @@ func (s *SyncVersion) GetAllZones() ([]map[string]interface{}, error) {
 		ORDER BY id
 	`)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("zone export 조회 실패: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -205,7 +214,7 @@ func (s *SyncVersion) GetAllZones() ([]map[string]interface{}, error) {
 			&soaRetry, &soaExpire, &soaMinimum, &enabled, &allowFallback,
 			&createdAt, &updatedAt)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("zone export 스캔 실패: %w", err)
 		}
 
 		zones = append(zones, map[string]interface{}{
@@ -224,6 +233,9 @@ func (s *SyncVersion) GetAllZones() ([]map[string]interface{}, error) {
 			"updated_at":     updatedAt,
 		})
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("zone export 행 반복 실패: %w", err)
+	}
 
 	return zones, nil
 }
@@ -237,7 +249,7 @@ func (s *SyncVersion) GetAllRecords() ([]map[string]interface{}, error) {
 		ORDER BY id
 	`)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("record export 조회 실패: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -250,7 +262,7 @@ func (s *SyncVersion) GetAllRecords() ([]map[string]interface{}, error) {
 		err := rows.Scan(&id, &zoneID, &name, &recordType, &content, &ttl,
 			&priority, &enabled, &createdAt, &updatedAt)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("record export 스캔 실패: %w", err)
 		}
 
 		records = append(records, map[string]interface{}{
@@ -266,6 +278,9 @@ func (s *SyncVersion) GetAllRecords() ([]map[string]interface{}, error) {
 			"updated_at": updatedAt,
 		})
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("record export 행 반복 실패: %w", err)
+	}
 
 	return records, nil
 }
@@ -279,7 +294,7 @@ func (s *SyncVersion) GetAllUpstreams() ([]map[string]interface{}, error) {
 		ORDER BY id
 	`)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("upstream export 조회 실패: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -292,7 +307,7 @@ func (s *SyncVersion) GetAllUpstreams() ([]map[string]interface{}, error) {
 		err := rows.Scan(&id, &name, &address, &protocol, &priority, &enabled,
 			&createdAt, &updatedAt)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("upstream export 스캔 실패: %w", err)
 		}
 
 		upstreams = append(upstreams, map[string]interface{}{
@@ -306,6 +321,9 @@ func (s *SyncVersion) GetAllUpstreams() ([]map[string]interface{}, error) {
 			"updated_at": updatedAt,
 		})
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("upstream export 행 반복 실패: %w", err)
+	}
 
 	return upstreams, nil
 }
@@ -318,7 +336,7 @@ func (s *SyncVersion) GetAllGSLBPolicies() ([]map[string]interface{}, error) {
 		ORDER BY id
 	`)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("gslb policy export 조회 실패: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -330,7 +348,7 @@ func (s *SyncVersion) GetAllGSLBPolicies() ([]map[string]interface{}, error) {
 
 		err := rows.Scan(&id, &name, &domain, &recordType, &ttl, &enabled, &createdAt)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("gslb policy export 스캔 실패: %w", err)
 		}
 
 		policies = append(policies, map[string]interface{}{
@@ -342,6 +360,9 @@ func (s *SyncVersion) GetAllGSLBPolicies() ([]map[string]interface{}, error) {
 			"enabled":     enabled,
 			"created_at":  createdAt,
 		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("gslb policy export 행 반복 실패: %w", err)
 	}
 
 	return policies, nil
@@ -355,7 +376,7 @@ func (s *SyncVersion) GetAllGSLBPools() ([]map[string]interface{}, error) {
 		ORDER BY id
 	`)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("gslb pool export 조회 실패: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -366,7 +387,7 @@ func (s *SyncVersion) GetAllGSLBPools() ([]map[string]interface{}, error) {
 
 		err := rows.Scan(&id, &policyID, &name, &matchType, &matchValue, &priority, &fallbackPool)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("gslb pool export 스캔 실패: %w", err)
 		}
 
 		pools = append(pools, map[string]interface{}{
@@ -378,6 +399,9 @@ func (s *SyncVersion) GetAllGSLBPools() ([]map[string]interface{}, error) {
 			"priority":      priority,
 			"fallback_pool": fallbackPool,
 		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("gslb pool export 행 반복 실패: %w", err)
 	}
 
 	return pools, nil
@@ -391,7 +415,7 @@ func (s *SyncVersion) GetAllGSLBMembers() ([]map[string]interface{}, error) {
 		ORDER BY id
 	`)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("gslb member export 조회 실패: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -402,7 +426,7 @@ func (s *SyncVersion) GetAllGSLBMembers() ([]map[string]interface{}, error) {
 
 		err := rows.Scan(&id, &poolID, &address, &weight, &enabled)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("gslb member export 스캔 실패: %w", err)
 		}
 
 		members = append(members, map[string]interface{}{
@@ -412,6 +436,9 @@ func (s *SyncVersion) GetAllGSLBMembers() ([]map[string]interface{}, error) {
 			"weight":  weight,
 			"enabled": enabled,
 		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("gslb member export 행 반복 실패: %w", err)
 	}
 
 	return members, nil
@@ -426,7 +453,7 @@ func (s *SyncVersion) GetAllHealthChecks() ([]map[string]interface{}, error) {
 		ORDER BY id
 	`)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("health check export 조회 실패: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -438,7 +465,7 @@ func (s *SyncVersion) GetAllHealthChecks() ([]map[string]interface{}, error) {
 		err := rows.Scan(&id, &policyID, &checkType, &target, &intervalSec, &timeoutSec,
 			&healthyThreshold, &unhealthyThreshold, &enabled)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("health check export 스캔 실패: %w", err)
 		}
 
 		checks = append(checks, map[string]interface{}{
@@ -453,6 +480,9 @@ func (s *SyncVersion) GetAllHealthChecks() ([]map[string]interface{}, error) {
 			"enabled":             enabled,
 		})
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("health check export 행 반복 실패: %w", err)
+	}
 
 	return checks, nil
 }
@@ -466,7 +496,7 @@ func (s *SyncVersion) GetAllAdblockSources() ([]map[string]interface{}, error) {
 		ORDER BY id
 	`)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("adblock source export 조회 실패: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -483,7 +513,7 @@ func (s *SyncVersion) GetAllAdblockSources() ([]map[string]interface{}, error) {
 		err := rows.Scan(&id, &name, &url, &enabled, &lastSync, &lastModified,
 			&ruleCount, &createdAt, &updatedAt)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("adblock source export 스캔 실패: %w", err)
 		}
 
 		source := map[string]interface{}{
@@ -504,6 +534,9 @@ func (s *SyncVersion) GetAllAdblockSources() ([]map[string]interface{}, error) {
 
 		sources = append(sources, source)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("adblock source export 행 반복 실패: %w", err)
+	}
 
 	return sources, nil
 }
@@ -516,7 +549,7 @@ func (s *SyncVersion) GetAllAdblockDomains() ([]map[string]interface{}, error) {
 		ORDER BY domain
 	`)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("adblock domain export 조회 실패: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -527,13 +560,16 @@ func (s *SyncVersion) GetAllAdblockDomains() ([]map[string]interface{}, error) {
 
 		err := rows.Scan(&domain, &sourceID)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("adblock domain export 스캔 실패: %w", err)
 		}
 
 		domains = append(domains, map[string]interface{}{
 			"domain":    domain,
 			"source_id": sourceID,
 		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("adblock domain export 행 반복 실패: %w", err)
 	}
 
 	return domains, nil

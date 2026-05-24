@@ -116,9 +116,7 @@ func (api *API) getZone(c *gin.Context) {
 func (api *API) createZone(c *gin.Context) {
 	// Read-Only 모드 체크
 	if api.readOnly {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "Read-Only mode (Secondary server)",
-		})
+		respondReadOnly(c)
 		return
 	}
 
@@ -175,9 +173,7 @@ func (api *API) createZone(c *gin.Context) {
 func (api *API) updateZone(c *gin.Context) {
 	// Read-Only 모드 체크
 	if api.readOnly {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "Read-Only mode (Secondary server)",
-		})
+		respondReadOnly(c)
 		return
 	}
 
@@ -240,9 +236,7 @@ func (api *API) updateZone(c *gin.Context) {
 func (api *API) deleteZone(c *gin.Context) {
 	// Read-Only 모드 체크
 	if api.readOnly {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": "Read-Only mode (Secondary server)",
-		})
+		respondReadOnly(c)
 		return
 	}
 

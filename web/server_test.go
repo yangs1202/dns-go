@@ -144,30 +144,21 @@ func TestServer_Integration(t *testing.T) {
 
 	server := NewServer("127.0.0.1", 0, api, nil, nil)
 
-	// Start server
-	go func() {
-		_ = server.Start()
-	}()
-
-	time.Sleep(100 * time.Millisecond)
-
-	// Get the actual address (with assigned port)
-	actualAddr := server.http.Addr
-	if actualAddr == "" {
-		actualAddr = server.Addr()
-	}
+	errCh, err := server.StartAsync()
+	require.NoError(t, err)
+	defer func() { _ = server.Stop() }()
 
 	// Make HTTP request
 	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(fmt.Sprintf("http://%s/api/zones", actualAddr))
+	resp, err := client.Get(fmt.Sprintf("http://%s/api/zones", server.Addr()))
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// Stop server first
-	defer func() { _ = server.Stop() }()
-
-	// Only check if we got a response (might fail if port is 0 and not yet assigned)
-	if err == nil {
-		defer func() { _ = resp.Body.Close() }()
-		assert.Equal(t, http.StatusOK, resp.StatusCode)
+	select {
+	case err, ok := <-errCh:
+		require.False(t, ok, "server stopped unexpectedly: %v", err)
+	default:
 	}
 }
 

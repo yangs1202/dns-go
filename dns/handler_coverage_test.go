@@ -1138,6 +1138,7 @@ func TestReconfigureCache(t *testing.T) {
 	oldCache := handler.cache
 
 	settings := &model.CacheSettings{
+		Enabled:         true,
 		MaxSize:         5000,
 		DefaultTTL:      600,
 		NegativeTTL:     120,

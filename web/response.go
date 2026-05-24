@@ -25,6 +25,14 @@ func respondBadRequest(c *gin.Context, msg string) {
 	respondError(c, http.StatusBadRequest, msg, "VALIDATION_ERROR")
 }
 
+func respondForbidden(c *gin.Context, msg string) {
+	respondError(c, http.StatusForbidden, msg, "FORBIDDEN")
+}
+
+func respondReadOnly(c *gin.Context) {
+	respondForbidden(c, "Read-Only mode (Secondary server)")
+}
+
 func respondNotFound(c *gin.Context, msg string) {
 	respondError(c, http.StatusNotFound, msg, "NOT_FOUND")
 }

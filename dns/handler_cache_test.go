@@ -11,6 +11,7 @@ func TestReconfigureCacheStopsOldCacheAndKeepsNewCacheUsable(t *testing.T) {
 
 	oldCache := handler.GetCache()
 	handler.ReconfigureCache(&model.CacheSettings{
+		Enabled:         true,
 		MaxSize:         10,
 		DefaultTTL:      120,
 		NegativeTTL:     30,

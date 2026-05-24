@@ -1,11 +1,13 @@
 package web
 
 import (
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
+
+var webLog = slog.With("component", "web")
 
 func requestLogger() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -13,7 +15,12 @@ func requestLogger() gin.HandlerFunc {
 		c.Next()
 		latency := time.Since(start)
 		status := c.Writer.Status()
-		log.Printf("[WEB] %s %s %d %s", c.Request.Method, c.Request.URL.Path, status, latency)
+		webLog.Info("request completed",
+			"method", c.Request.Method,
+			"path", c.Request.URL.Path,
+			"status", status,
+			"latency", latency,
+		)
 	}
 }
 

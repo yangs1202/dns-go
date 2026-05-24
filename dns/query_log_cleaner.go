@@ -79,6 +79,6 @@ func (c *QueryLogCleaner) cleanup() {
 		return
 	}
 	if deleted > 0 {
-		log.Printf("[QueryLog] retention cleanup: %d건 삭제 (기준: %v)", deleted, cutoff.Format(time.RFC3339))
+		log.Printf("[QueryLog] retention cleanup: %d개 항목 정리 (기준: %v)", deleted, cutoff.Format(time.RFC3339))
 	}
 }

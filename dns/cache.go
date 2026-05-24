@@ -43,20 +43,24 @@ type cacheItem struct {
 	lastAccess time.Time
 }
 
+type prefetchCallback struct {
+	fn func(domain, qtype string)
+}
+
 // DNSCache implements an L1 cache for DNS responses
 type DNSCache struct {
-	entries         sync.Map                   // key: "domain:qtype" (예: "example.com.:A")
-	maxSize         int64                      // 최대 캐시 항목 수
-	defaultTTL      int64                      // 기본 TTL (초)
-	negativeTTL     int64                      // Negative 캐시 TTL (초)
-	prefetchTrigger float64                    // Prefetch 트리거 비율 (0.9 = 90%)
-	stats           CacheStats                 // 히트율 통계
-	prefetchFn      func(domain, qtype string) // Prefetch 콜백 함수
-	mu              sync.RWMutex               // items 맵 보호용
-	items           map[string]*cacheItem      // LRU 추적용
-	stopCh          chan struct{}              // cleanup goroutine 중지용
-	doneCh          chan struct{}              // cleanup goroutine 종료 대기용
-	stopOnce        sync.Once                  // Stop이 한 번만 실행되도록 보장
+	entries         sync.Map              // key: "domain:qtype" (예: "example.com.:A")
+	maxSize         int64                 // 최대 캐시 항목 수
+	defaultTTL      int64                 // 기본 TTL (초)
+	negativeTTL     int64                 // Negative 캐시 TTL (초)
+	prefetchTrigger float64               // Prefetch 트리거 비율 (0.9 = 90%)
+	stats           CacheStats            // 히트율 통계
+	prefetchFn      atomic.Value          // stores func(domain, qtype string)
+	mu              sync.RWMutex          // items 맵 보호용
+	items           map[string]*cacheItem // LRU 추적용
+	stopCh          chan struct{}         // cleanup goroutine 중지용
+	doneCh          chan struct{}         // cleanup goroutine 종료 대기용
+	stopOnce        sync.Once             // Stop이 한 번만 실행되도록 보장
 }
 
 // NewDNSCache creates a new DNS cache
@@ -79,7 +83,7 @@ func NewDNSCache(maxSize int64, defaultTTL, negativeTTL int64, prefetchTrigger f
 
 // SetPrefetchFunc sets the prefetch callback function
 func (c *DNSCache) SetPrefetchFunc(fn func(domain, qtype string)) {
-	c.prefetchFn = fn
+	c.prefetchFn.Store(prefetchCallback{fn: fn})
 }
 
 // Stop gracefully stops the cache cleanup goroutine
@@ -251,7 +255,12 @@ func (c *DNSCache) Size() int {
 
 // checkPrefetch checks if prefetch should be triggered for an entry
 func (c *DNSCache) checkPrefetch(entry *DNSCacheEntry, domain, qtype string) {
-	if c.prefetchFn == nil {
+	value := c.prefetchFn.Load()
+	if value == nil {
+		return
+	}
+	callback, ok := value.(prefetchCallback)
+	if !ok || callback.fn == nil {
 		return
 	}
 
@@ -260,7 +269,7 @@ func (c *DNSCache) checkPrefetch(entry *DNSCacheEntry, domain, qtype string) {
 		if atomic.CompareAndSwapUint32(&entry.prefetchTriggered, 0, 1) {
 			metrics.CachePrefetchTotal.Inc()
 			// Trigger prefetch asynchronously
-			go c.prefetchFn(domain, qtype)
+			go callback.fn(domain, qtype)
 		}
 	}
 }
