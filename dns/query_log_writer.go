@@ -35,7 +35,7 @@ func (w *QueryLogWriter) Record(entry *model.QueryLog) {
 	if w == nil || entry == nil {
 		return
 	}
-	w.bufferedBatch.Add(entry)
+	w.bufferedBatch.add(entry)
 }
 
 // Stop은 라이터를 종료하고 남은 로그를 플러시합니다

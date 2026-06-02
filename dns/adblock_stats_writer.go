@@ -32,7 +32,7 @@ func (w *AdblockStatsWriter) Record(domain, clientIP string) {
 		return
 	}
 
-	w.bufferedBatch.Add(storage.BlockedQueryRecord{
+	w.bufferedBatch.add(storage.BlockedQueryRecord{
 		Domain:   domain,
 		ClientIP: clientIP,
 	})

@@ -56,7 +56,7 @@ func newBufferedBatch[T any](
 	return b
 }
 
-func (b *bufferedBatch[T]) Add(entry T) bool {
+func (b *bufferedBatch[T]) add(entry T) bool {
 	if b == nil {
 		return false
 	}
