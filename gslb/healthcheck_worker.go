@@ -15,6 +15,14 @@ import (
 	"time"
 )
 
+const (
+	healthCheckTypeHTTP  = "http"
+	healthCheckTypeHTTPS = "https"
+	healthCheckTypeTCP   = "tcp"
+
+	defaultHTTPHealthStatus = http.StatusOK
+)
+
 type HealthCheckWorker struct {
 	storage      *HealthCheckStorage
 	poolStorage  *PoolStorage
@@ -189,139 +197,161 @@ func (w *HealthCheckWorker) runCheck(check *model.HealthCheck, member *model.GSL
 
 func (w *HealthCheckWorker) probe(check *model.HealthCheck, member *model.GSLBMember) error {
 	switch check.CheckType {
-	case "http", "https":
-		// Target URL 파싱
-		targetURL := check.Target
-		var parsedURL *url.URL
-		var err error
-
-		if strings.HasPrefix(targetURL, "http://") || strings.HasPrefix(targetURL, "https://") {
-			// 전체 URL인 경우
-			parsedURL, err = url.Parse(targetURL)
-			if err != nil {
-				return fmt.Errorf("invalid target URL: %w", err)
-			}
-		} else {
-			// 경로만 있는 경우, 멤버 IP와 조합
-			scheme := "http"
-			if check.CheckType == "https" {
-				scheme = "https"
-			}
-			// 경로가 /로 시작하지 않으면 추가
-			path := targetURL
-			if !strings.HasPrefix(path, "/") {
-				path = "/" + path
-			}
-			fullURL := fmt.Sprintf("%s://%s%s", scheme, member.Address, path)
-			parsedURL, err = url.Parse(fullURL)
-			if err != nil {
-				return fmt.Errorf("invalid target URL: %w", err)
-			}
-		}
-
-		// 실제 연결할 주소: 멤버 IP + 포트
-		port := parsedURL.Port()
-		if port == "" {
-			if parsedURL.Scheme == "https" {
-				port = "443"
-			} else {
-				port = "80"
-			}
-		}
-
-		// 원본 Host 헤더 보존
-		originalHost := parsedURL.Host
-
-		// 멤버 주소 (포트 포함 여부 확인)
-		memberHost := member.Address
-		if strings.Contains(memberHost, ":") {
-			// 이미 포트가 포함된 경우
-			memberHost = member.Address
-		} else {
-			// 포트가 없으면 추가
-			memberHost = net.JoinHostPort(member.Address, port)
-		}
-
-		// 요청 URL을 멤버 IP로 변경 (Host 헤더는 나중에 수동 설정)
-		requestURL := &url.URL{
-			Scheme:   parsedURL.Scheme,
-			Host:     memberHost,
-			Path:     parsedURL.Path,
-			RawQuery: parsedURL.RawQuery,
-		}
-
-		// HTTP 요청 생성
-		req, err := http.NewRequest("GET", requestURL.String(), nil)
-		if err != nil {
-			return err
-		}
-
-		// Host 헤더를 원본 도메인으로 설정
-		req.Host = originalHost
-
-		// Transport 설정
-		transport := &http.Transport{}
-		if parsedURL.Scheme == "https" {
-			transport.TLSClientConfig = &tls.Config{
-				InsecureSkipVerify: true,
-				ServerName:         parsedURL.Hostname(), // SNI에 원본 도메인 사용
-			}
-		}
-
-		client := &http.Client{
-			Timeout:   time.Duration(check.TimeoutSec) * time.Second,
-			Transport: transport,
-		}
-
-		resp, err := client.Do(req)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		expectedCodes := check.ExpectedCodes
-		if len(expectedCodes) == 0 {
-			expectedCodes = []int{200}
-		}
-		for _, code := range expectedCodes {
-			if resp.StatusCode == code {
-				return nil
-			}
-		}
-		return fmt.Errorf("http status %d (expected: %v)", resp.StatusCode, expectedCodes)
-	case "tcp":
-		// Target이 "host:port" 형태면 포트만 추출, 아니면 Target을 포트로 사용
-		var port string
-		if strings.Contains(check.Target, ":") {
-			_, port, _ = net.SplitHostPort(check.Target)
-		} else {
-			port = check.Target
-		}
-		target := net.JoinHostPort(member.Address, port)
-
-		conn, err := net.DialTimeout("tcp", target, time.Duration(check.TimeoutSec)*time.Second)
-		if err != nil {
-			return err
-		}
-		_ = conn.Close()
-		return nil
+	case healthCheckTypeHTTP, healthCheckTypeHTTPS:
+		return w.probeHTTP(check, member)
+	case healthCheckTypeTCP:
+		return probeTCP(check.Target, member.Address, time.Duration(check.TimeoutSec)*time.Second)
 	default:
-		// 기본값: TCP 체크
-		var port string
-		if strings.Contains(check.Target, ":") {
-			_, port, _ = net.SplitHostPort(check.Target)
-		} else {
-			port = check.Target
-		}
-		target := net.JoinHostPort(member.Address, port)
-
-		conn, err := net.DialTimeout("tcp", target, time.Duration(check.TimeoutSec)*time.Second)
-		if err != nil {
-			return err
-		}
-		_ = conn.Close()
-		return nil
+		return probeTCP(check.Target, member.Address, time.Duration(check.TimeoutSec)*time.Second)
 	}
+}
+
+func (w *HealthCheckWorker) probeHTTP(check *model.HealthCheck, member *model.GSLBMember) error {
+	requestURL, originalHost, sniHost, err := buildHealthCheckRequestURL(check, member)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, requestURL.String(), nil)
+	if err != nil {
+		return fmt.Errorf("healthcheck request 생성 실패: %w", err)
+	}
+	req.Host = originalHost
+
+	transport := &http.Transport{}
+	if requestURL.Scheme == healthCheckTypeHTTPS {
+		transport.TLSClientConfig = &tls.Config{
+			InsecureSkipVerify: true,
+			ServerName:         sniHost,
+		}
+	}
+
+	client := &http.Client{
+		Timeout:   time.Duration(check.TimeoutSec) * time.Second,
+		Transport: transport,
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("http healthcheck 실패: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	expectedCodes := expectedHTTPStatusCodes(check.ExpectedCodes)
+	for _, code := range expectedCodes {
+		if resp.StatusCode == code {
+			return nil
+		}
+	}
+	return fmt.Errorf("http status %d (expected: %v)", resp.StatusCode, expectedCodes)
+}
+
+func buildHealthCheckRequestURL(check *model.HealthCheck, member *model.GSLBMember) (*url.URL, string, string, error) {
+	parsedURL, fullURLTarget, err := parseHealthCheckTargetURL(check, member)
+	if err != nil {
+		return nil, "", "", err
+	}
+
+	port := healthCheckRequestPort(parsedURL, fullURLTarget, member.Address)
+
+	requestURL := &url.URL{
+		Scheme:   parsedURL.Scheme,
+		Host:     memberAddressWithPort(member.Address, port),
+		Path:     parsedURL.Path,
+		RawQuery: parsedURL.RawQuery,
+	}
+
+	if fullURLTarget {
+		return requestURL, parsedURL.Host, parsedURL.Hostname(), nil
+	}
+	return requestURL, member.Address, hostWithoutPort(member.Address), nil
+}
+
+func parseHealthCheckTargetURL(check *model.HealthCheck, member *model.GSLBMember) (*url.URL, bool, error) {
+	if strings.HasPrefix(check.Target, "http://") || strings.HasPrefix(check.Target, "https://") {
+		parsedURL, err := url.Parse(check.Target)
+		if err != nil {
+			return nil, false, fmt.Errorf("invalid target URL: %w", err)
+		}
+		return parsedURL, true, nil
+	}
+
+	path := check.Target
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+
+	relativeURL, err := url.Parse(path)
+	if err != nil {
+		return nil, false, fmt.Errorf("invalid target URL: %w", err)
+	}
+	return &url.URL{
+		Scheme:   check.CheckType,
+		Host:     member.Address,
+		Path:     relativeURL.Path,
+		RawQuery: relativeURL.RawQuery,
+	}, false, nil
+}
+
+func memberAddressWithPort(address, port string) string {
+	if _, _, err := net.SplitHostPort(address); err == nil {
+		return address
+	}
+	return net.JoinHostPort(address, port)
+}
+
+func healthCheckRequestPort(parsedURL *url.URL, fullURLTarget bool, memberAddress string) string {
+	if fullURLTarget {
+		if port := parsedURL.Port(); port != "" {
+			return port
+		}
+		return defaultHTTPPort(parsedURL.Scheme)
+	}
+
+	if _, port, err := net.SplitHostPort(memberAddress); err == nil {
+		return port
+	}
+	return defaultHTTPPort(parsedURL.Scheme)
+}
+
+func hostWithoutPort(address string) string {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return address
+	}
+	return host
+}
+
+func defaultHTTPPort(scheme string) string {
+	if scheme == healthCheckTypeHTTPS {
+		return "443"
+	}
+	return "80"
+}
+
+func expectedHTTPStatusCodes(codes []int) []int {
+	if len(codes) == 0 {
+		return []int{defaultHTTPHealthStatus}
+	}
+	return codes
+}
+
+func probeTCP(target, memberAddress string, timeout time.Duration) error {
+	port := target
+	if strings.Contains(target, ":") {
+		_, parsedPort, err := net.SplitHostPort(target)
+		if err != nil {
+			return fmt.Errorf("tcp target 포트 파싱 실패: %w", err)
+		}
+		port = parsedPort
+	}
+
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(memberAddress, port), timeout)
+	if err != nil {
+		return fmt.Errorf("tcp healthcheck 실패: %w", err)
+	}
+	_ = conn.Close()
+	return nil
 }
 
 func (w *HealthCheckWorker) getStatus(memberID int64) HealthStatus {
