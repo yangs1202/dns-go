@@ -1192,6 +1192,37 @@ func TestHealthCheckWorker_ProbeHTTPSWithPath(t *testing.T) {
 	}
 }
 
+func TestBuildHealthCheckRequestURLPathTargetPreservesQueryAndIPv6(t *testing.T) {
+	check := &model.HealthCheck{
+		CheckType: "http",
+		Target:    "healthz?ready=1",
+	}
+	member := &model.GSLBMember{
+		Address: "2001:db8::1",
+	}
+
+	requestURL, originalHost, _, err := buildHealthCheckRequestURL(check, member)
+	if err != nil {
+		t.Fatalf("expected request URL build to succeed, got: %v", err)
+	}
+
+	if requestURL.Scheme != "http" {
+		t.Fatalf("expected http scheme, got %q", requestURL.Scheme)
+	}
+	if requestURL.Host != "[2001:db8::1]:80" {
+		t.Fatalf("expected bracketed IPv6 host with default port, got %q", requestURL.Host)
+	}
+	if requestURL.Path != "/healthz" {
+		t.Fatalf("expected /healthz path, got %q", requestURL.Path)
+	}
+	if requestURL.RawQuery != "ready=1" {
+		t.Fatalf("expected query string to be preserved, got %q", requestURL.RawQuery)
+	}
+	if originalHost != "2001:db8::1" {
+		t.Fatalf("expected original host to preserve member address, got %q", originalHost)
+	}
+}
+
 func TestHealthCheckWorker_ProbeDefaultType(t *testing.T) {
 	db, cleanup := setupHealthCheckTestDB(t)
 	defer cleanup()
