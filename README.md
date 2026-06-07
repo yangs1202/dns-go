@@ -187,54 +187,28 @@ docker compose up -d
 
 > Port 53 requires elevated privilege on Unix-like OS. Use systemd `cap_net_bind_service`, rootless wrapper, or container capabilities.
 
-## 6.2 Simple benchmark on `dns.yangs.sh` / 간단 성능 벤치마크(`dns.yangs.sh`)
+## 6.2 Simple benchmark / 간단 성능 벤치마크
 
-Ran with a single node, single target domain `dns.yangs.sh`.
+You can benchmark your target environment using generic values.
 
-- Command:
-  - UDP: `for i in $(seq 1 1000); do dig +time=2 +tries=1 @dns.yangs.sh dns.yangs.sh A | awk '/Query time:/ {print $4}'; done`
-  - TCP: `for i in $(seq 1 300); do dig +tcp +time=2 +tries=1 @dns.yangs.sh dns.yangs.sh A | awk '/Query time:/ {print $4}'; done`
+```bash
+# DNS UDP
+for i in $(seq 1 1000); do
+  dig +time=2 +tries=1 @<dns-server> <test-domain> A | awk '/Query time:/ {print $4}'
+done
 
-Test environment (observed):
-- Resolver target: `dns.yangs.sh`
-- Query type: `A`
-- Tooling: `dig` (BIND9) + shell aggregation
-- Date: `2026-06-07`
+# DNS TCP
+for i in $(seq 1 300); do
+  dig +tcp +time=2 +tries=1 @<dns-server> <test-domain> A | awk '/Query time:/ {print $4}'
+done
+```
 
-### UDP 53 performance / UDP 53 성능
-
-| Metric | Value |
-| --- | --- |
-| Total requests | 1000 |
-| Success | 1000 |
-| Failure | 0 |
-| Elapsed | 10.12s |
-| Throughput | 98.85 QPS |
-| Query time min | 2ms |
-| Query time p95 | 4ms |
-| Query time max | 73ms |
-| Query time avg | 4.29ms |
-
-### TCP 53 performance / TCP 53 성능
-
-| Metric | Value |
-| --- | --- |
-| Total requests | 300 |
-| Success | 300 |
-| Failure | 0 |
-| Elapsed | 4.78s |
-| Throughput | 62.71 QPS |
-| Query time min | 2ms |
-| Query time p95 | 5ms |
-| Query time max | 72ms |
-| Query time avg | 4.29ms |
-
-### HTTP API availability test / HTTP API 접근성 확인
-
-`/api/stats` was checked on ports `8080`, `80`, `443` and returned connection failure (`000`), so no stable API latency data was collected in this quick run.
-
-Recommended next benchmark when API is exposed:
-- `for i in $(seq 1 1000); do curl -o /dev/null -s -w '%{time_total}\\n' http://<target>:8080/api/stats; done`
+```bash
+# HTTP API baseline
+for i in $(seq 1 1000); do
+  curl -o /dev/null -s -w '%{time_total}\\n' http://<target>:8080/api/stats
+done
+```
 
 ## 7) Configuration example / 설정 예시
 
@@ -319,4 +293,4 @@ flowchart TD
 This project is distributed under the **MIT License**.
 프로젝트 라이선스는 **MIT License**입니다.
 
-- See: [LICENSE](/Users/yangs/project/dns-go/LICENSE)
+- See: [LICENSE](./LICENSE)
