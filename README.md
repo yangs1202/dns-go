@@ -2,7 +2,7 @@
 
 ## Enterprise-grade DNS Service
 
-DNS-Go is positioned as an **enterprise-ready DNS platform** for internal, edge, and multi-region operation.
+DNS-Go is positioned as an **enterprise-ready DNS platform** for edge and multi-region operation.
 
 - Core DNS resolution with recursive behavior
 - GSLB policy routing with subnet/geo/default matching
