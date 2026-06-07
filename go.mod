@@ -3,7 +3,7 @@ module dns-go
 go 1.24.0
 
 require (
-	github.com/bits-and-blooms/bloom/v3 v3.7.0
+	github.com/bits-and-blooms/bloom/v3 v3.7.1
 	github.com/gin-gonic/gin v1.10.0
 	github.com/miekg/dns v1.1.72
 	github.com/oschwald/geoip2-golang v1.11.0
@@ -15,7 +15,7 @@ require (
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/bits-and-blooms/bitset v1.10.0 // indirect
+	github.com/bits-and-blooms/bitset v1.24.2 // indirect
 	github.com/bytedance/sonic v1.11.6 // indirect
 	github.com/bytedance/sonic/loader v0.1.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
