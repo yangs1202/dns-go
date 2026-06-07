@@ -6,7 +6,7 @@ require (
 	github.com/bits-and-blooms/bloom/v3 v3.7.0
 	github.com/gin-gonic/gin v1.10.0
 	github.com/miekg/dns v1.1.72
-	github.com/oschwald/geoip2-golang v1.11.0
+	github.com/oschwald/geoip2-golang v1.13.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/stretchr/testify v1.11.1
 	gopkg.in/yaml.v3 v3.0.1
