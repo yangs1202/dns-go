@@ -14,7 +14,15 @@ DNS-Go is positioned as an **enterprise-ready DNS platform** for edge and multi-
 > 엔터프라이즈급 DNS를 전제로 한 운영형 DNS 플랫폼입니다.  
 > 재해복구, 운영 분리, 모니터링을 고려한 구성을 기본으로 설계되어 있습니다.
 
-## 1) What this project is / 프로젝트 개요
+## 1) Why DNS-Go / 왜 DNS-Go인가
+
+DNS-Go is built for startups, small teams, and independent developers who need practical DNS infrastructure without buying a large commercial traffic-management product too early.
+
+AI-assisted development makes it easier to build and ship services quickly, but production operations still need reliable DNS, failover, traffic routing, observability, and filtering. DNS-Go aims to make those enterprise-style primitives available as a lightweight, self-hosted, open-source platform.
+
+> 작은 스타트업과 개인 개발자가 비싼 엔터프라이즈 DNS/GSLB 제품을 바로 구매하지 않아도, 운영에 필요한 핵심 DNS 인프라를 직접 구성하고 개선할 수 있도록 돕는 것이 목표입니다.
+
+## 2) What this project is / 프로젝트 개요
 
 DNS-Go exposes both DNS and HTTP management surfaces.
 
@@ -37,9 +45,9 @@ flowchart LR
   N --> O[Sync API]
 ```
 
-## 2) Architecture and data path / 아키텍처와 데이터 플로우
+## 3) Architecture and data path / 아키텍처와 데이터 플로우
 
-### 2.1 DNS request path / DNS 요청 처리
+### 3.1 DNS request path / DNS 요청 처리
 
 ```mermaid
 sequenceDiagram
@@ -64,7 +72,7 @@ sequenceDiagram
   end
 ```
 
-### 2.2 GSLB and health workflow / GSLB/헬스체크 처리
+### 3.2 GSLB and health workflow / GSLB/헬스체크 처리
 
 ```mermaid
 flowchart TD
@@ -77,7 +85,7 @@ flowchart TD
   H --> F[Update health counters]
 ```
 
-### 2.3 Health check cycle / 헬스체크 주기
+### 3.3 Health check cycle / 헬스체크 주기
 
 ```mermaid
 flowchart LR
@@ -91,7 +99,7 @@ flowchart LR
   F --> G[DNS responses auto-follow state]
 ```
 
-## 3) Deployment modes / 배포 모드
+## 4) Deployment modes / 배포 모드
 
 ### Single node / 단일 노드
 
@@ -128,7 +136,7 @@ flowchart LR
 - `docker-compose.yml`: local build/start with Dockerfile
 - direct binary: production binary for host integration and hardened service mgmt
 
-## 4) API Surface at a glance / API 한눈보기
+## 5) API Surface at a glance / API 한눈보기
 
 ```mermaid
 flowchart TD
@@ -144,7 +152,7 @@ flowchart TD
   - [GSLB API](./docs/GSLB_API.md)
   - [DNS API](./docs/API_SPEC.md)
 
-## 5) Feature matrix / 기능 매트릭스
+## 6) Feature matrix / 기능 매트릭스
 
 | Area | Description | Enterprise value |
 | --- | --- | --- |
@@ -156,7 +164,7 @@ flowchart TD
 | Observability | `/api/stats`, `/api/query-logs`, `/metrics` | 운영 가시성 확보 |
 | HA | Primary/Secondary + read-only | 운영 분리/안전한 이중화 운영 |
 
-## 6) Quick start / 빠른 시작
+## 7) Quick start / 빠른 시작
 
 ### Option 1. Build and run locally / 로컬 바이너리 실행
 
@@ -180,14 +188,14 @@ cp docker-compose.yml docker-compose.local.yml
 docker compose up -d
 ```
 
-### 6.1 Runtime default ports / 기본 포트
+### 7.1 Runtime default ports / 기본 포트
 
 - DNS: `53/tcp`, `53/udp`
 - API: `8080`
 
 > Port 53 requires elevated privilege on Unix-like OS. Use systemd `cap_net_bind_service`, rootless wrapper, or container capabilities.
 
-## 6.2 Simple benchmark / 간단 성능 벤치마크
+## 7.2 Simple benchmark / 간단 성능 벤치마크
 
 You can benchmark your target environment using generic values.
 
@@ -210,7 +218,7 @@ for i in $(seq 1 1000); do
 done
 ```
 
-## 7) Configuration example / 설정 예시
+## 8) Configuration example / 설정 예시
 
 ```yaml
 dns:
@@ -256,7 +264,7 @@ logging:
     buffer_size: 1000
 ```
 
-## 8) Production hardening / 운영 시 보안 가이드
+## 9) Production hardening / 운영 시 보안 가이드
 
 ```mermaid
 flowchart TD
@@ -278,7 +286,30 @@ flowchart TD
 - Keep policy/zone changes in separate change windows and backup DB files.
 - Periodically prune/rotate query logs and GeoIP DB updates.
 
-## 9) Enterprise readiness checklist / 엔터프라이즈 준비 체크리스트
+## 10) Security and maintenance focus / 보안 및 유지관리 방향
+
+DNS-Go handles infrastructure paths where defects can directly affect availability and network security: DNS request parsing, cache behavior, health-check decisions, administrative APIs, sync endpoints, and filtering pipelines.
+
+Current maintenance focus:
+
+- Expand DNS handler, GSLB, sync, and cache test coverage
+- Add regression tests for malformed DNS packets and API inputs
+- Improve race-condition detection around health status and cache updates
+- Harden admin and sync API deployment guidance with auth gateway, mTLS, and ACL examples
+- Keep dependency updates and vulnerability scanning part of the normal release workflow
+
+## 11) Roadmap / 로드맵
+
+- [ ] Built-in authentication or pluggable auth middleware for the management API
+- [ ] mTLS examples for Primary/Secondary sync traffic
+- [ ] DNSSEC validation/signing investigation
+- [ ] Configuration validation and dry-run mode before applying production changes
+- [ ] More deterministic GSLB policy tests and failover simulations
+- [ ] Security test suite for DNS parsing, cache behavior, and API input validation
+- [ ] Release automation with changelog, signed artifacts, and container image provenance
+- [ ] Operator-friendly docs for small teams running DNS-Go in production
+
+## 12) Enterprise readiness checklist / 엔터프라이즈 준비 체크리스트
 
 - [ ] Primary/Secondary 구성 및 싱크 확인
 - [ ] `/metrics`, `/api/stats` 수집 연동
